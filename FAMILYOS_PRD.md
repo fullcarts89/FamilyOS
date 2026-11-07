@@ -1,15 +1,15 @@
 # FamilyOS — Product Requirements Document
-**Version:** 0.1 | **Date:** 2026-11-07 | **Status:** Discovery / validation, NOT authorization for full build
+**Version:** 0.2 | **Date:** 2026-11-07 | **Status:** Personal-household-first; build requires founder approval. Commercialization optional and deferred.
 
 ## 1. Executive summary
 FamilyOS is a shared, action-oriented household operating system for busy families. It captures responsibilities from natural language, messages, photos and documents; coordinates people, routines and projects; and delegates appropriate multi-step work to an AI assistant with explicit permissions, durable state, and verified outcomes.
 
 **Promise:** “Tell FamilyOS what needs handling. It remembers, coordinates and moves it forward.”
 
-**Critical differentiation hypothesis:** Existing family organizers are strong at calendars/lists and some AI extraction; general-purpose agents can perform isolated tasks. Families may pay for a trustworthy, persistent shared system that owns follow-through across household members and external parties. This is a hypothesis, not a demonstrated market gap.
+**Product thesis:** A shared system can turn household planning decisions into owned, trackable work and safe agent follow-through. Build first for the founder's own two-adult household; sustained personal utility is the immediate test. Commercial demand is an optional future hypothesis.
 
 ## 2. Target customer and jobs to be done
-**Beachhead:** US dual-income homeowner households with children, 2+ adults sharing responsibilities, high task volume, existing calendar/email use, willingness to pay for saved time. Do not require homeownership for the underlying platform, but use it as a launch focus.
+**Initial users:** The founder's household: two adults coordinating family schedules, chores, home projects and delegated work. Support future households architecturally without commercial onboarding or billing in the first release.
 
 **Jobs:**
 1. Capture a responsibility in seconds without maintaining a separate task database.
@@ -18,6 +18,7 @@ FamilyOS is a shared, action-oriented household operating system for busy famili
 4. Delegate research, preparation, outreach and follow-up safely.
 5. Preserve household context: equipment, vendors, documents, preferences and past decisions.
 6. See evidence that something was actually completed.
+7. Hold a weekly planning session together, turn decisions into clear assignments, and review follow-through during the week.
 
 **Non-goals for v1:** Replace all calendars; build a grocery delivery network; autonomous purchases; autonomous booking without approval; generalized web agent; financial management; children’s social network; proprietary competitor code replication.
 
@@ -38,6 +39,7 @@ FamilyOS is a shared, action-oriented household operating system for busy famili
 4. **Home:** Rooms, assets, vendors, warranties, maintenance and issue history (progressively added).
 5. **Family:** Members, shared calendar, roles, preferences, notifications.
 6. **Assistant:** Delegation, execution plans, approvals, evidence, errors and history.
+7. **Weekly Reset (core P0 experience):** A guided shared planning session and saved weekly plan, surfaced prominently from Today and Family. It is a view over canonical Work, recurrence, calendar and agent objects—not a parallel task database.
 
 Avoid six disconnected modules. Calendar events, documents, household assets and vendors attach to canonical Work objects.
 
@@ -81,6 +83,37 @@ Input: “Find someone to clean our gutters and help schedule it.”
 - Separate personal/private tasks from household-visible tasks.
 - **Acceptance:** unauthorized role cannot access private docs, approve payments, or invoke privileged tools.
 
+### WF-06: Weekly Reset — shared household planning (core P0)
+**Purpose:** Support the two adults' existing weekly planning ritual, typically a 15–20-minute session. Weekly Reset is a first-class entry point alongside Today and Delegate, not merely a calendar view.
+
+**Session workflow:**
+1. **Prepare / look back:** For the selected household-local week, assemble a reviewable agenda from incomplete tasks, overdue or blocked work, routine occurrences, pending approvals, prior weekly-plan decisions and confirmed upcoming commitments. Show provenance and last refresh time; do not invent calendar events when no calendar connection exists. Both adults can add free-text topics.
+2. **Look ahead:** Display a seven-day view of known events, deadlines, chores, home projects, family logistics and scheduling conflicts. Distinguish connected-calendar events from manually entered items and suggestions.
+3. **Decide together:** Discuss agenda items and record decisions as explicit, editable records: decision text, linked item(s), decision maker(s), timestamp and optional rationale. Mark topics decided, deferred or unresolved; unresolved topics remain visible next week.
+4. **Assign and confirm:** Turn decisions into canonical WorkItems or update existing ones; set owner, due date, priority and next action. A proposed handoff to the other adult stays **pending acceptance** until accepted; declines return to the requester. Do not silently change ownership.
+5. **AI follow-through:** Offer clearly labelled suggestions such as preparing a grocery list, drafting a childcare message, researching a repair or preparing a vendor follow-up. Show the proposed steps and expected permissions. The user explicitly selects which suggestions to delegate; external communication, bookings, purchases and sensitive sharing still require the existing exact-payload approval gate. No AI is required to save a plan or schedule chores.
+6. **Commit and revisit:** Save a versioned weekly plan visible to both adults, with an agenda summary, decisions, ownership, outstanding questions and linked actions. Show a lightweight midweek progress view. At the next Weekly Reset, carry forward unresolved items and unfinished actions **by reference**, without duplicating tasks or silently rescheduling due dates.
+
+**Functional requirements:**
+- A session is keyed by household and week start in the household timezone; it supports draft, in-session and committed states, plus reopening with an audit trail.
+- Either adult can start or resume a session; both can view and contribute. Edits use version checks or conflict handling; no silent overwrite. No need for simultaneous live cursors in MVP.
+- Calendar is optional in MVP: manual events and existing due dates work without OAuth. Missing data is labelled, not guessed.
+- The plan references canonical WorkItem, RecurrenceRule, source, approval and AgentRun IDs; updates appear in Today and Work immediately. There is one authoritative owner/status per task.
+- Weekly planning must not auto-send, auto-book, auto-purchase or mark work complete. Every proposed agent action shows a reviewable preview and remains separately approvable.
+- Default notifications are low-noise: an optional weekly reminder and actionable pending-handoff/approval notifications, configurable by each adult.
+
+**MVP acceptance criteria (real household alpha):**
+1. Both adults can open the same week's session, add/reorder agenda topics, record a decision and see the saved result after app restart; edits are attributed and preserved.
+2. Agenda correctly surfaces known overdue, unfinished, upcoming and blocked items, with explicit empty/missing-calendar states; no fabricated events or deadlines.
+3. A decision creates or links exactly one canonical task, and that task appears in Today/Work without duplication. Reopening or committing the session twice is idempotent.
+4. An assignment to the other adult remains pending until accepted; rejection leaves the prior owner unchanged and returns the decision for replanning.
+5. A committed plan summarizes owners, due dates, unresolved decisions and suggested follow-ups. Both adults see consistent state after refresh.
+6. Next week's session carries forward unfinished work and unresolved decisions by reference; completed work remains in the prior week's review, and no existing due date is changed automatically.
+7. At least one AI suggestion can become a reviewable draft or bounded research plan; no external side effect occurs without the existing explicit approval flow, and model failure does not block manual planning.
+8. Deterministic tests cover week boundaries, timezone/DST, duplicate commits, conflicting edits, owner acceptance/decline and carry-forward; privacy/role tests ensure household scoping.
+9. Usability target: the two adults can complete a representative weekly plan in 15–20 minutes without assistance, and can capture a new decision/action in 30 seconds or less. Measure in actual household use rather than claiming success from fixtures.
+10. After four consecutive weekly sessions, review whether both adults voluntarily return, whether assignments are acted on, and whether planning reduces forgotten follow-ups. This is a personal-utility gate, not a commercial conversion target.
+
 ## 6. MVP scope — P0 / P1 / Later
 | Priority | Capability | Notes |
 |---|---|---|
@@ -88,6 +121,7 @@ Input: “Find someone to clean our gutters and help schedule it.”
 | P0 | Shared inbox and task/project model | Status, owner, due date, source, timeline |
 | P0 | Natural-language quick capture | Structured output, editable before save |
 | P0 | Recurring chores | Deterministic scheduler |
+| P0 | Weekly Reset shared planning | Review/look ahead, decisions, assignments, plan commit, carry-forward and approval-gated AI follow-through; WF-06 |
 | P0 | Agent research + prepared action | One service-coordination workflow |
 | P0 | Approval queue + execution audit | Explicit authorization, receipts, retries |
 | P0 | Push/email notifications | Actionable, low-noise |
@@ -114,6 +148,10 @@ Input: “Find someone to clean our gutters and help schedule it.”
 - `Approval(id, run_id, action_type, exact_payload, requested_by, authorized_by?, status, expires_at)`
 - `ExternalAction(id, approval_id, provider, idempotency_key, status, external_ref?, receipt_ref?)`
 - `Evidence(id, type, source_ref, verification_level, timestamp)`
+- `WeeklyPlan(id, household_id, week_start_local, timezone, status[draft|in_session|committed], version, created_by, committed_at?)`
+- `WeeklyAgendaItem(id, weekly_plan_id, kind, source_ref?, position, state[open|decided|deferred], notes)`
+- `WeeklyDecision(id, weekly_plan_id, agenda_item_id?, text, actor_id, state[decided|unresolved|deferred], linked_work_item_id?, created_at)`
+- `WeeklyPlanEvent(id, weekly_plan_id, actor_id, event_type, timestamp, payload)` append-only history; reference existing WorkItem/AgentRun/Approval records instead of copying their status.
 
 Work states: `new -> ready -> in_progress -> awaiting_approval / awaiting_external / blocked -> verified_complete` (or `cancelled`). Distinguish `agent_finished_step` from `real_world_complete`.
 
@@ -139,12 +177,15 @@ Work states: `new -> ready -> in_progress -> awaiting_approval / awaiting_extern
 ## 10. Design requirements
 - Calm, practical, warm; no gamified guilt, streaks or artificial urgency.
 - Home screen prioritizes decisions and exceptions; completion feed demonstrates value.
+- Weekly Reset is a prominent guided session with Look Back → Look Ahead → Decide → Assign → Delegate → Commit; show clear shared ownership and unresolved items, with easy pause/resume.
 - One-tap voice/photo/text capture; clear review of extracted information.
 - Approvals show exactly what will be sent, to whom, by which account, and what may happen afterward.
 - Progress shows `Researching`, `Draft ready`, `Waiting on vendor`, `Booking confirmed`, `Verified complete`—never generic “Done” without evidence.
 - Accessibility: dynamic type, contrast, screen reader, reduced motion; household privacy labels.
 
 ## 11. Metrics and validation gates
+**Personal-household-first override:** The commercial Gate 0/1/3/4 language below is retained as historical research context, not a prerequisite for building or using FamilyOS at home. Immediate success is repeat use by both adults, fewer forgotten commitments, useful weekly planning, and safe execution. Pricing and external-family pilots are deferred. Weekly Reset has its own four-week personal-utility criteria in WF-06.
+
 **Gate 0 — Competitive and demand discovery (before build):** 12–15 target-household interviews; at least 8 describe a recurring coordination/follow-up pain; at least 5 commit to testing; collect evidence of willingness to pay (deposit or paid concierge preferred). Record incumbent apps used and specific unmet jobs.
 
 **Gate 1 — Concierge test:** 5–10 households delegate one real service/coordination task; measure time saved, completion, interventions, willingness to delegate again. Do not represent manual work as autonomous.
