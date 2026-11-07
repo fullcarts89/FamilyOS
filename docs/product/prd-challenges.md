@@ -1,5 +1,7 @@
 # PRD v0.1 review: where the evidence is weak
 
+> **Status after the personal-use decision (2026-11-07).** Section A (market and product) is reference material for a possible later commercial decision; its gates and pricing tests are not prerequisites. Sections B (technical) and C1–C3 still apply where they concern safety, channels and data terms. PRD v0.2 has since adopted several of these revisions.
+
 **Date:** 2026-11-07
 **Sources:**
 - research notes under `research_notes/FamilyOS Phase A research/`

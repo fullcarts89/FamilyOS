@@ -1,104 +1,101 @@
-# Founder Gate 0: Phase A decision
+# Founder decision memo: Phase A to household alpha
 
 **Date:** 2026-11-07
-**Revision:** 2, after founder review of PR #1 (three corrections, listed below)
-**Recommendation:** **REVISE, then GO on Phase B only.**
+**Revision:** 3. Personal-use strategy, aligned with PRD v0.2 (commit `58a5435`, Weekly Reset as P0).
+**Recommendation:** **GO on Phase B, the private household alpha (M0–M3)**, then stop for your review before Phase C.
 
-The north-star product is unchanged: a shared AI chief of staff for household responsibilities, covering chores, routines, calendars, family coordination, home management, memory and agentic execution (`docs/product/product-contract.md`).
+FamilyOS is a personal project for our two-adult household first. Commercialization is optional and later. The goal now is a working private alpha in our hands: Today and the daily household core after about 10 working days, and Weekly Reset about a week after that.
 
-What Phase A changes is the **launch plan**: the competitive set for the execution part, the hero workflow, pricing and channels. Approve the five decisions below. With those approved, the next step is the Phase B fake-data prototype, built while you run Gate 0 interviews.
+The full vision is kept: chores, routines, schedules, family coordination, home management, projects, household memory and AI delegation (`docs/product/product-contract.md`).
 
-Phase C waits for the Gate 0 results.
+## What changed in revision 3
 
-**Why not GO as written:**
-- The PRD benchmarks the wrong competitors for the execution part.
-- Its hero task is low-frequency.
-- Its pricing sits at the top of the app market with no evidence behind it.
-- It assumes that email to vendors works, and nobody has measured that.
+1. **No commercial gates.** Customer interviews, concierge pilots, pricing experiments and market gates are removed as prerequisites. The interview kit is archived as reference, and PRD §11 now marks those gates as historical context.
+2. **Three core experiences: Today, Weekly Reset and Delegate.** Weekly Reset (PRD WF-06) is its own milestone, M3, in the first alpha. It works with no calendar and no AI. AI suggestions in the session arrive in M5; delegating from the session arrives in M6.
+3. **A working app replaces the fake-data prototype.** Phase B is now the private household alpha. Synthetic fixtures remain for tests only.
+4. **Engineering and security gates replace market gates** (G0–G7 in the plan). Each real-world step (first deploy, first real calendar, first real LLM call, first real vendor email) still needs your approval.
+5. **Success is measured by our own use:** sustained use by both adults, coverage, on-time completion, a weekly mental-load check-in, time saved, the WF-06 four-week Weekly Reset review, and zero trust failures.
+6. **Single household first.** No billing, onboarding, sign-up or SaaS admin. `household_id`, row-level security, invites and export keep later expansion cheap.
+7. **Kept as references:** the competitor research (for UX patterns and data-terms limits), the technical evaluation (requirements R1–R8) and the framework stance (no framework needed now, adoption kept open).
 
-**Why not STOP:**
-- No public source documents the full combination: several adults approving the agent's vendor messages and bookings under roles, threads that last days, and a household-owned evidence record.
-- Families' stated discomfort with autonomous agents favours the approval-gated design (trust surveys in the demand notes).
+## Repository state
 
-## Changes in revision 2 (founder corrections)
-
-1. **North star and launch wedge are now separate.** The new `docs/product/product-contract.md` holds both. Home-service coordination is one of four candidate wedges, tested against shared chores, two-adult coordination and a unified system.
-2. **Phase B covers the unified household.** A new PR adds recurring chores, a two-adult chore rotation and a shared-week handoff workflow (journeys J3b and J6). The interview kit gains wedge questions and a decision rule.
-3. **The framework benchmark is qualified.** The baseline was built with safeguards that the framework examples lacked. The findings are now stated as architecture requirements R1–R8, and framework adoption stays open (evaluation §1.3; ADR-001 §3.2).
-
-## Repository inventory (brief rule 1–2)
-
-- `/Users/thoroxnard/FamilyOS` was not a git repository. It held only the three brief files. It is **not** Kinship, and nothing outside this folder was touched.
-- GitHub `fullcarts89/FamilyOS` existed, empty and **public**. On 2026-11-07 the founder approved making it **private**, which was done before the first push (decision 5, part 1). Part 2, the clean-room rule, is still open.
-- This phase added:
-  - `docs/` (Phase A deliverables plus `evidence/framework-bench`);
-  - `research_notes/FamilyOS Phase A research/`, holding 7 primary-source note files;
-  - `reports/`, holding the synthesized research report.
-- No application code was written. The bench harnesses are throwaway evaluation scripts using mocked tools.
+- `fullcarts89/FamilyOS` is **private**. It was made private before the first push, on your approval.
+- `main` holds the three input files. PR #1 (`phase-a/research`) holds Phase A plus these revisions, on top of your PRD commit `58a5435`. The PRD is not modified by any of my commits.
+- No application code has been written.
 
 ## Decisions requiring your approval (5)
 
-### 1. North star, launch wedge and how the wedge is chosen
+### 1. Product contract and success measures
 
-**Question:** Do you approve the product contract? It keeps the north star as written and treats the launch wedge as a hypothesis. The candidates are A, home-service coordination; B, shared chores and routines; C, two-adult coordination; and D, a unified system. Gate 0 picks among them using the wedge decision rule in the interview kit.
-
-- **Recommendation:** Yes.
-- **Phase A's lean, not a decision:** A as the differentiating hero inside D, with B and C providing frequency. Within A, pick the service by concierge measurement across a basket (gutters, appliance repair, handyman, cleaning, lawn), not gutters alone.
-- **Trade-off:** testing four candidates makes the interviews longer (45 minutes, up from 30). In exchange, the launch choice rests on evidence, and the product is never reduced to a contractor concierge.
-- **Positioning:** approval before sending is now standard (Gemini, Duet, Muse, Copilot). Position on the shared household system, its vendor-neutral home record and multi-adult roles, not on "safe agent".
-- **Adjust if you want:** the decision-rule thresholds (50% / 35% / 40%) are proposals.
-
-### 2. Gate order and Phase B scope
-
-**Question:** Do you approve this order? You run the Gate 0 interviews and the Gate 1 concierge, using `docs/research/gate0-interview-and-concierge-kit.md`. Engineering builds only the Phase B prototype in that time, with five demo paths: routine chore, chore rotation, home repair, shared week and vendor coordination. The prototype is the interview prop. Phase C starts only after Gate 0 passes.
+**Question:** Do you approve the revised product contract?
+- Personal-use first.
+- The full integrated vision.
+- Three core experiences: Today, Weekly Reset and Delegate.
+- Success measured by our household's sustained use (contract §6), including the WF-06 four-week review.
 
 - **Recommendation:** Yes.
-- **Trade-off:** Phase B grows from about 5–6 to about 7 working days (six PRs, B1–B6), still at $0. Phase C slips by about 2–3 weeks. In exchange, we avoid building on channel, wedge and pricing assumptions with no evidence behind them. The PRD's own Gate 0 already requires this.
+- **Trade-off:** dropping market validation means we learn nothing yet about other families. That evidence is only needed if commercialization comes up, and the Phase A market research is kept for that moment.
 
-### 3. Architecture (ADR-001)
+### 2. Build plan and stop points
 
-**Question:** Do you approve this stack?
-- A TypeScript modular monolith.
-- Expo for the client.
-- Supabase Postgres, with access through our API only and RLS as defense in depth.
-- FamilyOS-owned state machines, approvals, outbox and evidence, meeting requirements R1–R8.
-- Graphile Worker for timers and jobs.
-- The MVP does not depend on an agent framework. The LLM sits behind a provider-agnostic `ModelPort` and a framework-neutral step interface, so a framework can be adopted later.
-- The model provider chosen by an eval in Phase C.
+**Question:** Do you approve Phase B as M0–M3?
+- M0: repo foundation.
+- M1: household foundation and security.
+- M2: Today and the daily core.
+- M3: Weekly Reset.
 
-- **Recommendation:** Yes.
-- **What the benchmark supports:** that durable state, idempotent sends, payload-bound approvals, tenancy and evidence-based completion are requirements, and that neither framework provides them by default.
-- **What it does not support:** that frameworks should never be used. The baseline was built with those safeguards; the framework examples were not given them.
-- **Trade-off:** we own about 300–500 lines of recovery and timer code, and we give up LangGraph Studio-style tooling for now. In return, no deploy can strand a run, approvals are bound to the payload hash, and tenancy is in our schema.
-- **Adoption path:** a framework can come in inside a step at any time, or more broadly if it passes the Phase C requirement suite.
-
-### 4. External channels for alpha
-
-**Question:** Do you approve these channel rules?
-- Email goes from a FamilyOS domain through Postmark, with per-thread reply addresses.
-- A manual hand-off (prefilled text or call script) is a first-class path.
-- Excluded in MVP: Gmail or Outlook mailbox reading, AI voice calls, SMS, browser automation and child logins.
-- Optional P1: send-as-user via `gmail.send`.
+It takes about 13–15 working days. Daily use starts at G2; the first real Weekly Reset follows G3. Then I stop for your review before Phase C (M4 schedules, M5 AI assist, M6 Delegate, about 13–16 more days).
 
 - **Recommendation:** Yes.
-- **Trade-off:** Some vendors may answer the user's own address or phone more readily, so reply rates may be lower. In return we avoid Gmail's restricted-scope verification (about 6 weeks plus an annual CASA assessment), TCPA artificial-voice exposure and 10DLC registration. The concierge measures the actual difference.
-- These rules apply to the execution part only. Chores and coordination between household members need no external channel.
+- **Trade-off:** Delegate, the most distinctive part, comes after Weekly Reset rather than first. Delegate needs the full approval-and-outbox safety suite (G6) before any real send. Today and Weekly Reset give daily value without that risk. M4–M6 can be reordered after Phase B if our household needs Delegate sooner.
+- **Before M2:** you list our real routines, projects, maintenance and how our weekly planning works today, so the build follows real workflows (plan §2).
 
-### 5. IP hygiene (repository visibility done)
+### 3. Hosting and spending
 
-**Question:** Do you approve a clean-room rule? Under it, nobody, and no AI coding assistant, works on FamilyOS with GPL or AGPL source (nanoMuse, Donetick, Mealie, HomeBox) in context. Those projects are used only through written pattern descriptions.
+**Question:** Which hosting do you approve?
+- **(a)** Supabase Pro ($25/month, daily backups) plus Railway Hobby ($5/month). About $31–36/month, plus a domain (about $10–20/year).
+- **(b)** A $0 home-server setup reached only through Tailscale, where we own backups and uptime.
+
+Also: do you approve Apple Developer ($99/year) if we're on iPhones, and a monthly LLM cap (I propose $10) from M5?
+
+- **Recommendation:** (a), because managed backups and uptime matter for real household data. Apple Developer only if we use iPhones. You create each paid account yourself; I never enter payment details.
+- **Trade-off:** (b) costs nothing, but a dead home machine means a dead household system.
+
+### 4. Stack and real-data rules
+
+**Question:** Do you approve the stack and these data rules?
+
+**Stack** (ADR-001, unchanged):
+- TypeScript monolith, Expo, Supabase Postgres through our API only.
+- Our own state machines, approvals, outbox and evidence.
+- Graphile Worker.
+- No agent framework needed now, with adoption kept open.
+
+**Data rules:**
+- **Children:** our children appear as named members without accounts. Only what a workflow needs is stored, and names are replaced with tokens before LLM calls where possible. This replaces the brief's "no production child data" rule, which assumed a commercial pilot.
+- **Calendars:** read through each adult's private iCal feed, with no Google OAuth. OAuth testing mode would expire tokens every 7 days.
+- **External channels:** Postmark relay email with per-thread reply addresses, plus a manual hand-off path. No mailbox reading, AI voice, SMS or browser automation.
 
 - **Recommendation:** Yes.
-- **Already done:** the repo was made private before the first push, on your approval.
-- **Trade-off:** none material. It mainly matters for the chores and home-record areas, where the closest open-source references are AGPL.
+- **Trade-off:** iCal feeds are read-only, and FamilyOS polls them on a schedule (about every 15–30 minutes). Look Ahead can therefore lag a same-day calendar change, so each feed's refresh time is shown. Calendar apps that subscribe to FamilyOS's outbound feed set their own refresh rate, which we don't control. Feed availability for each of our calendar accounts gets confirmed in M4.
 
-## Also needs you (not a decision, about 5 minutes)
+### 5. Clean-room rule
 
-- Open getohai.com in a browser and note the legal entity in its footer or privacy policy. The research tooling could not reach the site. Until then, every audit claim sourced only to getohai.com is `not verified`.
-- **Disclosure:** during demand research, one automated request to the SEC's EDGAR company lookup carried your account email address in its User-Agent header. Every later request used a generic header. Nothing else personal was sent anywhere.
+**Question:** Do you approve the clean-room rule? Under it, nobody, and no AI coding assistant, works on FamilyOS with GPL or AGPL source (nanoMuse, Donetick, Mealie, HomeBox) in context. Those projects are used only through written pattern descriptions.
+
+- **Recommendation:** Yes.
+- **Trade-off:** none material. It matters most for chores and home records, where the closest open-source references are AGPL.
+
+## Also needs you (not decisions)
+
+- Which phones we use: iPhone, Android or both. This affects decision 3.
+- The workflow list before M2 (decision 2).
+- Optional: the getohai.com footer check is now only relevant to the archived market research.
+- **Disclosure (unchanged):** during Phase A demand research, one automated request to the SEC's EDGAR company lookup carried your account email address in its User-Agent header. Nothing else personal was sent anywhere.
 
 ## What happens on approval
 
-- Merge PR #1, or keep it open as the record; either works.
-- Then PRs B1–B6, about 7 working days, at $0 cost.
-- Then stop for your feedback on the prototype.
+- Build M0–M3 as one PR per milestone against `main`, each with its gate tests.
+- Ask your approval at G2 before the first private deploy.
+- Stop after G3, once the first real Weekly Reset has happened, for your review before Phase C.

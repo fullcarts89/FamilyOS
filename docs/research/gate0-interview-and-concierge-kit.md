@@ -1,5 +1,7 @@
 # Gate 0 interview script and Gate 1 concierge protocol
 
+> **Archived (2026-11-07).** FamilyOS is now built for the founder's own household first (`docs/product/product-contract.md`). These interviews and concierge pilots are **not** prerequisites for development. The kit is kept for a possible later commercial decision.
+
 **Date:** 2026-11-07. Founder-run. Nothing here is automated, and no FamilyOS software contacts anyone.
 
 ## Gate 0: 12–15 target-household interviews (45 min each, including about 10 minutes on the prototype)

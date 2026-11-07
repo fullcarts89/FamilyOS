@@ -1,7 +1,7 @@
 # FamilyOS threat model (MVP, v0.1)
 
 **Date:** 2026-11-07
-**Scope:** ADR-001 architecture through Phase D alpha.
+**Scope:** ADR-001 architecture through the private household alpha (plan M0–M7). Real household data is in production from G2 on.
 **Method:** Assets, trust boundaries, then threats per boundary, each with a mitigation and the test that proves it.
 **Basis:** [`constraints_legal_security.md`](../../research_notes/FamilyOS%20Phase%20A%20research/constraints_legal_security.md) and local bench results in `docs/research/evidence/framework-bench/`.
 
@@ -94,7 +94,9 @@ The IDs are referenced by the test plan in `docs/plan/implementation-plan.md`.
 | T-24 | Collecting children's data directly (child logins) brings COPPA (amended rule, compliance date 2026-04-22) and app-store age-signal laws (TX SB 2420, UT, LA, CA AB 1043 in 2027) | **No child accounts in MVP.** Children may appear only as named household members without a login, with minimal fields (first name, optional birth year) |
 | T-25 | Parents upload school or medical documents | Classify sensitive categories at intake. Health-related content brings Washington's My Health My Data Act and the FTC Health Breach Notification Rule, so MVP warns and excludes medical workflows. No face recognition (BIPA) |
 | T-26 | Provider terms forbid apps used by minors | Pick a model provider whose terms permit the use (the Gemini Developer API has an 18+ clause) |
-| T-27 | Real child data in development | Synthetic fixtures only; production data never copied to dev or staging (brief rule 8) |
+| T-27 | Real child data in development | Our children's data exists only in the production household. Tests, CI and local dev use synthetic fixtures; production data is never copied to dev (brief rule 8). Child names are tokenized before LLM calls where the task allows |
+| T-31 | A calendar feed URL leaks (it grants read access to that calendar) | Stored encrypted, never logged or shown after entry, revocable by regenerating it in the calendar app; FamilyOS's outbound feed URL is likewise secret and rotatable |
+| T-32 | Weekly Reset shows a private item on the shared agenda | Agenda queries apply the same visibility rules as Today; a test seeds a private item and asserts it never appears for the other adult |
 
 ### Availability, abuse and cost
 
@@ -104,13 +106,16 @@ The IDs are referenced by the test plan in `docs/plan/implementation-plan.md`.
 | T-29 | Inbound mail flooding a thread | Rate limits per token; messages beyond N per hour are quarantined |
 | T-30 | Malicious uploads | MIME allow-list (JPEG, PNG, HEIC, PDF), size cap, re-encoding of images (strips EXIF). PDFs are rendered to images for the model. ClamAV or GuardDuty before Phase D |
 
-## 4. Residual risks, accepted for the prototype and spike only
+## 4. Residual risks, accepted for the household alpha
 
 - RLS policy mistakes. Mitigated by tests, not formal verification.
 - Model extraction errors: the user reviews extracted fields before anything consequential.
 - Email deliverability to small vendors is unknown, which is a product risk rather than a security one.
 
-## 5. Needs counsel before Phase D
+## 5. Needs counsel only before any commercial use
+
+For our own household, only the first item matters now; we handle it by writing the vendor-email wording ourselves and reviewing it before the first real send (G6).
+
 
 - AI disclosure wording in vendor emails.
 - Using Google Places content in generated comparisons.

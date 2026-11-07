@@ -1,5 +1,7 @@
 # FamilyOS — Competitor Matrix (replaces COMPETITOR_AUDIT.md feature audit)
 
+> **How to use this now (2026-11-07).** FamilyOS is a personal household project first. Read this matrix as a design reference: UX patterns worth adopting, gaps to avoid, and the data terms that constrain us. It is no longer a positioning or launch-wedge analysis.
+
 | | |
 |---|---|
 | **Research / access date** | 2026-11-07 (every source below) |

@@ -1,7 +1,7 @@
 # FamilyOS user journeys (v0.1)
 
 **Date:** 2026-11-07
-**Cast:** Sam and Alex, dual-income homeowners with two children; Priya, their part-time caregiver.
+**Cast:** Sam and Alex, dual-income homeowners with two children; Priya, their part-time caregiver. They are synthetic stand-ins for our own household: tests and fixtures use them, never our real data.
 **Notation:** `[S]` system (deterministic), `[M]` model step (stateless, schema-validated), `[H]` human action, `⛔` approval gate.
 
 States follow ADR-001 §5. Labels in "quotes" are what the user sees.
@@ -29,7 +29,7 @@ States follow ADR-001 §5. Labels in "quotes" are what the user sees.
 | 13 | [H] Sam | Next day: "Did Acme finish?" → Yes, plus a photo of the invoice (E3 + E4) | WorkItem `verified_complete`: "Verified: you confirmed + invoice". The vendor is saved to Home with the price and date | "Not yet" → `awaiting_completion`. User taps "done" with no evidence → `done_unverified`, shown honestly |
 | 14 | [S] | Offers a recurrence: "Remind you next October?" | New routine (no AI needed) | — |
 
-**Success metrics (Gate 1/3):**
+**Success measures (our own use; product contract §6):**
 - Sam's total active time is 3 minutes or less, against a manual baseline we must measure.
 - Every external message was approved.
 - Elapsed time to booking.
@@ -102,12 +102,42 @@ States follow ADR-001 §5. Labels in "quotes" are what the user sees.
 
 **Acceptance:** every handoff is explicit and visible to both adults; no item changes owner without acceptance; nothing is lost when a request is declined.
 
+## J7. Ongoing project: basement refresh
+
+1. [H] Sam creates a project "Basement refresh" with subtasks: clear storage, get two quotes for drywall repair, pick paint, book the dump run.
+2. [H] Alex attaches photos and a budget note ($1,500). Each subtask has its own owner and due date.
+3. [S] The project shows progress (2 of 4 done), its vendors, costs logged so far and a timeline of every change.
+4. [H] "Get two quotes" later becomes a delegated run (J1 pattern, after M6). Until then it is a normal task with vendor records attached.
+5. Acceptance: subtasks appear in Today for their owners; the project never shows "complete" while a subtask is open; costs come only from entered records.
+
+## J8. Weekly Reset (Sunday evening, 15–20 minutes)
+
+| # | Step | What happens | Acceptance |
+|---|---|---|---|
+| 1 | Start | Sam opens **Weekly Reset** from Today. [S] creates or resumes the session for the household's local week (Mon 2026-11-09). Alex joins from their own phone | One session per household and week; either adult can start or resume |
+| 2 | Look Back | [S] assembles the agenda: 2 overdue items, 1 blocked ("plumber hasn't called back"), this week's routine occurrences, 1 pending approval, and last week's unresolved decision ("Holiday travel dates?"). Each shows its source and the refresh time. Alex adds a topic: "Swim lessons — who drives?" | Agenda matches the records exactly; no calendar connected → "No calendar connected — showing manual events only" |
+| 3 | Look Ahead | Seven days of known items: manual events, due dates, chores, project subtasks. A deterministic hint flags Thursday: two pickups at 15:30 | Manual, connected and suggested items are visually distinct; nothing invented |
+| 4 | Decide | They record: "Alex drives swim on Tuesdays" (decided), "Holiday travel" (deferred again), "Call a second plumber" (decided, with rationale "no reply in 5 days") | Each decision is attributed and timestamped; deferred and unresolved items stay visible |
+| 5 | Assign | "Alex drives swim" creates a routine owned by Alex. "Call a second plumber" is assigned by Sam to Alex → **pending acceptance**. Alex declines ("travelling Wed") and it returns to Sam, who takes it | One WorkItem per decision; no owner change without acceptance; a decline returns the item for replanning |
+| 6 | Delegate (from M5/M6) | [M] suggests "Draft a message to the backup plumber" and "Make a grocery list for Thursday's dinner". Sam selects only the plumber draft. It becomes a draft run that still needs exact-payload approval to send | Suggestions are labelled and opt-in; nothing sends from the session; model failure leaves planning unaffected |
+| 7 | Commit | They commit. [S] saves version 1 of the plan: decisions, owners, due dates, open questions and linked actions. Today shows the new items immediately | Committing twice is idempotent; both adults see the same state after refresh |
+| 8 | Midweek | On Wednesday either adult opens the plan's progress view: 4 of 7 actions done, 1 waiting on the plumber | Status is read from the canonical items, not copied |
+| 9 | Next week | The next session carries forward the deferred holiday decision and the unfinished items **by reference**. Completed work stays in last week's review. No due date changes on its own | No duplicates; no silent rescheduling |
+
+**Failure branches:** Sam and Alex edit the same decision at once → the version check keeps both visible and asks which to keep. The app restarts mid-session → the draft resumes where it was. A week boundary falls across a DST change → the week still starts at local midnight Monday.
+
+**Acceptance:** WF-06 criteria 1–10. Criterion 9 (15–20 minutes) and criterion 10 (four-week personal-utility review) are measured in our own use, not with fixtures.
+
 ---
 
-### Paths the Phase B prototype must demonstrate (brief, broadened after founder review)
+### Paths the first alpha must support (revised for the personal-use plan)
 
 - **Routine chore:** J3, plus the two-adult rotation in J3b.
 - **Home repair:** J2 → assign → done with photo.
-- **Complex vendor coordination:** J1, including the `delivery_unknown`, unverified reply and `done_unverified` states.
+- **Complex vendor coordination:** J1.
 - **Shared two-adult coordination:** J6, including a declined handoff and a caregiver with limited scope.
-- **Unified view:** one Today screen where chores, a handoff request and a vendor quote appear together, so interviews can test whether households want one system or only the concierge part.
+- **Ongoing project:** J7.
+- **Weekly Reset:** J8, steps 1–5 and 7–9 in Phase B; step 6 (Delegate) in Phase C.
+- **Unified Today:** chores, handoff requests, weekly-plan actions and delegated work appear together in one view.
+
+Phase B delivers the routine, rotation, home-repair (by hand), shared-week, project and Weekly Reset paths. The vendor-coordination path (J1) and its `delivery_unknown`, unverified-reply and `done_unverified` states arrive with M6.
