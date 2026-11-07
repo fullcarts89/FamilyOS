@@ -18,19 +18,22 @@ Build track:          Phase B prototype ──▶ [review] ──▶ Phase C spi
 
 The clickable prototype doubles as the interview and concierge prop. Phase C waits for Gate 0 evidence, because its spike design (channel, workflow) depends on what interviews reveal.
 
+**Product scope:** the plan builds toward the north-star household system (`docs/product/product-contract.md`). Phase B therefore tests the unified system, not only the home-service wedge: recurring chores, two-adult coordination and delegation all appear in the prototype, so Gate 0 can compare them.
+
 ## 1. Phase B — clickable prototype (fake data, no backend, no agent)
 
 | PR | Content | Tests and checks | Estimate |
 |---|---|---|---|
 | B1 | Repo scaffold: pnpm workspace, `apps/mobile` (Expo SDK, TS strict), `packages/domain` (types and state enums from ADR §5), CI (typecheck, lint, unit, gitleaks), CODEOWNERS, proprietary LICENSE notice, `docs/` moved under review | CI green; secret scan; no network calls in tests | 0.5 day |
-| B2 | Design tokens (calm palette, dynamic type, dark mode, reduced motion); synthetic fixtures for the household from J1–J5 (no real people or child data) | Snapshot tests; contrast check (WCAG AA) | 1 day |
-| B3 | Today (Needs you / In progress / This week / Handled), Capture (text + photo picker; a fake "extraction" with an editable review), Work Item detail + timeline | Capture flow timed in a scripted test; all statuses render distinctly | 1.5 days |
-| B4 | Delegation Plan, **Approval screen showing the exact payload** (recipients, sender identity, full body, consequences), Execution Timeline with all run states, including `delivery_unknown`, unverified reply and `done_unverified` | Every ADR §5 state has a fixture and a screen; snapshot of the approval payload | 1.5 days |
-| B5 | Family roles (owner, adult, limited caregiver) with visibility differences; the 3 demo paths (routine, home repair, vendor coordination); usability checklist | Checklist: capture ≤ 30 s, payload visible, statuses unambiguous, one-handed reach (bottom-anchored actions) | 1 day |
+| B2 | Design tokens (calm palette, dynamic type, dark mode, reduced motion); synthetic fixtures for the household from J1–J6, including J3b (no real people or child data) | Snapshot tests; contrast check (WCAG AA) | 1 day |
+| B3 | Today (Needs you / In progress / This week / Handled) as **one unified view** mixing chores, handoff requests and delegated work; Capture (text + photo picker; a fake "extraction" with an editable review); Work Item detail + timeline | Capture flow timed in a scripted test; all statuses render distinctly; Today shows all three item kinds from fixtures | 1.5 days |
+| B4 | **Recurring chores and shared coordination:** routines (J3: skip, reassign, missed → needs attention), two-adult rotation and swap (J3b), shared week with handoff requests, accept and decline (J6), per-adult fairness view | Rotation and swap fixtures over 8 weeks; declined handoff returns to sender; no owner change without acceptance; no AI call anywhere in this flow | 1.5 days |
+| B5 | Delegation Plan, **Approval screen showing the exact payload** (recipients, sender identity, full body, consequences), Execution Timeline with all run states, including `delivery_unknown`, unverified reply and `done_unverified` | Every ADR §5 state has a fixture and a screen; snapshot of the approval payload | 1.5 days |
+| B6 | Family roles (owner, adult, limited caregiver) with visibility differences; the **5 demo paths** (routine chore, chore rotation, home repair, shared week, vendor coordination); a **wedge-comparison script** for interviews (user-journeys "Paths"; interview kit, wedge questions); usability checklist | Checklist: capture ≤ 30 s, payload visible, statuses unambiguous, one-handed reach (bottom-anchored actions); each demo path runs start to finish on fixtures | 1 day |
 
-**Phase B total:** about 5–6 working days of build plus founder review.
+**Phase B total:** about 6.5–7.5 working days of build plus founder review (up from 5–6, for the chores and shared-coordination PR).
 **Cost:** $0 (Expo Go or the simulator; EAS Free if a device build is wanted).
-**Deliverable:** a runnable app (iOS simulator and web) plus a short walkthrough recording.
+**Deliverable:** a runnable app (iOS simulator and web), a short walkthrough recording of the 5 demo paths, and the wedge-comparison script.
 **STOP for founder feedback.**
 
 ## 2. Phase C — technical spike (local only, mocked externals)
@@ -45,7 +48,7 @@ Runs on local Postgres (Supabase CLI or Docker). There is no hosted environment,
 | C4 | Graphile Worker integration: run-step jobs, `wake_at` timers, leases, crash recovery, a global kill switch | Kill the worker mid-step → resumes once; timers survive a restart; stuck-lease reaper; time-travel clock for 21-day waits | 1.5 days |
 | C5 | Approval service + outbox + **sender** against a mock provider: canonical payload hash, role check when sending, expiry, invalidation on edit or revoke, `delivery_unknown` | T-11, T-12, T-13, T-15, T-16; duplicate approval; approval by a revoked member; crash at each of 4 points around the send | 2 days |
 | C6 | Inbound pipeline against a mock Postmark webhook: thread tokens, SPF/DKIM result fields, sender matching, quarantined reader, evidence levels E0–E4, completion rules | T-06, T-07, T-10; spoofed or forwarded or replayed replies; injection corpus (≥ 30 cases); E0 never moves state | 2 days |
-| C7 | `ModelPort` with (a) a deterministic mock and (b) recorded fixtures. Prompt and schema files for capture, plan, draft, extract and summarize. Per-step token and cost accounting | Schema validation; unknown-not-guess; fabricated-deadline detector; budget overrun → blocked (T-28) | 1.5 days |
+| C7 | `ModelPort` with (a) a deterministic mock and (b) recorded fixtures. The step interface stays framework-neutral, so a framework-backed step can be dropped in later (ADR §3.2). Prompt and schema files for capture, plan, draft, extract and summarize. Per-step token and cost accounting | Schema validation; unknown-not-guess; fabricated-deadline detector; budget overrun → blocked (T-28) | 1.5 days |
 | C8 | **Scenario suite (≥ 20, target 30)** wired end to end, plus a reliability, latency and cost report | See §2.1 | 1.5 days |
 
 **Optional C9 (separate approval, real-LLM eval):** run the C7 eval set (about 150 cases) against 2 or 3 candidate models to pick the provider. Expected cost under $25 at the listed prices. This is the only paid usage in Phase C.
@@ -54,6 +57,8 @@ Runs on local Postgres (Supabase CLI or Docker). There is no hosted environment,
 **STOP for founder GO / NO-GO.**
 
 ### 2.1 Phase C scenario suite (each a permanent automated test)
+
+The suite tests requirements R1–R8 (ADR §3.2) through the control-plane interface, not through our internals. That makes it the conformance test for any framework considered later: a framework-backed implementation is adoptable if it passes the same suite.
 
 1. Happy path, 2 vendors, booking confirmed, invoice → `verified_complete`
 2. Process restart while `awaiting_approval`
@@ -80,6 +85,7 @@ Runs on local Postgres (Supabase CLI or Docker). There is no hosted environment,
 23. User marks done without evidence → `done_unverified`
 24. Concurrent edits by both adults during approval
 25. Recurrence: skip, then reassign across a DST weekend
+26. Two-adult handoff: request, decline, re-route to a caregiver; no owner change without acceptance
 
 **Report contents:**
 - Pass/fail for each scenario.

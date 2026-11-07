@@ -55,6 +55,15 @@ States follow ADR-001 §5. Labels in "quotes" are what the user sees.
 6. Missed: Feb 1 passes unfinished → **Needs attention**, never auto-complete.
 7. Acceptance: property tests across DST transitions and timezones (brief rule 9).
 
+## J3b. Weekly chore rotation between two adults
+
+1. [H] Alex sets up "Trash and recycling out, every Sunday 19:00, rotate Sam ↔ Alex". No model call.
+2. [S] materialises occurrences with alternating owners. Both adults see the next four weeks and whose turn it is.
+3. [H] Sam is away one Sunday and taps **Swap with Alex**. [S] records the swap as an exception for that one occurrence; the rotation order continues afterwards.
+4. [H] Alex completes it with one tap. Today moves it to **Handled**, attributed to Alex.
+5. [S] A fairness view shows completed chores per adult over 30 days, as counts, not judgments.
+6. Acceptance: rotation, swap and completion work offline-first in the prototype, with no AI call; the fairness view matches the event log.
+
 ## J4. Household memory: "Who fixed the dishwasher last year?"
 
 1. [H] Alex asks in the search box.
@@ -72,10 +81,33 @@ States follow ADR-001 §5. Labels in "quotes" are what the user sees.
 5. Sam requests an **export** and receives a zip with JSON plus original files. Then Sam deletes the household: a 14-day soft delete is shown clearly, then hard delete, including files and vector rows; provider-side retention is disclosed.
 6. Acceptance: role-matrix tests (WF-05), revocation tests (T-04), and a deletion test that counts zero rows per table afterwards.
 
+## J6. Shared week: one adult travels, the other picks up
+
+**Trigger:** On Sunday evening Alex types: "I'm in Denver Wed–Fri."
+
+| # | Actor | What happens | State and UI |
+|---|---|---|---|
+| 1 | [M] capture | Extracts an away period, Wed–Fri, for Alex. Confirms the dates; no invented times | Card "Alex away Wed–Fri — review what's affected" |
+| 2 | [S] | Lists Alex's items in that window, deterministically: the rotation chore, "Pick up dry cleaning", "Call the plumber back" (from J2) and Thursday's "Kids pickup 15:30" | "4 things are yours while you're away" |
+| 3 | [H] Alex | Proposes a handoff per item: three to Sam, one deferred to Monday. Adds a note on pickup: "gate code is in the usual place" | Each item gets a pending handoff request (a separate record, not a WorkItem status); the owner is unchanged until accepted |
+| 4 | [H] Sam | Gets **Needs you: "Alex asked you to take 3 things Wed–Fri"**. Accepts two and declines dry cleaning ("can't, late meeting") | Accepted items move to Sam. The declined item goes back to Alex as **Needs you** |
+| 5 | [H] Alex | Asks Priya (limited caregiver) to take dry cleaning. Priya sees only that item | Priya accepts; Sam and Alex both see it |
+| 6 | [S] | Thursday 15:00 reminder to Sam for pickup. Sam marks it done | Both adults see "Kids pickup — done by Sam, 15:41" |
+| 7 | [S] | Monday: "Alex is back. 1 deferred item: Call the plumber back" | Deferred item returns to Alex's Today |
+
+**Failure branches:**
+- Sam ignores the request for 12 hours → one reminder to Sam, and Alex sees "Sam hasn't answered".
+- Sam and Alex edit the same item at once → the version check rejects the stale edit (as in J3).
+- Children appear only as names on items; they have no accounts (PRD challenge B5).
+
+**Acceptance:** every handoff is explicit and visible to both adults; no item changes owner without acceptance; nothing is lost when a request is declined.
+
 ---
 
-### Paths the Phase B prototype must demonstrate (brief)
+### Paths the Phase B prototype must demonstrate (brief, broadened after founder review)
 
-- **Routine chore:** J3.
+- **Routine chore:** J3, plus the two-adult rotation in J3b.
 - **Home repair:** J2 → assign → done with photo.
 - **Complex vendor coordination:** J1, including the `delivery_unknown`, unverified reply and `done_unverified` states.
+- **Shared two-adult coordination:** J6, including a declined handoff and a caregiver with limited scope.
+- **Unified view:** one Today screen where chores, a handoff request and a vendor quote appear together, so interviews can test whether households want one system or only the concierge part.

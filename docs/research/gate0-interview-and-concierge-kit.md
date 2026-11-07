@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-07. Founder-run. Nothing here is automated, and no FamilyOS software contacts anyone.
 
-## Gate 0: 12–15 target-household interviews (30 min each)
+## Gate 0: 12–15 target-household interviews (45 min each, including about 10 minutes on the prototype)
 
 **Screen:**
 - US, two or more adults sharing a household, children under 18, homeowner, both adults employed.
@@ -21,6 +21,13 @@
 9. Would you let software email a contractor for you if you approved each message? Text? Call? Where's the line?
 10. Commitment test: "We're running a 3-week pilot where our team handles your next home-service job end to end. $25 deposit, refunded if we don't book it." Yes / no / why.
 
+**Wedge questions (added after founder review; use the Phase B prototype as the prop).** Walk through the five demo paths in a rotated order, so no path always comes first.
+
+11. "Which of these would you open this week, and why?" Then: "Which would you still be using in two months?"
+12. "Would you want chores, the shared week and contractor follow-up in one app, or only one of them? Which one?" Probe what they would drop.
+13. "What does your partner use today? Would they join for this? For which part?"
+14. "If you could pay for only one part, which, and roughly how much a month?" Ask only after 11–13, so price does not anchor the earlier answers.
+
 **Record:**
 - Number of hires in the last 12 months.
 - Minutes spent on the last one.
@@ -28,6 +35,7 @@
 - Partner split.
 - Incumbent apps used.
 - Pilot commitment (yes/no/deposit).
+- Wedge preference: first choice and two-month choice among A (home-service coordination), B (chores and routines), C (two-adult coordination) and D (unified), plus whether the partner would join.
 
 **Pass:**
 - 8 or more of the interviewees describe a recurring coordination or follow-up pain.
@@ -35,6 +43,12 @@
 - The median household reports 3 or more hires a year.
 
 That third condition is new; it addresses the frequency risk.
+
+**Wedge decision rule** (feeds `docs/product/product-contract.md` §4):
+- If 50% or more choose **D (unified)** as their two-month choice, the launch is the unified system, with the most-chosen part as its lead.
+- Otherwise, the single most-chosen part leads, and the others stay on the roadmap in the order chosen.
+- If no option reaches 35%, or partner-join intent is under 40%, record the split and run Gate 1 on the top two candidates.
+- These thresholds are proposals for the founder to adjust before interviews start.
 
 ## Gate 1: concierge (5–10 households, one real task each)
 

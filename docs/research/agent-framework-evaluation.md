@@ -10,7 +10,8 @@
 
 - Neither is a durable workflow engine. Both leave persistence, idempotency, tenancy and approval binding to the application.
 - The bench reproduced the gaps that matter: duplicate sends after a crash, a duplicate approval consumed as a vendor reply, a changed payload sent after approval, and a model claiming success after the tool failed.
-- **Recommendation:** FamilyOS owns the control plane in Postgres, waits are queue rows, and LLM calls are stateless validated functions. No agent framework in MVP. See ADR-001 §3.
+- **Recommendation:** FamilyOS owns the control plane in Postgres, waits are queue rows, and LLM calls are stateless validated functions. The MVP does not depend on an agent framework, and one can be adopted later. See ADR-001 §3.
+- **Read the results as requirements, not as a verdict on frameworks.** The control-plane baseline was written with safeguards that the framework examples lacked (§1.3). The findings define what any runtime must guarantee (ADR-001 §3.2, R1–R8).
 
 ## 1. What was tested locally
 
@@ -60,7 +61,29 @@
   - LangGraph's resume value goes to *whatever interrupt is pending*, so a late approval became the vendor's reply. Keyed resume (row 8) fixes this only if the caller always supplies interrupt IDs.
 - **Row 14 is the false-completion trap the PRD warns about.** The SDK is working as designed: tool errors go back to the model. So *run completion must never be read from model output.*
 - **Row 11:** LangGraph's silent stranding is the worst outcome for weeks-long runs. The SDK fails loudly, which is better but still strands the run. Keeping durable state in FamilyOS rows avoids both.
-- Each framework is fine for what it is designed to do. None of these is a bug report against them. The rows show which guarantees FamilyOS must provide itself, and those guarantees are most of the hard part.
+- Each framework is fine for what it is designed to do. None of these is a bug report against them. The rows show which guarantees FamilyOS must provide itself, and those guarantees are most of the hard part. See §1.3 for why the comparison favours the baseline.
+
+### 1.3 How to read these results (added after founder review)
+
+**The comparison is not like for like.**
+
+- **The baseline had the safeguards built in.** I wrote `cp_bench.py` after designing for exactly these failures: payload-hash approvals, an outbox with `delivery_unknown`, event IDs and a tenant check. It passes because it was built to pass.
+- **The framework harnesses were minimal, idiomatic examples.** They used each framework's documented approval and persistence features and added nothing around them. Both frameworks document that idempotency, identity and authorization are the application's job.
+- **Several framework failures are fixable with application code.** Row 6 shows a provider idempotency key fixing LangGraph's duplicate send. Row 8 shows keyed resume fixing the duplicate-approval case. Payload hashing (row 9), tenant checks (row 10) and evidence-based completion (row 14) can be added around either framework.
+- **What remains structural** is narrower: LangGraph's silent end after a renamed node (row 11) and re-execution before `interrupt()` (row 4) are behaviours to design around, not to patch over.
+
+**What the findings do establish:**
+
+1. Durable state, idempotent sends, payload-bound approvals, event dedupe, tenancy and evidence-based completion are **requirements** (ADR-001 §3.2, R1–R8), whatever runtime is used.
+2. Neither framework provides them by default, so FamilyOS writes that code either way.
+3. Given (2), the MVP keeps the control plane in FamilyOS code, where those guarantees are easiest to test.
+
+**What they do not establish:**
+
+- That frameworks are unsuitable for FamilyOS. A framework hardened with the same safeguards was not tested.
+- Anything about real-LLM behaviour, scale or developer productivity.
+
+**Keeping adoption open.** The Phase C scenario suite (plan §2.1) is written against the control-plane interface. A fair rerun would wrap LangGraph or the Agents SDK with the same safeguards and run that suite. If a framework-backed version passes with less code, or adds value such as a tool loop or tracing, it can be adopted, inside a step first.
 
 ## 2. Comparison across the wider field
 

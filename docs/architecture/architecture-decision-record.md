@@ -3,6 +3,7 @@
 **Status:** Proposed. Awaiting founder Gate 0.
 **Date:** 2026-11-07
 **Scope:** Phases B–D (prototype, spike, limited alpha). This is not a scaling architecture.
+**Product scope:** the north-star household system (`docs/product/product-contract.md`): chores, routines, calendars, coordination, home records, memory and agentic execution. The launch wedge is one workflow template on top; it does not shape the schema.
 **Evidence:** `docs/research/agent-framework-evaluation.md`, `docs/research/competitor-matrix.md`, `reports/FamilyOS Phase A research.md`, and the local framework bench at `docs/research/evidence/framework-bench/`.
 
 ## 1. Decision in one paragraph
@@ -13,7 +14,7 @@ FamilyOS code owns the **control plane**: work-item and run state machines, appr
 
 Long waits (vendor replies, reminders, recurrence) are **rows with a `wake_at`**, picked up by a Postgres job queue (**Graphile Worker**, MIT). We use no workflow-replay engine.
 
-LLM calls are **stateless, schema-validated functions** behind a `ModelPort` interface, called through the provider SDK. **No agent framework in the MVP.**
+LLM calls are **stateless, schema-validated functions** behind a `ModelPort` interface, called through the provider SDK. **The MVP does not depend on an agent framework**, and the control plane is built so that one can be adopted later without moving approvals, sends, tenancy or completion out of FamilyOS code (§3.2).
 
 The client is **Expo / React Native**. Email to vendors goes through **Postmark** from a FamilyOS domain, with per-thread reply addresses. We use no Gmail OAuth, AI voice calling, SMS or browser automation in MVP.
 
@@ -37,8 +38,8 @@ The client is **Expo / React Native**. Email to vendors goes through **Postmark*
 |---|---|---|---|---|---|
 | **A. Own state tables + Graphile Worker** | Rows + `run_at`; no worker held | FamilyOS SQL | A two-week-old run is a row read by current code | MIT | **Chosen** |
 | B. DBOS Transact (Postgres library) | Durable sleep/recv in our Postgres | DBOS tables in our DB | Recovers only matching app version; needs pinning/patching | MIT (auto-upgrade is a paid tier) | Strong fallback if recovery code grows |
-| C. LangGraph + Postgres checkpointer | Interrupt/resume | Opaque checkpoint blobs | Renamed paused node ended the run silently in our bench | MIT; self-hosted Agent Server needs a commercial key | Reject as control plane |
-| D. OpenAI Agents SDK RunState | Caller serializes JSON | Caller | Renamed agent/tool fails to restore (fails closed) | MIT | Reject as control plane; acceptable as a step library |
+| C. LangGraph + Postgres checkpointer | Interrupt/resume | Opaque checkpoint blobs | Renamed paused node ended the run silently in our bench | MIT; self-hosted Agent Server needs a commercial key | Not the system of record for MVP; candidate for a step or sub-graph later (§3.2) |
+| D. OpenAI Agents SDK RunState | Caller serializes JSON | Caller | Renamed agent/tool fails to restore (fails closed) | MIT | Not the system of record for MVP; candidate step library (§3.2) |
 | E. Temporal | Excellent | Temporal cluster | Patch markers or pinned workers for weeks | MIT | Over-weight for MVP |
 | F. Inngest / Trigger.dev / Restate / Hatchet | Varies | External engine | Varies | SSPL server / no self-host checkpoints / BSL / MIT | Not chosen (licence, or a second system) |
 
@@ -48,7 +49,9 @@ The cost is roughly 300–500 lines of recovery, timer and lease code. That code
 
 ### 3.2 Agent runtime
 
-**No framework in MVP.** The MVP's LLM work is five bounded calls:
+**The MVP does not need an agent framework, and the design keeps one adoptable.**
+
+The MVP's LLM work is five bounded calls:
 
 - capture → structured item
 - plan → fixed workflow template + parameters
@@ -56,7 +59,29 @@ The cost is roughly 300–500 lines of recovery, timer and lease code. That code
 - extract vendor reply → typed fields
 - summarize options with citations
 
-None of them needs an autonomous tool loop. Each is one request with a JSON Schema and a validator. When a real tool-calling loop is justified (multi-source research in Phase D+), add the OpenAI Agents SDK or Pydantic AI-style loop *inside* one step, with its output still validated and still gated by the control plane. LangGraph's value is graph state and checkpoints, which we deliberately keep in our own tables.
+None of them needs an autonomous tool loop. Each is one request with a JSON Schema and a validator, so a framework would add a dependency without adding a capability yet.
+
+**What the bench does and does not show.** The framework harnesses were short, idiomatic examples without the application-level safeguards that both frameworks expect the application to add. The control-plane baseline was written by the evaluator with those safeguards built in. So the bench shows what FamilyOS must guarantee. It does not show that a framework with those safeguards added would fail (evaluation §1.3).
+
+**Architectural requirements (any runtime, framework or not, must meet these):**
+
+| # | Requirement | Bench evidence |
+|---|---|---|
+| R1 | Durable run state survives restarts and deploys, and fails loudly, never silently, on incompatible code | rows 1, 11 |
+| R2 | Each external side effect runs at most once; an unknown outcome becomes `delivery_unknown`, never a blind retry | rows 5, 6 |
+| R3 | Approval is bound to the exact payload hash, approver role and expiry, and is checked at send time | row 9 |
+| R4 | Events are deduplicated by ID and accepted only if valid for the current state | rows 7, 8 |
+| R5 | Every run and resume is scoped to one household | row 10 |
+| R6 | Completion comes from evidence rows (E1–E4), never from model output | rows 2, 14 |
+| R7 | Persisted state is classified and encrypted where it holds personal data | row 15 |
+| R8 | Approvals, sends and authorization stay in deterministic FamilyOS code (brief rule 6) | design |
+
+**Adoption path.** A framework can be adopted later, in either of two ways:
+
+- **Inside a step:** for example, a multi-source research loop in Phase D+ using the OpenAI Agents SDK, Pydantic AI, the Vercel AI SDK or a LangGraph sub-graph. The step's output is still schema-validated and still gated by the control plane. This needs no change to R1–R8.
+- **More broadly**, for example as the run engine: only if it passes the Phase C requirement suite (plan §2.1), which is written against the control-plane interface and not against our implementation.
+
+**Guardrails:** keep `ModelPort` and the step interface framework-neutral; never store approval or completion state only in a framework checkpoint; disable vendor tracing by default.
 
 ### 3.3 Backend language
 
@@ -211,13 +236,14 @@ Rules:
   - Deploys never strand runs.
   - Approvals and tenancy can be tested without a framework.
   - No second datastore or cluster.
-  - The framework choice is deferred until it is needed.
+  - The framework choice is deferred until it is needed, and a framework stays adoptable inside a step or, after passing the requirement suite, more broadly.
 - **Negative:**
   - We own the recovery, lease and timer code, and must test it hard.
   - We don't get LangGraph Studio-style visual debugging; our own run timeline view replaces it.
   - Supabase couples auth and storage to one vendor, mitigated by the API-only data access path.
 - **Revisit triggers:**
-  - Agent work needs open-ended tool loops.
+  - Agent work needs open-ended tool loops (adopt a framework inside that step first).
+  - A framework-backed implementation passes the R1–R8 requirement suite with less code than ours.
   - Recovery code exceeds ~1k lines or keeps producing bugs.
   - More than 10k active runs.
   - A first non-email channel is added.
