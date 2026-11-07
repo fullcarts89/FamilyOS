@@ -1,52 +1,74 @@
-# FamilyOS implementation plan: Phase A to a private household alpha
+# FamilyOS implementation plan: from Phase A to a usable household system
 
 **Date:** 2026-11-07
-**Revision:** 3. Personal-use strategy (`docs/product/product-contract.md`), aligned with PRD v0.2 including Weekly Reset (WF-06).
+**Revision:** 4. Personal household use first (`docs/product/product-contract.md`), aligned with PRD v0.3 (WF-06 to WF-10).
 **Status:** Proposed. Nothing below starts until the founder approves `docs/decisions/founder-gate-0.md`.
 **Architecture:** ADR-001.
 **Threat IDs:** T-xx refer to `docs/security/threat-model.md`.
 
 ## 0. Principles
 
-- **Real use early.** Our household starts using Today, routines and handoffs after M2, about 9–10 working days in. Weekly Reset follows about a week later, so the first real session can happen that weekend. AI and delegation come after that, into an app already in daily use.
-- **Three core experiences:** Today, Weekly Reset and Delegate. Today and Weekly Reset make up the first alpha; Delegate arrives once its safety gate passes.
-- **No commercial gates.** There are no customer interviews, concierge pilots, pricing tests or market gates (PRD §11 override). Each milestone ends at an **engineering and security gate**: concrete tests that must pass before we rely on that feature.
-- **Manual first, AI second.** Every workflow, including saving a weekly plan, works with no AI. AI speeds things up but is never required.
+- **Priority order (founder, revision 4):**
+  1. A stable, secure app both adults can use.
+  2. Core tasks, routines and shared coordination.
+  3. Weekly Reset with real household data.
+  4. Calendar integration and practical household workflows.
+  5. AI assistance and safe delegation.
+  6. Further features informed by real use.
+- **Small, independently testable milestones.** Each one ends at an engineering and security gate, ships as its own PR against `main`, and leaves the app usable.
+- **Reliability over schedule.** Estimates are focused working days, including tests. If a gate fails, the milestone takes longer; the gate is never relaxed to hit a date.
+- **Manual first, AI second.** Every workflow works without AI. AI speeds things up but is never required.
 - **Synthetic fixtures for tests, real data for use.** CI never contains our real household data. A second synthetic household is always seeded, to prove isolation.
-- **Founder approval at each real-world step.** These each need your explicit approval: the first deploy, connecting a real calendar, the first real LLM call on household data, and the first real email to a vendor.
-
-**Phase names, redefined:**
-- **Phase B** is now the private household alpha, M0–M3. It replaces the fake-data-only prototype.
-- **Phase C** is M4–M6: schedules, AI assist and delegation.
-- **Phase D** (other households, commercial use) is deferred and needs a separate decision.
+- **Founder approval at each real-world step:**
+  - the first deploy;
+  - connecting each real calendar (read, and later write);
+  - the first real LLM call on household data;
+  - the first real email to a vendor;
+  - the first real calendar write.
 
 ## 1. Milestones and gates
 
-### Phase B: private household alpha
+### P0: first usable household alpha (M0–M6)
 
-| M | Content | Gate that must pass | Estimate |
+| M | Content | Gate | Estimate |
 |---|---|---|---|
-| **M0** Repo foundation | pnpm workspace: `apps/mobile` (Expo with Router; iOS and web targets), `apps/api` (Hono on Node), `apps/worker`, `packages/domain` (types, state enums, transition tables), `packages/db` (SQL migrations, typed queries). Supabase CLI local stack. CI: typecheck, lint, unit tests, gitleaks. Proprietary LICENSE notice | **G0:** CI green; one-command local stack; secret scan clean; no network calls in tests | 1 day |
-| **M1** Household foundation | Schema: household, member (adult, caregiver, child without account), invite, work_item, work_event (append-only), recurrence_rule, occurrence, project, asset, vendor, source, and the PRD's WeeklyPlan, WeeklyAgendaItem, WeeklyDecision and WeeklyPlanEvent. API with Supabase Auth (email one-time code; **public sign-up disabled**; invite only). RLS through `set_config`. Audit events on every write. Export endpoint (JSON plus files). Expo shell with sign-in | **G1 security:** cross-household matrix against a seeded second household returns 404 with no write (T-01, T-02); anon and authenticated table grants empty (T-05); sign-up verified closed; no secrets or item text in logs; export round-trips | 3 days |
-| **M2** Today and the daily household core (no AI) | **Today** (Needs you / In progress / This week / Handled); quick capture (text, photo); one-off tasks and **projects** with subtasks; **routines** (calendar-based and after-completion; rotation; skip, swap and pause; missed → needs attention); **handoff requests** (accept, decline, re-route to caregiver); comments; **Home** (rooms, assets, vendors, warranties, maintenance log); manual calendar events; notifications (Expo Push, quiet hours, email digest fallback) | **G2 daily-use alpha:** recurrence property tests across DST and month-ends (10k random schedules vs a reference expander); concurrent-edit conflicts surface; no owner change without acceptance; backup **restore test** passes; app deployed privately (§4) and both adults signed in. **Then daily use starts** | 5–6 days |
-| **M3** Weekly Reset | Session per household and local week start, with draft / in_session / committed states and reopen-with-audit. **Look Back:** a deterministic agenda of overdue, blocked and unfinished items, routine occurrences, pending approvals and last week's unresolved decisions, with provenance and refresh time, plus free-text topics from either adult and reordering. **Look Ahead:** seven days of events, deadlines, chores, projects and conflicts, with connected, manual and suggested items labelled differently. **Decide:** decision records (text, linked items, who, when, optional rationale; decided / deferred / unresolved). **Assign:** each decision creates or links exactly one WorkItem; handoffs stay pending acceptance. **Commit:** a versioned plan both adults see. Then a midweek progress view, carry-forward by reference at the next session, and an optional weekly reminder. The Delegate step shows a placeholder until M5 | **G3 Weekly Reset:** deterministic tests for WF-06 acceptance criteria 1–6 and 8: week boundaries, timezone and DST, double commit and double reopen idempotent, conflicting edits, accept and decline, carry-forward without duplication or date changes, and role scoping. A synthetic dry run takes 20 minutes or less. **Then the first real Weekly Reset** | 4–5 days |
+| **M0** Repo foundation | pnpm workspace: `apps/mobile` (Expo with Router; iOS and web targets), `apps/api` (Hono on Node), `apps/worker`, `packages/domain` (types, state enums, transition tables), `packages/db` (SQL migrations, typed queries). Supabase CLI local stack. CI: typecheck, lint, unit tests, gitleaks. Proprietary LICENSE notice | **G0:** CI green; one-command local stack; secret scan clean; no network calls in tests; dependency licences confirmed (§5) | 1–1.5 days |
+| **M1** Household foundation and security | Schema for household, member (adult, caregiver, child without account), invite, work_item, work_event (append-only), source. API with Supabase Auth: email one-time code, **public sign-up disabled**, invite only. RLS through `set_config`. Audit event on every write. Export (JSON plus files). Expo shell with sign-in | **G1:** cross-household matrix against a seeded second household returns 404 with no write (T-01, T-02); anon and authenticated grants empty (T-05); sign-up verified closed; no secrets or item text in logs; export round-trips | 3–4 days |
+| **M2** Tasks, projects, inbox and Today | Inbox (accept, edit, discard); quick capture (structured text, photo attach); tasks and projects with subtasks; owner and due date; work-item state machine; comments; **Today** (Needs you / In progress / This week / Handled); timeline | **G2:** illegal transitions rejected; optimistic concurrency surfaces conflicts; every status renders distinctly; capture of a task in 30 seconds or less in a scripted test; audit on every write | 3–4 days |
+| **M3** Routines and chores | Constrained recurrence expander on `temporal-polyfill` (daily, weekly by weekday, monthly by day or nth weekday, every N days after completion); occurrences; rotation between adults; skip, swap and pause; reassign; missed → needs attention | **G3:** property tests across US zones, DST both ways and month-ends; 10k random schedules against a reference expander; rotation and swap over 8 weeks; skip never edits the rule; no AI call anywhere | 3–4 days |
+| **M4** Private deploy and hardening | Hosting per decision 3; secrets in the host store; TLS; error reporting that carries IDs only, never content; daily backups; both adults invited; baseline questions recorded (contract §7) | **G4:** backup **restore test** passes; health checks; rollback rehearsed once; founder approves the deploy. **Real use starts** (tasks, projects, routines) | 1.5–2 days |
+| **M5** Coordination and notifications | Handoff requests (accept, decline, re-route to caregiver); caregiver role and visibility; manual events; notifications (Expo Push, quiet hours, digest, dedupe); attachments (photo and PDF allow-list, re-encoding) | **G5:** no owner change without acceptance; declines return to the requester; caregiver role matrix (WF-05); notification dedupe and quiet-hours tests; upload allow-list tests | 3–4 days |
+| **M6** Weekly Reset (manual) | WF-06 steps 1–4 and 6: session per household and local week; deterministic Look Back agenda with provenance; Look Ahead over manual events, due dates, chores and projects; decisions; assignment with pending handoffs; versioned commit; midweek progress; carry-forward by reference; optional weekly reminder. The Delegate step offers manual follow-ups only (create a task, copy a message) until M13 | **G6:** automated tests for WF-06 criteria 1–6 and 8; a synthetic dry run takes 20 minutes or less; then the **first real Weekly Reset**. **STOP for founder review** | 5–6 days |
 
-**Phase B total:** about 13–15 working days, with daily use from about day 10 and Weekly Reset from about day 15.
+**P0 total:** about 20–26 working days. Real use starts after M4, at about day 12–16. The first real Weekly Reset follows M6.
 
-### Phase C: schedules, AI and delegation
+### P1: near-term enhancements (M7–M14)
 
-| M | Content | Gate that must pass | Estimate |
+Stops for founder review come after M11 (practical workflows complete) and after M14 (Delegate live).
+
+| M | Content | Gate | Estimate |
 |---|---|---|---|
-| **M4** Schedules | Read-only import of each adult's calendar through its private iCal (ICS) feed, feeding Weekly Reset's Look Ahead and Today. Away periods that list affected items (journey J6). Deterministic conflict hints. An outbound ICS feed of FamilyOS items for our calendar apps | **G4:** feed URLs stored encrypted and never logged (they act as passwords); timezone and DST tests on imported events; a feed that fails to fetch shows as "stale", never as wrong data. **Founder approves connecting each real calendar** | 2–3 days |
-| **M5** AI assist | `ModelPort` (provider SDK, schema-validated, stateless). Capture from text or photo → an editable suggestion, never auto-saved. Household memory search (Postgres FTS plus pgvector) with citations and an "unknown" answer. **Weekly Reset suggestions** (WF-06 step 5): labelled suggestions such as a grocery list, a draft childcare message or a repair research plan, which the user explicitly selects and which produce drafts only. Per-call token budget and monthly cap. Data minimisation before each call (§3) | **G5 AI:** eval set of at least 60 synthetic cases: zero fabricated dates, events or owners; citations only to returned rows; the unknown path works; injection cases in photos and PDFs have no effect; a model failure never blocks manual planning (WF-06 criterion 7); monthly cost under the approved cap. **Founder approves the first real call on household data** | 4–5 days |
-| **M6** Delegate and contractor coordination | Control plane: agent_run, approval (payload hash, role, expiry), outbox, sender (the only holder of send credentials), Postmark inbound webhook, quarantined reader model, evidence levels E0–E4, kill switch. **Manual hand-off** (prefilled text or call script plus "log what happened") as a first-class path. Postmark relay with per-thread reply addresses. Vendors from our Home records or pasted in. Weekly Reset's Delegate step goes live | **G6 external actions:** the scenario suite (§1.1) passes against a mock provider, covering R1–R8; zero bypassed approvals; zero false completions. **Founder approves the first real send**, for one real task | 6–7 days |
-| **M7** Four-week review | After four consecutive Weekly Resets, review the success measures (product contract §6) from the event log and the sessions themselves. Fix what hurts; decide what comes next | **G7:** a written review; any trust measure above zero blocks new features until fixed | 1 day |
+| **M7** Calendar read | Each adult's private iCal feed, polled about every 15–30 minutes; Look Ahead and Today show imported events; deterministic overlap hints; away periods (J6); an outbound ICS feed of FamilyOS items | **G7:** feed URLs encrypted and never logged (T-31); timezone and DST tests on imported events; a failed fetch shows as "stale", never as wrong data. **Founder approves each real feed** | 2–3 days |
+| **M8** Home records and search | Rooms, assets, vendors, warranties, maintenance log and documents, attached to projects; structured and full-text search across all household records, with private items excluded for other members | **G8:** search is household-scoped and visibility-aware (T-32 pattern); unknown queries return "nothing found"; documents follow the upload rules | 3 days |
+| **M9** Templates and checklists | WF-08: templates of task specs with relative offsets and owner roles; instantiate with an anchor date into an ordinary project; save any project as a template; starter set (school prep, travel and packing, birthday, hosting, seasonal prep, maintenance project) | **G9:** instantiation idempotent; offsets correct across DST; generated items behave like hand-made ones everywhere | 3 days |
+| **M10** Lists, meals and groceries | WF-07: shared lists (groceries, supplies, other) with outstanding and purchased states; recurring supplies through the recurrence engine; favorite meals with ingredients; weekly meal plan; a **Meals step in Weekly Reset**; "add groceries from this week's meals" as a reviewable proposal, merged by normalized name | **G10:** concurrent edits by both adults converge with no lost items; generating twice adds nothing; each recurring supply reappears once per occurrence | 4–5 days |
+| **M11** Proactive assistance (rules) | WF-10: deterministic signal engine (preparation needed, unresolved decisions, overlaps, unassigned or overdue items, stalled projects, supplies due, pending handoffs and approvals); **auto-prepared Weekly Reset agenda**; per-adult preferences; digest by default | **G11:** every signal cites its records; none fires from missing data; dismissals respected until the records change; default noise budget of at most 1 digest a day and at most 3 immediate notifications a week per adult. **STOP for founder review** | 3–4 days |
+| **M12** Approval and outbox control plane | agent_run, approval (payload hash, role, expiry), outbox, sender (the only holder of send credentials), evidence levels E0–E4, kill switch, `delivery_unknown`, mock email and calendar providers | **G12:** scenario suite (§1.1) items 1–12, 18–24 and 27–30 pass against the mocks, covering R1–R8 | 5–6 days |
+| **M13** AI assist | `ModelPort` (provider SDK, schema-validated, stateless). Capture from text or photo → editable suggestion; cited answers over M8 records; **Weekly Reset AI follow-through** (WF-06 step 5, criterion 7): labelled, opt-in drafts. Per-call budget and monthly cap; data minimisation (§3) | **G13:** eval set of at least 60 synthetic cases: zero fabricated dates, events or owners; citations only to returned rows; injection cases in photos and PDFs have no effect; model failure never blocks manual work. **Founder approves the first real call on household data** | 4–5 days |
+| **M14** Delegate | Contractor coordination over M12: Postmark relay with per-thread reply addresses, inbound webhook, quarantined reader, **manual hand-off** as a first-class path; vendors from M8 records; the Weekly Reset Delegate step goes live | **G14:** the full scenario suite (§1.1, items 1–27) passes; zero bypassed approvals; zero false completions. **Founder approves the first real send.** **STOP for founder review** | 5–6 days |
 
-**Phase C total:** about 13–16 working days. **Build total:** about 26–31 working days.
+**P1 total:** about 29–35 working days. M7–M11 can be reordered after P0 based on our real use, and M12 can start earlier if calendar writes are wanted sooner (decision 2).
 
-**Order flexibility:** M4, M5 and M6 can be reordered after Phase B, based on what our household needs most (§2). M6 depends only on M1–M3.
+### P2: later capabilities
 
-### 1.1 Scenario suite for G6 (each a permanent automated test)
+| M | Content | Gate | Estimate |
+|---|---|---|---|
+| **M15** Calendar writes | WF-09: per-adult write connections (Google Calendar API or CalDAV, per decision); writable-calendar allow-list; an approval card showing the exact event; create, change or delete through the M12 outbox with a client-supplied event ID; re-read the range before writing and show conflicts | **G15:** suite items 28–30 against the real provider's sandbox or a test calendar; zero unapproved writes; one event after a crash and retry; a changed event surfaces a conflict; revoking a connection cancels pending writes. **Founder approves each writable calendar** | 4–5 days |
+| Later | AI-ranked proactive recommendations; recipe import and meal suggestions; email forwarding into the inbox; more delegation workflows | Each gets its own gate and founder approval | — |
+
+**Overall:** about 49–61 working days for P0 and P1, plus about 4–5 for calendar writes. Calendar time will be longer, because each milestone pauses for your review and real use.
+
+### 1.1 Scenario suite (permanent automated tests for G12, G14 and G15)
 
 The suite tests requirements R1–R8 (ADR §3.2) through the control-plane interface, not through our internals. That also makes it the conformance test for any agent framework considered later.
 
@@ -77,36 +99,50 @@ The suite tests requirements R1–R8 (ADR §3.2) through the control-plane inter
 25. Recurrence: skip, then reassign across a DST weekend
 26. Two-adult handoff: request, decline, re-route to a caregiver; no owner change without acceptance
 27. Weekly Reset Delegate step: a selected suggestion creates a draft run; nothing sends until the exact-payload approval; committing the plan twice creates one run
+28. Calendar create: crash after the provider accepts → retry with the same client event ID creates one event
+29. Calendar change: the event was edited elsewhere (version mismatch) → conflict shown, no overwrite
+30. Calendar write to a calendar the adult has not enabled, or by a member without access → rejected at send time
 
 Simulated actions are labelled `SIMULATED` everywhere in the UI and the logs.
 
 ## 2. Prioritisation by real household workflows
 
-Before M2 starts, the founder lists our real workflows: about 10–20 routines, the current projects, upcoming home maintenance, open contractor jobs and how our weekly planning session runs today. That list sets the shape of the M2–M3 fixtures (synthetic copies, not the real text) and the Phase C order.
+Before M2 starts, the founder lists our real workflows:
+- about 10–20 routines;
+- current projects;
+- upcoming home maintenance;
+- open contractor jobs;
+- how our weekly planning works today;
+- typical meals and staples;
+- recurring logistics we'd template.
 
-| Our workflow | First supported in | Journey |
-|---|---|---|
-| Weekly planning session | M3 (manual), M4 (calendar in Look Ahead), M5 (AI suggestions), M6 (delegate from the session) | J8 |
-| Recurring chores and rotation | M2 | J3, J3b |
-| Handoffs when one adult is busy or away | M2 (handoff), M4 (away period from calendar) | J6 |
-| Family scheduling | M2 (manual events), M4 (calendar feeds) | J6, J8 |
-| Home maintenance (filters, gutters, service intervals) | M2 (routines and Home), M6 (booking a pro) | J3, J1 |
-| Home issues from a photo | M2 (by hand), M5 (AI capture) | J2 |
-| Ongoing projects | M2 | J7 |
-| Contractor coordination | M2 (vendor records), M6 (outreach) | J1 |
-| "Who did we use for…?" | M2 (records), M5 (memory search) | J4 |
+That list sets the shape of the fixtures (synthetic copies, not the real text) and the order of P1.
+
+| Our workflow | First supported | Grows in | Journey |
+|---|---|---|---|
+| Weekly planning session | M6 (manual) | M7 calendar, M10 meals, M11 auto-agenda, M13 AI follow-through, M14 delegate, M15 calendar writes | J8 |
+| Recurring chores and rotation | M3 | M11 (overdue and unassigned signals) | J3, J3b |
+| Handoffs when one adult is busy or away | M5 | M7 (away periods from calendar) | J6 |
+| Family scheduling and logistics | M5 (manual events) | M7 (feeds), M15 (writes) | J6, J11 |
+| Home maintenance | M3 (routines) | M8 (records), M9 (templates), M14 (booking a pro) | J3, J1 |
+| Ongoing projects | M2 | M8 (attachments), M11 (stalled-project signals) | J7 |
+| Meals, groceries and supplies | M10 | P2 (recipe import, suggestions) | J9 |
+| Recurring logistics (school, travel, birthdays, hosting) | M9 | M11 (preparation signals) | J10 |
+| Home issues from a photo | M2 (by hand) | M13 (AI capture) | J2 |
+| Contractor coordination | M8 (vendor records) | M14 (outreach) | J1 |
+| "Who did we use for…?" | M8 (search) | M13 (cited answers) | J4 |
 
 ## 3. Security and privacy rules for real household data
 
 - **Isolation:** RLS plus API-only access from day one, even with one household (ADR-001 §3.4).
 - **Children:** named members without accounts. Only what a workflow needs is stored (name, and the items they appear on). Before an LLM call, child names are replaced with role tokens ("Child 1") wherever the task allows.
 - **LLM provider:** no training on API data; the shortest available retention; vendor tracing off. Item content never goes into logs, only IDs and counts.
-- **Weekly plans:** decisions and agenda notes are household-private by default. A private (single-adult) item never appears on the shared agenda (PRD WF-05).
-- **Secrets:** calendar feed URLs, API keys and the Postmark token live in the host's secret store and are encrypted at rest where stored in the database. gitleaks runs in CI.
-- **Uploads:** MIME allow-list and re-encoding (EXIF stripped) from M2. Malware scanning before any file is opened by an agent step (M6).
-- **Backups:** daily managed backups, with a restore test at G2 and then monthly.
-- **Revocation:** removing a member ends their sessions and voids any approval they were party to (T-04).
-- **External actions:** only after G6, only through the sender, and the first real send needs your approval.
+- **Weekly plans, lists and signals** follow item visibility. A private item never appears on a shared agenda, list or digest (T-32).
+- **Secrets:** calendar feed URLs, OAuth tokens, API keys and the Postmark token live in the host's secret store or are encrypted at rest in the database. gitleaks runs in CI.
+- **Uploads:** MIME allow-list and re-encoding (EXIF stripped) from M5. Malware scanning before any file is opened by an agent step (M13).
+- **Backups:** daily managed backups, with a restore test at G4 and then monthly.
+- **Revocation:** removing a member ends their sessions, voids any approval they were party to, and cancels pending calendar writes on their connections (T-04).
+- **External actions:** only after G12, only through the sender, and each first real action type needs your approval.
 
 ## 4. Hosting and running costs (single household)
 
@@ -116,8 +152,8 @@ Prices are from the Phase A commodity notes, accessed 2026-11-07. Recheck them b
 |---|---|---|---|
 | Postgres, Auth, Storage | Supabase Pro | $25/month | Free projects pause after 1 week of inactivity and Free lists no backups; Pro includes 7-day daily backups |
 | API and worker | Railway Hobby (one service, two processes) | $5/month, including $5 of usage | Always on; no spin-down |
-| LLM (from M5) | Small-tier model for capture and extraction; mid-tier for summaries | about $1–5/month (estimate) | Small tier is about $0.10 / $0.50 per Mtok input/output |
-| Email relay (from M6) | Postmark | Free (100 emails/month) if its inbound webhook works on Free; otherwise Pro at $16.50/month | Contractor volume for one household is low |
+| LLM (from M13) | Small-tier model for capture and extraction; mid-tier for summaries | about $1–5/month (estimate) | Small tier is about $0.10 / $0.50 per Mtok input/output |
+| Email relay (from M14) | Postmark | Free (100 emails/month) if its inbound webhook works on Free; otherwise Pro at $16.50/month | Contractor volume for one household is low |
 | Domain | One domain for the relay and the app | about $10–20/year (not checked) | Needed for SPF/DKIM/DMARC |
 | iPhone install and push | Apple Developer Program | $99/year | Durable installs (TestFlight) and push on iPhone; skip if we use Android or the web app |
 | Builds and push | EAS Free, Expo Push | $0 | 15 iOS builds a month is enough |
@@ -126,29 +162,41 @@ Prices are from the Phase A commodity notes, accessed 2026-11-07. Recheck them b
 
 **$0 alternative:** run Postgres, the API and the worker in Docker on a home machine, reached only through Tailscale. Nothing is exposed to the internet, but we own backups, uptime and updates.
 
-No account is created and nothing paid is used without your approval (decision 2).
+No account is created and nothing paid is used without your approval (decision 3).
 
 ## 5. What we reuse instead of building
 
 | Need | Reuse | Licence | Status |
 |---|---|---|---|
 | Database, auth, file storage, RLS | Supabase (managed) and the Supabase CLI for local dev | Apache-2.0 stack | Verified in Phase A notes |
-| Jobs, timers, retries, weekly reminders | Graphile Worker | MIT | Verified (v0.18.0) |
+| Jobs, timers, retries, reminders, signal runs | Graphile Worker (including its cron) | MIT | Verified (v0.18.0) |
 | Mobile and web client | Expo / React Native, Expo Router, `expo-image-picker`, `expo-notifications` | MIT | Verified (`expo` 58.0.23) |
 | Share-sheet capture | `expo-share-intent` | MIT | Verified (9.0.0) |
-| Dates, timezones, DST, week boundaries | `temporal-polyfill` | MIT | Verified (1.0.8) |
+| Dates, timezones, DST, week boundaries, template offsets | `temporal-polyfill` | MIT | Verified (1.0.8) |
 | Search and memory | Postgres full-text search, pgvector | PostgreSQL licence; pgvector to confirm | Partly verified |
 | Image re-encoding | sharp | Apache-2.0 (libvips LGPL, dynamically linked) | Verified |
 | Push delivery | Expo Push service | Free service | Verified |
 | Inbound and outbound email | Postmark API | Commercial service | Verified pricing |
 | API server, validation, typed SQL | Hono, Zod, Kysely | MIT (from memory) | Confirm in M0 |
 | Tests | Vitest, fast-check (property tests), Playwright (web end to end) | MIT / MIT / Apache-2.0 (from memory) | Confirm in M0 |
-| ICS parsing | `node-ical` or `ical.js` | To confirm (ical.js may be MPL-2.0, which is acceptable) | Confirm in M4 |
+| ICS parsing | `node-ical` or `ical.js` | To confirm (ical.js may be MPL-2.0, which is acceptable) | Confirm in M7 |
+| Calendar writes | Google Calendar API client or a CalDAV client such as `tsdav` | To confirm | Confirm in M15 |
 | Secret scanning | gitleaks | MIT (from memory) | Confirm in M0 |
 
-**Built by us** (small, and where the guarantees live): the recurrence expander (a constrained subset, property-tested), the work-item and run state machines, the Weekly Reset session and carry-forward logic, the approval service and sender, the notification outbox with quiet hours, and the evidence model.
+**Meals, lists, templates and proactive signals need no new libraries.** They are tables and SQL over the existing model, plus Graphile Worker jobs. Ingredient matching is a simple normalized-name merge, not a parser, so no recipe library is needed.
 
-**Reference only, no code copied:** Donetick, HomeBox and Mealie (AGPL), Tandoor (AGPL plus Commons Clause), nanoMuse (GPL), under the clean-room rule. Grocy (MIT) and Home Assistant (Apache-2.0) are permissive. Home Assistant is a possible later integration, for example reminders tied to devices, but not a base.
+**Built by us** (small, and where the guarantees live):
+- the recurrence expander (a constrained subset, property-tested);
+- the work-item and run state machines;
+- Weekly Reset session and carry-forward logic;
+- template instantiation;
+- list merge rules;
+- the signal engine;
+- the approval service and sender;
+- the notification outbox with quiet hours;
+- the evidence model.
+
+**Reference only, no code copied:** Donetick, HomeBox and Mealie (AGPL), Tandoor (AGPL plus Commons Clause) and nanoMuse (GPL), under the clean-room rule. Mealie and Tandoor are the closest meal-planning references, so the rule matters most for M10. Grocy (MIT) and Home Assistant (Apache-2.0) are permissive. Home Assistant is a possible later integration, for example reminders tied to devices, but not a base.
 
 **Not used now:** agent frameworks (adoptable later inside a step, ADR §3.2), external memory products, authorization engines and notification SaaS. Phase A found each heavier than our needs.
 
@@ -156,6 +204,8 @@ No account is created and nothing paid is used without your approval (decision 2
 
 - Billing, pricing, customer onboarding, self-serve sign-up, admin console, marketing site, App Store listing.
 - Customer interviews, concierge pilots and pricing experiments (kept only as archived reference).
+- A recipe manager, pantry inventory, grocery delivery integration, or a calendar replacement.
+- Unconstrained autonomous agents. Proactive features suggest; they never act without approval.
 - Live collaborative cursors in Weekly Reset (PRD WF-06 says not needed for MVP).
 - AI voice calls, SMS, browser automation, and reading Gmail or Outlook mailboxes.
 - Child logins.
@@ -165,7 +215,7 @@ No account is created and nothing paid is used without your approval (decision 2
 - Any code derived from nanoMuse or AGPL household apps.
 - Reverse engineering competitor apps.
 
-## 7. Per-run cost model for contractor coordination (M6)
+## 7. Per-run cost model for contractor coordination (M14)
 
 | Step | Model tier | Tokens in/out (est.) | Cost |
 |---|---|---|---|

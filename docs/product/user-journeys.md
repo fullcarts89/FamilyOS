@@ -128,16 +128,57 @@ States follow ADR-001 §5. Labels in "quotes" are what the user sees.
 
 **Acceptance:** WF-06 criteria 1–10. Criterion 9 (15–20 minutes) and criterion 10 (four-week personal-utility review) are measured in our own use, not with fixtures.
 
+**How J8 grows after the P0 alpha (M6):**
+- M7: Look Ahead adds both adults' imported calendar events.
+- M10: a **Meals** step between Assign and Delegate (J9).
+- M11: the agenda arrives **pre-prepared** from signals (J12), so the session starts from a draft instead of a blank page.
+- M13: step 6 shows AI suggestions.
+- M14: those suggestions can be delegated.
+- M15: a decision can create a calendar event (J11).
+
+## J9. Meals and groceries in Weekly Reset (P1, M10)
+
+1. [H] In the Meals step, Alex drags three favorites onto Mon, Wed and Thu and types "leftovers" for Tue. A household note shows: "Sam: no mushrooms".
+2. [S] Tapping **Add groceries from meals** proposes 11 items from the favorites' ingredients. 2 are already outstanding on the Groceries list, so they are merged and shown as "already on list".
+3. [H] Sam removes "rice" ("we have plenty") and accepts. 8 new items are added, attributed to the plan.
+4. [S] "Dishwasher tablets" (recurring every 3 weeks) reappears on Household supplies this week, once.
+5. [H] At the store, Sam checks items off; Alex sees them move to Purchased on their phone. Alex adds "birthday candles" mid-trip; it appears for Sam.
+6. **Acceptance:** tapping "Add groceries" again adds nothing; concurrent check-offs lose nothing; the meal plan appears in next week's Look Back as "last week's meals" for reuse.
+
+## J10. Template: weekend trip (P1, M9)
+
+1. [H] Sam picks the **Travel and packing** template and sets the anchor date Fri 11/20 and owners Sam and Alex.
+2. [S] Creates one project, "Trip — 11/20", with tasks at offsets: book pet sitter (−10 days, Alex), hold mail (−3 days, Sam), packing checklist for each child (−1 day, either adult), set the thermostat (day 0, Sam).
+3. [S] Tasks show in Today on their dates and in Weekly Reset's Look Ahead. A signal (M11) flags "pet sitter not booked, trip in 7 days".
+4. [H] After the trip, Alex edits the project ("add: charge the tablets") and taps **Save as template**, creating version 2. The finished trip project is unchanged.
+5. **Acceptance:** retrying the instantiation creates one project; offsets stay correct across a DST weekend; generated tasks are ordinary tasks everywhere.
+
+## J11. Decision → calendar event, with approval (P2, M15)
+
+1. [H] In Weekly Reset, they decide: "Swim lessons start Tue 11/17, 16:00–16:45, Alex drives."
+2. [S] Alex has connected their Google Calendar and enabled "Family" for writes. FamilyOS shows an approval card: calendar "Family", title "Swim — Alex drives", Tue 11/17 16:00–16:45 America/Los_Angeles, no attendees, no notes.
+3. [S] Before writing, the sender re-reads that range and finds "Dentist 15:30–16:30". The card shows the **conflict**. Alex moves swim to 16:45 and approves the changed card; the earlier approval is void because the payload hash changed.
+4. [S] The event is created with a client-chosen ID. A crash after the provider accepts → the retry with the same ID creates nothing new, and the run records the existing event.
+5. [H] Sam, who has not enabled writes to Alex's calendar, cannot approve writes to it.
+6. **Acceptance:** suite items 28–30; zero writes without approval; the event links back to the decision and the WorkItem.
+
+## J12. Proactive preparation, low-noise (P1, M11)
+
+1. [S] Friday evening, the signal engine finds: a birthday party Sunday with no gift task (from a template anchor); "Call a second plumber" assigned 9 days ago with no activity; Thursday's two 15:30 pickups; and dishwasher tablets due.
+2. [S] Nothing is sent immediately. All four land in Saturday's digest (Sam's preference) and on the pre-prepared Weekly Reset agenda, each with links to its source records.
+3. [H] Sam dismisses the tablets signal ("bought already"). It stays dismissed until the item's records change.
+4. [S] A pending approval that expires tonight is the one immediate notification.
+5. **Acceptance:** every signal links to its records; no signal appears for data that doesn't exist; the weekly count stays within the noise budget; no external action happens without approval.
+
 ---
 
-### Paths the first alpha must support (revised for the personal-use plan)
+### Paths the first usable alpha (P0, M0–M6) must support
 
 - **Routine chore:** J3, plus the two-adult rotation in J3b.
-- **Home repair:** J2 → assign → done with photo.
-- **Complex vendor coordination:** J1.
-- **Shared two-adult coordination:** J6, including a declined handoff and a caregiver with limited scope.
-- **Ongoing project:** J7.
-- **Weekly Reset:** J8, steps 1–5 and 7–9 in Phase B; step 6 (Delegate) in Phase C.
-- **Unified Today:** chores, handoff requests, weekly-plan actions and delegated work appear together in one view.
+- **Home repair, by hand:** J2 → assign → done with photo.
+- **Shared two-adult coordination:** J6, without calendar-derived away periods (those arrive in M7).
+- **Ongoing project:** J7, without vendor records (M8).
+- **Weekly Reset, manual:** J8 steps 1–5 and 7–9; step 6 offers manual follow-ups only.
+- **Unified Today:** chores, projects, handoff requests and weekly-plan actions in one view.
 
-Phase B delivers the routine, rotation, home-repair (by hand), shared-week, project and Weekly Reset paths. The vendor-coordination path (J1) and its `delivery_unknown`, unverified-reply and `done_unverified` states arrive with M6.
+**P1:** J9 meals (M10), J10 templates (M9), J12 proactive (M11), J4 memory (M8, M13), J1 vendor coordination (M14), with its `delivery_unknown`, unverified-reply and `done_unverified` states. **P2:** J11 calendar writes (M15).

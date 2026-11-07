@@ -1,9 +1,9 @@
 # ADR-001: FamilyOS MVP architecture
 
-**Status:** Proposed. Awaiting founder approval of `docs/decisions/founder-gate-0.md` (revision 3).
-**Revision:** 3. Personal household use first; PRD v0.2 with Weekly Reset (WF-06).
+**Status:** Proposed. Awaiting founder approval of `docs/decisions/founder-gate-0.md` (revision 4).
+**Revision:** 4. Personal household use first; PRD v0.3 (Weekly Reset WF-06, meals WF-07, templates WF-08, calendar writes WF-09, proactive assistance WF-10).
 **Date:** 2026-11-07
-**Scope:** the private household alpha and what follows it (plan M0–M7). This is not a scaling architecture. It is optimised for one household and stays extensible to more.
+**Scope:** the private household alpha and what follows it (plan M0–M15). This is not a scaling architecture. It is optimised for one household and stays extensible to more.
 **Product scope:** the north-star household system (`docs/product/product-contract.md`): chores, routines, calendars, coordination, home records, memory and agentic execution. The three core experiences (Today, Weekly Reset and Delegate) are views and workflows over one shared schema.
 **Evidence:** `docs/research/agent-framework-evaluation.md`, `docs/research/competitor-matrix.md`, `reports/FamilyOS Phase A research.md`, and the local framework bench at `docs/research/evidence/framework-bench/`.
 
@@ -47,7 +47,7 @@ The client is **Expo / React Native**. Email to vendors goes through **Postmark*
 
 Why A over B: every FamilyOS step is short, from milliseconds to tens of seconds. Each step reads a row, does one thing and commits the next state. A replay engine's main benefit is resuming in the middle of a function, and we design that need away.
 
-The cost is roughly 300–500 lines of recovery, timer and lease code. That code needs tests, which the Phase C spike will write. If it grows unwieldy, DBOS can be adopted without leaving Postgres.
+The cost is roughly 300–500 lines of recovery, timer and lease code. That code needs tests, which milestones M3 and M12 write. If it grows unwieldy, DBOS can be adopted without leaving Postgres.
 
 ### 3.2 Agent runtime
 
@@ -81,7 +81,7 @@ None of them needs an autonomous tool loop. Each is one request with a JSON Sche
 **Adoption path.** A framework can be adopted later, in either of two ways:
 
 - **Inside a step:** for example, a multi-source research loop in Phase D+ using the OpenAI Agents SDK, Pydantic AI, the Vercel AI SDK or a LangGraph sub-graph. The step's output is still schema-validated and still gated by the control plane. This needs no change to R1–R8.
-- **More broadly**, for example as the run engine: only if it passes the Phase C requirement suite (plan §2.1), which is written against the control-plane interface and not against our implementation.
+- **More broadly**, for example as the run engine: only if it passes the requirement suite (plan §1.1, gate G12), which is written against the control-plane interface and not against our implementation.
 
 **Guardrails:** keep `ModelPort` and the step interface framework-neutral; never store approval or completion state only in a framework checkpoint; disable vendor tracing by default.
 
@@ -118,6 +118,7 @@ The household alpha is built in Expo from the start. It runs on our phones and o
 | Send-as-user Gmail | Later, `gmail.send` only (sensitive scope, no CASA). Never read scopes. | Vendors may trust our own address more. Testing-mode tokens expire every 7 days, so it stays out of the alpha |
 | Calendars in | Each adult's private iCal (ICS) feed, polled about every 15–30 minutes; read-only | No OAuth. The feed URL is a secret: encrypted at rest, never logged |
 | Calendar out | An ICS feed of FamilyOS items, behind a secret URL | Calendar apps refresh subscribed feeds at their own pace |
+| Calendar writes (P2, M15) | A `CalendarPort` with two adapters: Google Calendar API and CalDAV. Writes are `ExternalAction` rows through the same approval, outbox and sender path as email | Idempotent creates use a client-chosen event ID (Google) or a client-chosen resource name with `If-None-Match: *` (CalDAV); changes use the provider's ETag. Both behaviours to be confirmed against the provider in M15. Per-adult connections and a writable-calendar allow-list. For Google, an OAuth app in testing mode loses refresh tokens every 7 days; the publishing setup is decided in M15 |
 | SMS | Deferred | A2P 10DLC registration, TCPA, and opt-out handling. |
 | AI voice calls | **Excluded** | Under the FCC's 2024 ruling AI voices count as "artificial", so calling cell numbers needs consent, and many contractors use mobile phones. |
 | Manual hand-off | **P0 and primary** | Prefilled text or call script with a "Log what happened" button. Vendors often answer only by phone or text, and our own M6 use will measure this. |
@@ -137,7 +138,7 @@ Yelp is excluded: §9.4 of its terms bars Yelp content in generative AI. Contrac
 
 ### 3.8 Model provider
 
-The ADR stays provider-agnostic behind `ModelPort`. Choose in Phase C on a fixed eval set: capture accuracy, zero fabricated deadlines, reply-extraction accuracy, and injection-resistance cases. Requirements:
+The ADR stays provider-agnostic behind `ModelPort`. Choose in M13 on a fixed eval set: capture accuracy, zero fabricated deadlines, reply-extraction accuracy, and injection-resistance cases. Requirements:
 
 - structured outputs;
 - vision for photos and PDFs;
@@ -175,6 +176,10 @@ Expo app ──HTTPS──▶ API (Fastify/Hono, TS)
         │ weekly_plan · weekly_agenda_item             │
         │ weekly_decision · weekly_plan_event (append) │
         │ handoff_request · calendar_feed · event      │
+        │ list · list_item · meal · meal_plan_entry    │
+        │ template · template_instance                 │
+        │ signal · signal_preference                   │
+        │ calendar_connection (write, P2)              │
         │ agent_run · agent_step · approval            │
         │ outbox (idempotency_key UNIQUE) · evidence   │
         │ source · asset · vendor · thread · message   │
@@ -182,9 +187,11 @@ Expo app ──HTTPS──▶ API (Fastify/Hono, TS)
         └──────────────────────────────────────────────┘
                      ▲
 Workers (same codebase, separate process):
-  scheduler  – materialise occurrences, wake runs whose wake_at ≤ now
+  scheduler  – materialise occurrences, wake runs whose wake_at ≤ now, re-add recurring list items
+  signals    – deterministic rules over records → signal rows (scheduled and on change)
+  feeds      – poll iCal feeds; publish the outbound feed
   run-step   – advance one agent_run by exactly one transition
-  sender     – the ONLY code holding Postmark send credentials; re-verifies approval
+  sender     – the ONLY code holding Postmark and calendar-write credentials; re-verifies approval
   inbound    – Postmark webhook → verify → store message → reader model → typed fields
   notifier   – push/email digests, quiet hours
 ModelPort: capture | plan | draft | extract_reply | summarize   (stateless, schema-validated)
@@ -237,6 +244,15 @@ Rules:
 - **AI suggestions** (from M5) are rows of their own, labelled as suggestions. Selecting one creates a draft `agent_run`, which still meets the full approval path in §4.
 - **Week boundary:** Monday 00:00 local by default (a household setting), computed with Temporal so DST weeks have the right length.
 
+### 5.2 Lists, meals, templates and signals (PRD WF-07, WF-08, WF-10)
+
+All four are thin layers over the canonical model. None keeps its own copy of another record's status.
+
+- **Lists:** `list_item` has `outstanding | purchased`, a `normalized_name` (lower-case, trimmed, simple singular) and `version`. Concurrent check-offs converge because each is an event plus a version check, so no item is lost. A recurring supply is a `recurrence_rule` whose occurrence re-adds one item (idempotency key: rule ID plus occurrence date).
+- **Meals:** `meal_plan_entry` belongs to a date and optionally to a `weekly_plan`. "Add groceries from meals" computes a proposal; accepting it writes list items with idempotency key (`weekly_plan_id`, `meal_id`, `normalized_name`), so a second run adds nothing.
+- **Templates:** a versioned JSON list of task specs. Instantiation runs in one transaction with idempotency key (`template_id`, anchor date, request ID). It creates one project WorkItem plus children, and records `template_version`. Later template edits do not touch existing instances.
+- **Signals:** deterministic SQL rules, run by the worker on a schedule and after relevant writes. Each `signal` row stores `source_refs[]` and a `fingerprint` (rule plus source IDs plus a record-version hash), so a dismissed signal stays dismissed until its records change. Delivery goes through the existing notification outbox with per-member preferences and a noise budget. The Weekly Reset agenda reads open signals as agenda candidates. AI ranking (P2) may reorder or phrase signals, but cannot create one without a source record.
+
 ## 6. Assumptions (each one is tested or revisited)
 
 1. Email reaches enough local vendors to be useful. **Unproven.** Our own M6 use measures it by channel; the manual hand-off covers vendors who only call or text.
@@ -246,6 +262,8 @@ Rules:
 5. A constrained recurrence subset covers 95% or more of household routines. Validate against our own routine list (plan §2).
 6. A single region (US) and a single currency cover MVP.
 7. Weekly Reset needs no live collaboration. Version checks and conflict prompts are enough for two adults (PRD WF-06).
+8. Normalized-name matching is good enough to merge grocery items. If it isn't, add a small synonym table before considering a parser.
+9. Our calendar providers support idempotent creates and ETag-checked updates as described in §3.6. Confirm in M15 before relying on them.
 
 ## 7. Consequences
 
@@ -265,3 +283,4 @@ Rules:
   - Recovery code exceeds ~1k lines or keeps producing bugs.
   - More than 10k active runs.
   - A first non-email channel is added.
+  - Signal rules grow past what plain SQL keeps readable (consider a small rules table first).

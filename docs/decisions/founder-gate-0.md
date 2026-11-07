@@ -1,101 +1,120 @@
-# Founder decision memo: Phase A to household alpha
+# Founder decision memo: implementation readiness
 
 **Date:** 2026-11-07
-**Revision:** 3. Personal-use strategy, aligned with PRD v0.2 (commit `58a5435`, Weekly Reset as P0).
-**Recommendation:** **GO on Phase B, the private household alpha (M0–M3)**, then stop for your review before Phase C.
+**Revision:** 4. Final scope review before implementation. Aligned with PRD v0.3.
+**Recommendation:** **Ready to begin implementation.** Approve decisions 1, 2, 4 and 5 to start M0. Decision 3 (hosting) is needed only by M4, about 8–10 working days in.
 
-FamilyOS is a personal project for our two-adult household first. Commercialization is optional and later. The goal now is a working private alpha in our hands: Today and the daily household core after about 10 working days, and Weekly Reset about a week after that.
+FamilyOS is our family's household operating system first; commercialization is optional and deferred. The three core experiences are confirmed: **Today**, **Weekly Reset** and **Delegate**. The goal is a system that reduces the work of running our household, not one that maximises engagement.
 
-The full vision is kept: chores, routines, schedules, family coordination, home management, projects, household memory and AI delegation (`docs/product/product-contract.md`).
+## What changed in revision 4
 
-## What changed in revision 3
+1. **Four capabilities added** to the PRD, as lightweight layers over the existing model:
+   - **WF-07 Meals, groceries and shopping:** a meal plan, shared lists, groceries generated from meals, purchased vs outstanding, favorites and preferences, and recurring supplies. No recipe manager, pantry or delivery integration.
+   - **WF-08 Reusable templates and checklists:** templates generate ordinary projects and tasks.
+   - **WF-09 Calendar writes with approval:** exact-event approval, idempotent creates, conflict handling and per-adult permissions. iCal read stays the first step.
+   - **WF-10 Proactive assistance:** rule-based signals that cite records, an auto-prepared Weekly Reset agenda, per-adult low-noise settings. AI ranking comes later and can never act on its own.
+2. **Scope re-tiered** into P0 (first usable alpha), P1 (near-term) and P2 (later). The coverage matrix is in `docs/product/product-contract.md` §3 and PRD §6.
+3. **M2 split.** The old M2 becomes four milestones: tasks and Today (M2), routines (M3), private deploy (M4) and coordination with notifications (M5). Estimates are re-based for reliability. The P0 alpha grows from about 13–15 to about 20–26 working days, with real use starting earlier, after M4.
+4. **Success criteria rewritten:** less work to run the household, easier weekly planning, fewer forgotten commitments, clear ownership, projects moving with less follow-up, delegation that saves real time, and less coordination overhead than today. No daily-usage or retention targets.
+5. **Canonical docs updated:**
+   - PRD v0.3: jobs 8–10, §4, WF-07 to WF-10, the WF-06 delivery phasing note, and §6, §7, §9, §11, §13, §14 and §15.
+   - Product contract.
+   - Implementation plan.
+   - ADR-001: §3.6 and §5.2.
+   - User journeys J9 to J12.
+   - Threat model T-33 to T-35.
 
-1. **No commercial gates.** Customer interviews, concierge pilots, pricing experiments and market gates are removed as prerequisites. The interview kit is archived as reference, and PRD §11 now marks those gates as historical context.
-2. **Three core experiences: Today, Weekly Reset and Delegate.** Weekly Reset (PRD WF-06) is its own milestone, M3, in the first alpha. It works with no calendar and no AI. AI suggestions in the session arrive in M5; delegating from the session arrives in M6.
-3. **A working app replaces the fake-data prototype.** Phase B is now the private household alpha. Synthetic fixtures remain for tests only.
-4. **Engineering and security gates replace market gates** (G0–G7 in the plan). Each real-world step (first deploy, first real calendar, first real LLM call, first real vendor email) still needs your approval.
-5. **Success is measured by our own use:** sustained use by both adults, coverage, on-time completion, a weekly mental-load check-in, time saved, the WF-06 four-week Weekly Reset review, and zero trust failures.
-6. **Single household first.** No billing, onboarding, sign-up or SaaS admin. `household_id`, row-level security, invites and export keep later expansion cheap.
-7. **Kept as references:** the competitor research (for UX patterns and data-terms limits), the technical evaluation (requirements R1–R8) and the framework stance (no framework needed now, adoption kept open).
+   WF-06's requirements and acceptance criteria are unchanged. Prior research and architecture decisions are kept.
 
-## Repository state
+## Feature coverage (summary)
 
-- `fullcarts89/FamilyOS` is **private**. It was made private before the first push, on your approval.
-- `main` holds the three input files. PR #1 (`phase-a/research`) holds Phase A plus these revisions, on top of your PRD commit `58a5435`. The PRD is not modified by any of my commits.
-- No application code has been written.
+| Tier | Capabilities | Milestones |
+|---|---|---|
+| **P0** first usable alpha | Secure household and invites; inbox, capture, tasks, projects, Today; chores and routines; private deploy; handoffs, caregiver, manual events, notifications, attachments; **Weekly Reset (manual)** | M0–M6 |
+| **P1** near-term | Calendar read; home records and search; templates; meals and lists; proactive signals and auto-agenda; approval and outbox control plane; AI assist, including Weekly Reset AI follow-through; **Delegate** | M7–M14 |
+| **P2** later | Calendar writes; AI-ranked proactivity; recipe import and meal suggestions; email forwarding; more delegation workflows | M15+ |
+
+## Sequence and estimates
+
+| Phase | Milestones | Working days | Stops |
+|---|---|---|---|
+| P0 | M0 repo 1–1.5 · M1 foundation 3–4 · M2 tasks and Today 3–4 · M3 routines 3–4 · M4 private deploy 1.5–2 · M5 coordination 3–4 · M6 Weekly Reset 5–6 | **20–26** | Approval before deploy (M4); **review after the first real Weekly Reset (M6)** |
+| P1 | M7 calendar read 2–3 · M8 home and search 3 · M9 templates 3 · M10 meals and lists 4–5 · M11 proactive 3–4 · M12 control plane 5–6 · M13 AI 4–5 · M14 Delegate 5–6 | **29–35** | Review after M11 and after M14; approval of the first real calendar feed, LLM call and vendor email |
+| P2 | M15 calendar writes 4–5 | **4–5** | Approval of each writable calendar |
+
+These are focused build days. Calendar time is longer, because each milestone pauses for your review and real use.
+
+## Architectural changes
+
+The core decisions hold: a TypeScript monolith, Supabase Postgres through our API only, our own state machines, approvals, outbox and evidence, Graphile Worker, and no agent framework needed now. The additions are:
+
+- **New tables:** list and list_item; meal and meal_plan_entry; template and template_instance; signal and signal_preference; calendar_connection.
+- **New background work:** the worker gains signal and feed jobs, and the scheduler re-adds recurring supplies.
+- **Idempotency keys** for each generator: groceries from meals, template instantiation, recurring list items and plan commits.
+- **Calendar writes** use a `CalendarPort` (Google Calendar API or CalDAV adapter) as `ExternalAction` rows through the existing approval, outbox and sender path. Creates use client event IDs; changes are ETag-checked. Provider behaviour gets confirmed in M15.
+- **No new libraries** for meals, lists, templates or signals.
 
 ## Decisions requiring your approval (5)
 
-### 1. Product contract and success measures
+### 1. Scope tiers and coverage
 
-**Question:** Do you approve the revised product contract?
-- Personal-use first.
-- The full integrated vision.
-- Three core experiences: Today, Weekly Reset and Delegate.
-- Success measured by our household's sustained use (contract §6), including the WF-06 four-week review.
+**Question:** Do you approve the P0/P1/P2 tiers in the coverage matrix? They include three changes from PRD v0.2:
+- Delegate, the approval queue and AI capture move from P0 to P1.
+- WF-06 step 5 (AI follow-through) and criterion 7 move to M13; until then the Delegate step offers manual follow-ups.
+- Calendar writes are P2 delivery, with the architecture prepared in P1.
 
-- **Recommendation:** Yes.
-- **Trade-off:** dropping market validation means we learn nothing yet about other families. That evidence is only needed if commercialization comes up, and the Phase A market research is kept for that moment.
+- **Recommendation:** Yes. It follows your priority order: a secure app, then core coordination, Weekly Reset, practical workflows, and AI and delegation last.
+- **Trade-off:** the first alpha has no AI and no Delegate. In exchange, the full alpha, including Weekly Reset, reaches our hands about three weeks sooner (the 14–17 days of M12–M14), with nothing in it that can act outside the household.
 
-### 2. Build plan and stop points
+### 2. Sequence and stop points
 
-**Question:** Do you approve Phase B as M0–M3?
-- M0: repo foundation.
-- M1: household foundation and security.
-- M2: Today and the daily core.
-- M3: Weekly Reset.
+**Question:** Do you approve building P0 (M0–M6, about 20–26 days) and stopping for review after the first real Weekly Reset? And do you approve the P1 order: calendar read and practical workflows (M7–M11) before the control plane, AI and Delegate (M12–M14)?
 
-It takes about 13–15 working days. Daily use starts at G2; the first real Weekly Reset follows G3. Then I stop for your review before Phase C (M4 schedules, M5 AI assist, M6 Delegate, about 13–16 more days).
+- **Recommendation:** Yes, with one option for you: if creating calendar events from Weekly Reset matters more than AI or Delegate, move M15 up to run right after M12. That delays AI and Delegate by about 4–5 days.
+- **Trade-off:** more, smaller milestones mean more PRs and reviews. Each one stays independently testable, and nothing is rushed to hit the old 5–6 day M2.
 
-- **Recommendation:** Yes.
-- **Trade-off:** Delegate, the most distinctive part, comes after Weekly Reset rather than first. Delegate needs the full approval-and-outbox safety suite (G6) before any real send. Today and Weekly Reset give daily value without that risk. M4–M6 can be reordered after Phase B if our household needs Delegate sooner.
-- **Before M2:** you list our real routines, projects, maintenance and how our weekly planning works today, so the build follows real workflows (plan §2).
-
-### 3. Hosting and spending
+### 3. Hosting and spending (needed by M4)
 
 **Question:** Which hosting do you approve?
-- **(a)** Supabase Pro ($25/month, daily backups) plus Railway Hobby ($5/month). About $31–36/month, plus a domain (about $10–20/year).
-- **(b)** A $0 home-server setup reached only through Tailscale, where we own backups and uptime.
+- **(a)** Supabase Pro ($25/month, daily backups) plus Railway Hobby ($5/month), about $31–36/month plus a domain.
+- **(b)** A $0 home server reached only through Tailscale.
 
-Also: do you approve Apple Developer ($99/year) if we're on iPhones, and a monthly LLM cap (I propose $10) from M5?
+Also: Apple Developer ($99/year) if we're on iPhones, and a $10/month LLM cap from M13.
 
-- **Recommendation:** (a), because managed backups and uptime matter for real household data. Apple Developer only if we use iPhones. You create each paid account yourself; I never enter payment details.
+- **Recommendation:** (a), because managed backups and uptime matter for real household data. You create each paid account yourself; I never enter payment details.
 - **Trade-off:** (b) costs nothing, but a dead home machine means a dead household system.
 
 ### 4. Stack and real-data rules
 
-**Question:** Do you approve the stack and these data rules?
-
-**Stack** (ADR-001, unchanged):
-- TypeScript monolith, Expo, Supabase Postgres through our API only.
-- Our own state machines, approvals, outbox and evidence.
-- Graphile Worker.
-- No agent framework needed now, with adoption kept open.
-
-**Data rules:**
-- **Children:** our children appear as named members without accounts. Only what a workflow needs is stored, and names are replaced with tokens before LLM calls where possible. This replaces the brief's "no production child data" rule, which assumed a commercial pilot.
-- **Calendars:** read through each adult's private iCal feed, with no Google OAuth. OAuth testing mode would expire tokens every 7 days.
-- **External channels:** Postmark relay email with per-thread reply addresses, plus a manual hand-off path. No mailbox reading, AI voice, SMS or browser automation.
+**Question:** Do you approve the stack (ADR-001 revision 4) and these rules?
+- Children are named members without accounts, with names tokenized before LLM calls where possible.
+- Calendars are read via private iCal feeds in P1.
+- Calendar writes in P2 use each adult's own connection, with exact-event approval.
+- Vendor email goes through the Postmark relay, plus a manual hand-off path.
 
 - **Recommendation:** Yes.
-- **Trade-off:** iCal feeds are read-only, and FamilyOS polls them on a schedule (about every 15–30 minutes). Look Ahead can therefore lag a same-day calendar change, so each feed's refresh time is shown. Calendar apps that subscribe to FamilyOS's outbound feed set their own refresh rate, which we don't control. Feed availability for each of our calendar accounts gets confirmed in M4.
+- **Trade-off:** iCal polling lags same-day calendar changes by up to about 30 minutes; refresh times are shown. Which calendar provider each of us uses decides the M15 adapter. It can wait until then.
 
 ### 5. Clean-room rule
 
-**Question:** Do you approve the clean-room rule? Under it, nobody, and no AI coding assistant, works on FamilyOS with GPL or AGPL source (nanoMuse, Donetick, Mealie, HomeBox) in context. Those projects are used only through written pattern descriptions.
+**Question:** Do you approve the clean-room rule? Under it, nobody, and no AI coding assistant, works on FamilyOS with GPL or AGPL source (nanoMuse, Donetick, Mealie, Tandoor, HomeBox) in context.
 
-- **Recommendation:** Yes.
-- **Trade-off:** none material. It matters most for chores and home records, where the closest open-source references are AGPL.
+- **Recommendation:** Yes. It now matters for meal planning too, where Mealie and Tandoor are the closest references.
+- **Trade-off:** none material.
 
 ## Also needs you (not decisions)
 
-- Which phones we use: iPhone, Android or both. This affects decision 3.
-- The workflow list before M2 (decision 2).
-- Optional: the getohai.com footer check is now only relevant to the archived market research.
-- **Disclosure (unchanged):** during Phase A demand research, one automated request to the SEC's EDGAR company lookup carried your account email address in its User-Agent header. Nothing else personal was sent anywhere.
+- **Before M2:** a list of our real routines, projects, maintenance, meals and staples, recurring logistics, and how our weekly planning works today.
+- **Before M4:** which phones we use (iPhone, Android or both).
+- **Before M4:** five minutes each answering the baseline questions (contract §7).
+- **Disclosure (unchanged):** during Phase A research, one automated request to the SEC's EDGAR lookup carried your account email address in its User-Agent header. Nothing else personal was sent anywhere.
 
-## What happens on approval
+## Readiness
 
-- Build M0–M3 as one PR per milestone against `main`, each with its gate tests.
-- Ask your approval at G2 before the first private deploy.
-- Stop after G3, once the first real Weekly Reset has happened, for your review before Phase C.
+FamilyOS is ready to begin implementation:
+- The scope is tiered.
+- Every P0 milestone has a concrete gate.
+- The model covers all capabilities without separate apps.
+- No P0 work needs paid infrastructure until M4.
+
+On approval, I start M0 as its own PR against `main`. PR #1 stays open, unmerged, for you to merge when you're ready.

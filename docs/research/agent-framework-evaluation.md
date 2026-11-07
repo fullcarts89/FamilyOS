@@ -29,7 +29,7 @@
 **Limits:**
 - SQLite, not Postgres.
 - No concurrency or load test.
-- No real LLM, so no token cost or latency data. Those belong in Phase C.
+- No real LLM, so no token cost or latency data. Those belong in M13 (AI assist).
 
 ### 1.1 Results ([`results.json`](evidence/framework-bench/results.json))
 
@@ -83,7 +83,7 @@
 - That frameworks are unsuitable for FamilyOS. A framework hardened with the same safeguards was not tested.
 - Anything about real-LLM behaviour, scale or developer productivity.
 
-**Keeping adoption open.** The Phase C scenario suite (plan §2.1) is written against the control-plane interface. A fair rerun would wrap LangGraph or the Agents SDK with the same safeguards and run that suite. If a framework-backed version passes with less code, or adds value such as a tool loop or tracing, it can be adopted, inside a step first.
+**Keeping adoption open.** The scenario suite (plan §1.1, gate G12) is written against the control-plane interface. A fair rerun would wrap LangGraph or the Agents SDK with the same safeguards and run that suite. If a framework-backed version passes with less code, or adds value such as a tool loop or tracing, it can be adopted, inside a step first.
 
 ## 2. Comparison across the wider field
 
@@ -163,7 +163,7 @@ Transitive trees were resolved on 2026-11-07 with `pip-licenses` 5.5.5. The full
 
 ## 6. What remains uncertain
 
-- Real-LLM reliability and cost per run. Phase C measures them with a budget the founder approves.
+- Real-LLM reliability and cost per run. M13 measures them with a budget the founder approves.
 - How DBOS behaves on a 14-day `recv` across deploys, which matters only if we switch to it.
-- Postgres-specific behaviour (row locks, `SKIP LOCKED`, `set_config` under connection pooling). Phase C tests on Supabase local or Docker Postgres.
+- Postgres-specific behaviour (row locks, `SKIP LOCKED`, `set_config` under connection pooling). M1 and M12 test on the Supabase local stack.
 - Inngest, Hatchet and Cloudflare in-flight versioning is undocumented; moot under this recommendation.

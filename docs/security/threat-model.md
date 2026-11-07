@@ -1,7 +1,7 @@
 # FamilyOS threat model (MVP, v0.1)
 
 **Date:** 2026-11-07
-**Scope:** ADR-001 architecture through the private household alpha (plan M0–M7). Real household data is in production from G2 on.
+**Scope:** ADR-001 architecture through the household alpha and its P1/P2 milestones (plan M0–M15). Real household data is in production from G4 (private deploy) on.
 **Method:** Assets, trust boundaries, then threats per boundary, each with a mitigation and the test that proves it.
 **Basis:** [`constraints_legal_security.md`](../../research_notes/FamilyOS%20Phase%20A%20research/constraints_legal_security.md) and local bench results in `docs/research/evidence/framework-bench/`.
 
@@ -97,6 +97,9 @@ The IDs are referenced by the test plan in `docs/plan/implementation-plan.md`.
 | T-27 | Real child data in development | Our children's data exists only in the production household. Tests, CI and local dev use synthetic fixtures; production data is never copied to dev (brief rule 8). Child names are tokenized before LLM calls where the task allows |
 | T-31 | A calendar feed URL leaks (it grants read access to that calendar) | Stored encrypted, never logged or shown after entry, revocable by regenerating it in the calendar app; FamilyOS's outbound feed URL is likewise secret and rotatable |
 | T-32 | Weekly Reset shows a private item on the shared agenda | Agenda queries apply the same visibility rules as Today; a test seeds a private item and asserts it never appears for the other adult |
+| T-33 | A calendar write goes to the wrong calendar, duplicates an event, overwrites someone's edit, or is approved by a member without access (P2) | Writable-calendar allow-list per adult; exact-event approval with payload hash; client-supplied event ID; ETag-checked updates; sender re-checks the approver's access at send time; suite items 28–30 |
+| T-34 | Proactive signals leak private items into a digest, or flood both adults with notifications | Signals inherit item visibility; digests are built per recipient; per-adult preferences, quiet hours and a default noise budget; dismissal fingerprints |
+| T-35 | A calendar OAuth refresh token is stolen from storage (P2) | Minimal scopes; encrypted at rest with a key outside the database; used only by the sender; revocation on disconnect and on member removal |
 
 ### Availability, abuse and cost
 
