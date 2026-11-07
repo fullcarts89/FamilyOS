@@ -2,6 +2,8 @@
 
 **Date:** 2026-11-07
 **Revision:** 4. Final scope review before implementation. Aligned with PRD v0.3.
+**Founder decision (2026-11-07):** decisions 1, 2, 4 and 5 **approved as recommended**; M0 started. Decision 3 (hosting) is open until M4.
+
 **Recommendation:** **Ready to begin implementation.** Approve decisions 1, 2, 4 and 5 to start M0. Decision 3 (hosting) is needed only by M4, about 8–10 working days in.
 
 FamilyOS is our family's household operating system first; commercialization is optional and deferred. The three core experiences are confirmed: **Today**, **Weekly Reset** and **Delegate**. The goal is a system that reduces the work of running our household, not one that maximises engagement.
