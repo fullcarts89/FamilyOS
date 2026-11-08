@@ -1,0 +1,16 @@
+{
+  "name": "@familyos/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@familyos/domain": "workspace:*",
+    "graphile-worker": "0.18.0",
+    "zod": "4.6.7"
+  }
+}

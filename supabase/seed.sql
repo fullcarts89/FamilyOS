@@ -1,0 +1,1 @@
+-- Synthetic fixtures only; never real household data (brief rule 8). M1 adds the seeded households.
