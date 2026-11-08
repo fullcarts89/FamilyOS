@@ -5,3 +5,4 @@ export * from './agent-run';
 export * from './weekly-plan';
 export * from './handoff';
 export * from './reachability';
+export * from './permissions';

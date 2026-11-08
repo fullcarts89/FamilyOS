@@ -1,46 +1,83 @@
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { createApp } from './app';
 import { loadConfig } from './config';
+import { createTestApp } from './testing/harness';
 
-describe('api app', () => {
-  const app = createApp();
+const user = { userId: randomUUID(), email: 'someone@example.test' };
 
-  it('reports health', async () => {
-    const res = await app.request('/health');
+describe('api http layer', () => {
+  it('reports health without authentication', async () => {
+    const { request } = createTestApp();
+    const res = await request('/health');
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ status: 'ok' });
-  });
-
-  it('sets security headers and a request id', async () => {
-    const res = await app.request('/health');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('x-request-id')).toBeTruthy();
   });
 
-  it('returns a JSON 404 for unknown routes', async () => {
-    const res = await app.request('/nope');
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'not_found' });
+  it('requires a valid token for everything else', async () => {
+    const { request, tokenFor } = createTestApp();
+    expect((await request('/me')).status).toBe(401);
+    expect((await request('/nope')).status).toBe(401);
+    expect((await request('/me', { token: 'not-a-jwt' })).status).toBe(401);
+
+    const wrongIssuer = await tokenFor(user, { issuer: 'https://evil.example/auth/v1' });
+    expect((await request('/me', { token: wrongIssuer })).status).toBe(401);
+
+    const other = createTestApp();
+    const foreignSigned = await other.tokenFor(user);
+    expect((await request('/me', { token: foreignSigned })).status).toBe(401);
   });
 
-  it('hides error details from the response', async () => {
-    const failing = createApp();
-    failing.get('/boom', () => {
+  it('returns 404 for unknown routes once authenticated, and for malformed IDs', async () => {
+    const { request, tokenFor } = createTestApp();
+    const token = await tokenFor(user);
+    expect((await request('/nope', { token })).status).toBe(404);
+    expect((await request('/households/not-a-uuid', { token })).status).toBe(404);
+  });
+
+  it('hides error details from the response and the logs', async () => {
+    const { app, request, tokenFor, logs } = createTestApp();
+    app.get('/boom', () => {
       throw new Error('household secret in message');
     });
-    const res = await failing.request('/boom');
+    const res = await request('/boom', { token: await tokenFor(user) });
     expect(res.status).toBe(500);
     const body = await res.text();
     expect(body).not.toContain('household secret');
     expect(body).toContain('internal_error');
+    expect(logs.join('\n')).not.toContain('household secret');
+  });
+
+  it('rejects oversized bodies', async () => {
+    const { request, tokenFor } = createTestApp();
+    const res = await request('/invites/accept', {
+      method: 'POST',
+      token: await tokenFor(user),
+      body: { token: 'x'.repeat(70 * 1024), displayName: 'A' },
+    });
+    expect(res.status).toBe(413);
   });
 });
 
 describe('api config', () => {
-  it('defaults the port and rejects invalid values without echoing them', () => {
-    expect(loadConfig({}).API_PORT).toBe(8787);
-    expect(() => loadConfig({ DATABASE_URL: 'not a url with secret' })).toThrow(
-      /Invalid API configuration: DATABASE_URL$/,
+  const valid = {
+    DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:55322/postgres',
+    SUPABASE_URL: 'http://127.0.0.1:55321',
+    SUPABASE_SECRET_KEY: 'x'.repeat(32),
+    SUPABASE_JWT_SECRET: 'y'.repeat(40),
+  };
+
+  it('accepts a complete config and defaults the port', () => {
+    expect(loadConfig(valid).API_PORT).toBe(8787);
+  });
+
+  it('names missing or invalid fields without echoing values', () => {
+    expect(() => loadConfig({ ...valid, DATABASE_URL: 'not a url with secret' })).toThrow(
+      /^Invalid API configuration: DATABASE_URL$/,
+    );
+    expect(() => loadConfig({ ...valid, SUPABASE_JWT_SECRET: undefined })).toThrow(
+      /SUPABASE_JWKS_URL/,
     );
   });
 });

@@ -8,3 +8,8 @@ nodeLinker: hoisted
 # Dependency install scripts are blocked unless approved here.
 allowBuilds:
   esbuild: true
+
+# Keep transitive Expo packages on the same SDK patch set as the pinned direct dependencies.
+overrides:
+  '@expo/router-server': 58.0.17
+  '@react-native/metro-config': 0.88.0
