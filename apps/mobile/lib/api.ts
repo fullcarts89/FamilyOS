@@ -46,6 +46,15 @@ export interface Member {
   role: 'owner' | 'adult' | 'caregiver' | 'child';
 }
 
+export interface Invite {
+  id: string;
+  email: string;
+  role: 'adult' | 'caregiver';
+  expiresAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+}
+
 export interface WorkItem {
   id: string;
   type: 'task' | 'project' | 'routine' | 'issue';

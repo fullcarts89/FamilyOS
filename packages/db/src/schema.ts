@@ -146,6 +146,11 @@ export interface AuditEventTable {
   created_at: Timestamp;
 }
 
+export interface ServiceHeartbeatTable {
+  service: 'worker';
+  seen_at: Timestamp;
+}
+
 export interface Database {
   'app.schema_info': SchemaInfoTable;
   'app.household': HouseholdTable;
@@ -157,4 +162,5 @@ export interface Database {
   'app.occurrence_exception': OccurrenceExceptionTable;
   'app.comment': CommentTable;
   'app.audit_event': AuditEventTable;
+  'app.service_heartbeat': ServiceHeartbeatTable;
 }

@@ -23,6 +23,8 @@ const runner = await run({
   taskList: createTaskList(db),
   crontab: CRONTAB,
 });
+// Report in straight away, so readiness shows a fresh deploy as running without a 10-minute wait.
+await runner.addJob('heartbeat', {}, { jobKey: 'heartbeat_on_start' });
 
 await runner.promise;
 await db.destroy();

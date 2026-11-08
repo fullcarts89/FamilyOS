@@ -1,0 +1,11 @@
+name: Postgres 17 client
+description: Installs pg_dump and pg_restore 17 from the PostgreSQL apt repository (Supabase runs 17).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        sudo apt-get install -y -qq postgresql-common
+        sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+        sudo apt-get install -y -qq postgresql-client-17
+        echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"

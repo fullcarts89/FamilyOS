@@ -58,6 +58,9 @@ jobs:
       - run: pnpm test
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55322/postgres
+      # Gate G4: back up, wipe, restore, compare every table's checksum, re-run access tests.
+      - name: Restore drill
+        run: scripts/ops/restore-drill.sh --yes
 
   secrets:
     name: Secret scan

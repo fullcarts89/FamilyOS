@@ -10,7 +10,7 @@ describe('api http layer', () => {
     const { request } = createTestApp();
     const res = await request('/health');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: 'ok' });
+    expect(await res.json()).toEqual({ status: 'ok', version: 'dev' });
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(res.headers.get('x-request-id')).toBeTruthy();
   });
@@ -93,6 +93,11 @@ describe('api config', () => {
 
   it('accepts a complete config and defaults the port', () => {
     expect(loadConfig(valid).API_PORT).toBe(8787);
+  });
+
+  it("takes the host's PORT unless API_PORT is set", () => {
+    expect(loadConfig({ ...valid, PORT: '3000' }).API_PORT).toBe(3000);
+    expect(loadConfig({ ...valid, PORT: '3000', API_PORT: '9000' }).API_PORT).toBe(9000);
   });
 
   it('names missing or invalid fields without echoing values', () => {

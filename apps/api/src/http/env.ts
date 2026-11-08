@@ -14,6 +14,8 @@ export interface Deps {
   /** Browser origins allowed by CORS; empty means none. */
   corsOrigins?: string[];
   now?: () => Date;
+  /** Deployed commit, shown by the health checks so a rollback can be confirmed. */
+  version?: string;
 }
 
 export interface CurrentMember {

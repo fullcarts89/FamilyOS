@@ -1,0 +1,69 @@
+name: Migrate production
+
+# Applies supabase/migrations to the production database (plan M4): automatically when a merge to
+# main adds migrations, or by hand. Takes an encrypted backup first, shows the pending migrations,
+# applies them, then checks readiness. Railway's "Wait for CI" holds the new code until this
+# passes, so code never runs ahead of its schema. Migrations must keep the previous release
+# working (add, don't rename or drop), so a code rollback never needs a schema rollback.
+# Off until the repository variable PRODUCTION_ENABLED is 'true'.
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/migrations/**']
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type "migrate production" to confirm
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-database
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: >-
+      vars.PRODUCTION_ENABLED == 'true' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || inputs.confirm == 'migrate production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/postgres-client
+      - uses: supabase/setup-cli@v3.0.1
+        with:
+          version: 2.119.0
+      - name: Back up before migrating
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PUBLIC_KEY_ASC: ${{ vars.BACKUP_PUBLIC_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/backup"
+          printf '%s\n' "$BACKUP_PUBLIC_KEY_ASC" > "$RUNNER_TEMP/backup-public.asc"
+          BACKUP_PUBLIC_KEY="$RUNNER_TEMP/backup-public.asc" node scripts/ops/backup.mjs "$RUNNER_TEMP/backup"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: familyos-pre-migration-${{ github.run_id }}
+          path: ${{ runner.temp }}/backup/*.tar.gpg
+          retention-days: 90
+          if-no-files-found: error
+      - name: Pending migrations
+        run: supabase db push --db-url "$MIGRATION_DATABASE_URL" --dry-run
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+      - name: Apply
+        run: supabase db push --db-url "$MIGRATION_DATABASE_URL"
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+      - name: Readiness
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 10 "${{ vars.APP_URL }}/api/health/ready"

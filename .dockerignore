@@ -1,0 +1,14 @@
+# Build context for deploy/*.Dockerfile. Secrets and local state never enter an image.
+.env
+.env.*
+**/node_modules
+**/.expo
+**/dist
+.git
+.github
+.claude
+coverage
+supabase/.temp
+supabase/.branches
+*.md
+!README.md
