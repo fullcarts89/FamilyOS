@@ -11,6 +11,8 @@ export interface Deps {
   authAdmin: AuthAdmin;
   logger: Logger;
   inviteLinkBase: string;
+  /** Browser origins allowed by CORS; empty means none. */
+  corsOrigins?: string[];
   now?: () => Date;
 }
 

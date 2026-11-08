@@ -15,7 +15,8 @@ export type MemberStatus = 'active' | 'removed';
 export type Visibility = 'household' | 'private';
 export type WorkItemType = 'task' | 'project' | 'routine' | 'issue';
 export type SourceKind = 'text' | 'photo' | 'document' | 'email';
-export type AuditEntityType = 'household' | 'member' | 'invite' | 'work_item' | 'source';
+export type AuditEntityType =
+  'household' | 'member' | 'invite' | 'work_item' | 'source' | 'comment';
 
 export interface SchemaInfoTable {
   key: string;
@@ -75,6 +76,9 @@ export interface WorkItemTable {
   status: Generated<WorkItemStatus>;
   owner_member_id: string | null;
   due_at: Timestamp | null;
+  /** All-day due date in the household's timezone. Exclusive with due_at. */
+  due_on: ColumnType<string | null, string | null | undefined, string | null>;
+  parent_id: string | null;
   priority: number | null;
   visibility: Generated<Visibility>;
   created_by_member_id: string;
@@ -82,6 +86,15 @@ export interface WorkItemTable {
   version: Generated<number>;
   created_at: Timestamp;
   updated_at: Timestamp;
+}
+
+export interface CommentTable {
+  id: Generated<string>;
+  household_id: string;
+  work_item_id: string;
+  author_member_id: string;
+  body: string;
+  created_at: Timestamp;
 }
 
 export interface AuditEventTable {
@@ -103,5 +116,6 @@ export interface Database {
   'app.invite': InviteTable;
   'app.source': SourceTable;
   'app.work_item': WorkItemTable;
+  'app.comment': CommentTable;
   'app.audit_event': AuditEventTable;
 }

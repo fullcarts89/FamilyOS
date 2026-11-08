@@ -10,7 +10,9 @@ import { createLogger } from '../logger';
 export const TEST_ISSUER = 'http://127.0.0.1:55321/auth/v1';
 
 /** Test app with a per-run random signing secret, a recording auth admin and captured logs. */
-export function createTestApp(options: { db?: Kysely<Database> } = {}) {
+export function createTestApp(
+  options: { db?: Kysely<Database>; now?: () => Date; corsOrigins?: string[] } = {},
+) {
   const secret = randomBytes(32).toString('hex');
   const logs: string[] = [];
   const ensuredEmails: string[] = [];
@@ -27,6 +29,8 @@ export function createTestApp(options: { db?: Kysely<Database> } = {}) {
     authAdmin,
     logger: createLogger((line) => logs.push(line)),
     inviteLinkBase: 'familyos://invite',
+    ...(options.now && { now: options.now }),
+    ...(options.corsOrigins && { corsOrigins: options.corsOrigins }),
   });
 
   const tokenFor = async (

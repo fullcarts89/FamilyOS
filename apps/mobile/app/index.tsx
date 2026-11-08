@@ -1,49 +1,125 @@
-import { Redirect } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator } from 'react-native';
+import { Redirect, router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl } from 'react-native';
+import { ItemRow, ListScreen, Section } from '../components/items';
 import { Body, Button, ErrorText, Screen, Title } from '../components/ui';
-import { api, type MyHousehold } from '../lib/api';
+import { api, type TodayResponse } from '../lib/api';
+import { useHousehold } from '../lib/household';
 import { useSession } from '../lib/session';
 import { supabase } from '../lib/supabase';
 
-// M1 home: who you are and which household you belong to. Today arrives in M2.
-export default function Home() {
-  const { session, loading } = useSession();
-  const [households, setHouseholds] = useState<MyHousehold[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+// Today (PRD §4): decisions and exceptions first, then what's moving, what's due, what got handled.
+export default function Today() {
+  const { session, loading: sessionLoading } = useSession();
+  const { household, loading: householdLoading, error: householdError } = useHousehold();
+  const [today, setToday] = useState<TodayResponse | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    if (!session) return;
-    api<{ households: MyHousehold[] }>('/me')
-      .then((me) => setHouseholds(me.households))
-      .catch(() => setError('Couldn’t load your household. Pull to try again later.'));
-  }, [session]);
+  const load = useCallback(async () => {
+    if (!household) return;
+    try {
+      setToday(await api<TodayResponse>(`/households/${household.id}/today`));
+      setError(false);
+    } catch {
+      setError(true);
+    }
+  }, [household]);
 
-  if (loading)
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
+
+  if (sessionLoading)
     return (
       <Screen>
         <ActivityIndicator />
       </Screen>
     );
   if (!session) return <Redirect href="/sign-in" />;
-
-  return (
-    <Screen>
-      <Title>FamilyOS</Title>
-      {error && <ErrorText>{error}</ErrorText>}
-      {households === null && !error && <ActivityIndicator />}
-      {households?.length === 0 && (
+  if (householdLoading)
+    return (
+      <Screen>
+        <ActivityIndicator />
+      </Screen>
+    );
+  if (householdError)
+    return (
+      <Screen>
+        <ErrorText>Couldn’t load your household.</ErrorText>
+      </Screen>
+    );
+  if (!household) {
+    return (
+      <Screen>
+        <Title>FamilyOS</Title>
         <Body muted>
           You’re signed in but not in a household yet. Open the invite link your household owner
           sent you.
         </Body>
+        <Button title="Sign out" onPress={() => supabase.auth.signOut()} />
+      </Screen>
+    );
+  }
+
+  const refresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
+  const date = today?.date ?? '';
+  return (
+    <ListScreen
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
+      footer={
+        <>
+          {today && today.inboxCount > 0 ? (
+            <Button
+              title={`Sort inbox (${today.inboxCount})`}
+              onPress={() => router.push('/inbox')}
+            />
+          ) : null}
+          <Button title="Capture" onPress={() => router.push('/capture')} />
+        </>
+      }
+    >
+      <Title>Today</Title>
+      <Pressable accessibilityRole="link" onPress={() => router.push('/work')}>
+        <Body muted>All to-dos →</Body>
+      </Pressable>
+      {error && <ErrorText>Couldn’t refresh. Pull down to try again.</ErrorText>}
+      {!today && !error && <ActivityIndicator />}
+      {today && (
+        <>
+          <Section title="Needs you" empty="Nothing needs you right now.">
+            {today.needsYou.map((item) => (
+              <ItemRow key={item.id} item={item} today={date} />
+            ))}
+          </Section>
+          {today.inProgress.length > 0 && (
+            <Section title="In progress">
+              {today.inProgress.map((item) => (
+                <ItemRow key={item.id} item={item} today={date} />
+              ))}
+            </Section>
+          )}
+          <Section title="This week" empty="Nothing due in the next seven days.">
+            {today.thisWeek.map((item) => (
+              <ItemRow key={item.id} item={item} today={date} />
+            ))}
+          </Section>
+          {today.handled.length > 0 && (
+            <Section title="Handled">
+              {today.handled.map((item) => (
+                <ItemRow key={item.id} item={item} today={date} />
+              ))}
+            </Section>
+          )}
+        </>
       )}
-      {households?.map((h) => (
-        <Body key={h.id}>
-          {h.name} · {h.role}
-        </Body>
-      ))}
-      <Button title="Sign out" onPress={() => supabase.auth.signOut()} />
-    </Screen>
+    </ListScreen>
   );
 }

@@ -72,6 +72,8 @@ export function exportRoutes() {
         'description',
         'status',
         'owner_member_id as ownerMemberId',
+        'parent_id as parentId',
+        'due_on as dueOn',
         'due_at as dueAt',
         'priority',
         'visibility',
@@ -79,6 +81,18 @@ export function exportRoutes() {
         'version',
         'created_at as createdAt',
         'updated_at as updatedAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    const comments = await trx
+      .selectFrom('app.comment')
+      .select([
+        'id',
+        'work_item_id as workItemId',
+        'author_member_id as authorMemberId',
+        'body',
+        'created_at as createdAt',
       ])
       .where('household_id', '=', householdId)
       .orderBy('created_at')
@@ -107,6 +121,7 @@ export function exportRoutes() {
       invites,
       sources,
       workItems,
+      comments,
       auditEvents: auditEvents.map((e) => ({ ...e, id: String(e.id) })),
       files: sources.flatMap((s) =>
         s.storageRef ? [{ sourceId: s.id, storageRef: s.storageRef }] : [],

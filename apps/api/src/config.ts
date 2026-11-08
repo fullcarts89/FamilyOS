@@ -12,6 +12,16 @@ const ConfigSchema = z
     /** ... or with the legacy shared secret (HS256), as the local CLI stack does. */
     SUPABASE_JWT_SECRET: z.string().min(32).optional(),
     INVITE_LINK_BASE: z.string().default('familyos://invite'),
+    /** Comma-separated browser origins allowed to call the API (the web app). Native apps need none. */
+    CORS_ORIGINS: z
+      .string()
+      .default('')
+      .transform((v) =>
+        v
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean),
+      ),
   })
   .refine((c) => c.SUPABASE_JWKS_URL || c.SUPABASE_JWT_SECRET, {
     message: 'set SUPABASE_JWKS_URL or SUPABASE_JWT_SECRET',

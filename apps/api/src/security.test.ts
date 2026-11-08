@@ -105,6 +105,15 @@ describe.skipIf(!db)('API security (G1)', () => {
         { expectedVersion: 1, title: 'tampered' },
       ],
       ['GET', `/households/${b.id}/export`],
+      ['GET', `/households/${b.id}/today`],
+      ['GET', `/households/${b.id}/inbox`],
+      ['POST', `/households/${b.id}/work-items/${b.sharedItemId}/accept`, { expectedVersion: 1 }],
+      ['POST', `/households/${b.id}/work-items/${b.sharedItemId}/discard`, { expectedVersion: 1 }],
+      ['GET', `/households/${b.id}/work-items/${b.sharedItemId}/comments`],
+      ['POST', `/households/${b.id}/work-items/${b.sharedItemId}/comments`, { body: 'intrusion' }],
+      ['GET', `/households/${a.id}/work-items/${b.sharedItemId}/comments`],
+      ['POST', `/households/${a.id}/work-items/${b.sharedItemId}/comments`, { body: 'intrusion' }],
+      ['POST', `/households/${a.id}/work-items/${b.sharedItemId}/accept`, { expectedVersion: 1 }],
       // Own household, foreign resource IDs.
       ['GET', `/households/${a.id}/work-items/${b.sharedItemId}`],
       [
@@ -290,13 +299,13 @@ describe.skipIf(!db)('API security (G1)', () => {
       const created = await request(base, {
         method: 'POST',
         token,
-        body: { title: 'Replace filter', ownerMemberId: a.adult.id },
+        body: { title: 'Replace filter', ownerMemberId: a.adult.id, inbox: false },
       });
       expect(created.status).toBe(201);
       const { item } = (await created.json()) as {
         item: { id: string; version: number; status: string };
       };
-      expect(item.status).toBe('new');
+      expect(item.status).toBe('ready');
 
       const patch = (body: Record<string, unknown>) =>
         request(`${base}/${item.id}`, { method: 'PATCH', token, body });

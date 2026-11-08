@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@expo/metro-runtime": "58.0.15",
+    "@familyos/domain": "workspace:*",
     "@supabase/supabase-js": "2.118.0",
     "expo": "58.0.19",
     "expo-constants": "58.0.13",

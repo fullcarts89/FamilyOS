@@ -50,6 +50,8 @@ export const HouseholdExportSchema = z.object({
       description: z.string().nullable(),
       status: z.string(),
       ownerMemberId: z.uuid().nullable(),
+      parentId: z.uuid().nullable(),
+      dueOn: z.string().nullable(),
       dueAt: Timestamp.nullable(),
       priority: z.number().nullable(),
       visibility: z.enum(['household', 'private']),
@@ -57,6 +59,15 @@ export const HouseholdExportSchema = z.object({
       version: z.number(),
       createdAt: Timestamp,
       updatedAt: Timestamp,
+    }),
+  ),
+  comments: z.array(
+    z.object({
+      id: z.uuid(),
+      workItemId: z.uuid(),
+      authorMemberId: z.uuid(),
+      body: z.string(),
+      createdAt: Timestamp,
     }),
   ),
   auditEvents: z.array(

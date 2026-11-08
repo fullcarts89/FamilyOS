@@ -60,6 +60,29 @@ describe('api http layer', () => {
   });
 });
 
+describe('cors', () => {
+  it('allows only listed browser origins', async () => {
+    const { app } = createTestApp({ corsOrigins: ['http://localhost:8081'] });
+    const preflight = (origin: string) =>
+      app.request('/me', {
+        method: 'OPTIONS',
+        headers: { origin, 'access-control-request-method': 'GET' },
+      });
+    expect(
+      (await preflight('http://localhost:8081')).headers.get('access-control-allow-origin'),
+    ).toBe('http://localhost:8081');
+    expect(
+      (await preflight('https://evil.example')).headers.get('access-control-allow-origin'),
+    ).toBeNull();
+  });
+
+  it('sends no CORS headers when no origins are configured', async () => {
+    const { app } = createTestApp();
+    const res = await app.request('/health', { headers: { origin: 'http://localhost:8081' } });
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+});
+
 describe('api config', () => {
   const valid = {
     DATABASE_URL: 'postgresql://postgres:postgres@127.0.0.1:55322/postgres',
