@@ -2,7 +2,8 @@
 
 **Date:** 2026-11-07
 **Revision:** 4. Final scope review before implementation. Aligned with PRD v0.3.
-**Founder decision (2026-11-07):** decisions 1, 2, 4 and 5 **approved as recommended**; M0 started. Decision 3 (hosting) is open until M4.
+**Founder decision (2026-11-07):** decisions 1, 2, 4 and 5 **approved as recommended**; M0 started.
+**Founder decision (2026-11-08):** decision 3 **approved as (a), with changes** (see below); M4 started.
 
 **Recommendation:** **Ready to begin implementation.** Approve decisions 1, 2, 4 and 5 to start M0. Decision 3 (hosting) is needed only by M4, about 8–10 working days in.
 
@@ -85,6 +86,14 @@ Also: Apple Developer ($99/year) if we're on iPhones, and a $10/month LLM cap fr
 
 - **Recommendation:** (a), because managed backups and uptime matter for real household data. You create each paid account yourself; I never enter payment details.
 - **Trade-off:** (b) costs nothing, but a dead home machine means a dead household system.
+
+**Decided (2026-11-08):** (a), adjusted to what we already have:
+- **Supabase:** a new `familyos` project inside the existing Supabase organisation. The organisation must be on Pro, and only the founder should be a member, because every member can open the database. Expect about $10/month of compute, because Kinship probably uses the included credit already.
+- **Railway Hobby:** two small services, the API serving the web app and the worker, for about $5/month.
+- **iPhone app:** distributed through TestFlight, with the Apple Developer Program at $99/year unless it is already held.
+- **Domain:** a subdomain the founder already owns serves the app and sends sign-in email through Postmark's free tier.
+- **Expected added cost:** about $15/month plus Apple.
+- **Who sets things up:** the founder creates every account and enters every secret. The first deploy and the merges still need the founder's approval. The runbook is `docs/operations/deploy.md` (PR #6).
 
 ### 4. Stack and real-data rules
 
