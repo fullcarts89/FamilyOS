@@ -28,7 +28,7 @@ export function todayRoutes(deps: Deps) {
       .selectFrom('app.work_item')
       .select(ITEM_COLUMNS)
       .where('household_id', '=', member.householdId)
-      .where('type', '!=', 'project')
+      .where('type', 'not in', ['project', 'routine'])
       .where((eb) =>
         eb.or([
           eb('status', 'not in', ['new', 'cancelled', 'verified_complete', 'done_unverified']),
@@ -46,6 +46,7 @@ export function todayRoutes(deps: Deps) {
       dueAt: toIso(r.dueAt),
       updatedAt: toIso(r.updatedAt) ?? '',
       createdAt: toIso(r.createdAt) ?? '',
+      completedAt: toIso(r.completedAt),
     }));
     const inbox = await trx
       .selectFrom('app.work_item')

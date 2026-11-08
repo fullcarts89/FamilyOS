@@ -57,6 +57,12 @@ describe('Today', () => {
     expect(ids(today([partnersOverdue], PARTNER).needsYou)).toEqual([partnersOverdue.id]);
   });
 
+  it('shows a missed item nobody owns to every adult in Needs you', () => {
+    const missed = item({ status: 'ready', dueOn: '2026-11-07', ownerMemberId: null });
+    expect(ids(today([missed]).needsYou)).toEqual([missed.id]);
+    expect(ids(today([missed], PARTNER).needsYou)).toEqual([missed.id]);
+  });
+
   it('lists the next seven local days in This week, earliest first', () => {
     const tuesday = item({ dueOn: '2026-11-10' });
     const todayItem = item({ dueOn: '2026-11-08' });
@@ -122,7 +128,7 @@ describe('Today', () => {
           ].map((i) => i.id);
           expect(new Set(placed).size).toBe(placed.length);
           for (const id of ids(view.needsYou)) {
-            expect(items.find((i) => i.id === id)?.ownerMemberId).toBe(ME);
+            expect([ME, null]).toContain(items.find((i) => i.id === id)?.ownerMemberId);
           }
         },
       ),

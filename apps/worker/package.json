@@ -9,8 +9,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@familyos/db": "workspace:*",
     "@familyos/domain": "workspace:*",
     "graphile-worker": "0.18.0",
+    "kysely": "0.29.7",
     "zod": "4.6.7"
   }
 }

@@ -1,4 +1,4 @@
-import { STATUS_PRESENTATION, formatDue, type WorkItemStatus } from '@familyos/domain';
+import { STATUS_PRESENTATION, describeDue, type WorkItemStatus } from '@familyos/domain';
 import { router } from 'expo-router';
 import type { ReactNode } from 'react';
 import {
@@ -29,14 +29,14 @@ export function StatusBadge({ status }: { status: WorkItemStatus }) {
 
 export function ItemRow({ item, today }: { item: WorkItem; today: string }) {
   const t = useTheme();
-  const { memberName } = useHousehold();
+  const { memberName, timeZone } = useHousehold();
   const owner = memberName(item.ownerMemberId);
-  const due = item.dueOn ?? item.dueAt?.slice(0, 10) ?? null;
-  const meta = [
-    owner,
-    due ? formatDue(due, today) : null,
-    item.visibility === 'private' ? 'Private' : null,
-  ]
+  const due = describeDue(item, today, timeZone);
+  const doneBy =
+    item.completedByMemberId && item.completedByMemberId !== item.ownerMemberId
+      ? `done by ${memberName(item.completedByMemberId) ?? 'someone'}`
+      : null;
+  const meta = [owner, doneBy, due, item.visibility === 'private' ? 'Private' : null]
     .filter(Boolean)
     .join(' · ');
   return (
@@ -50,7 +50,7 @@ export function ItemRow({ item, today }: { item: WorkItem; today: string }) {
     >
       <View style={styles.rowText}>
         <Text style={[styles.rowTitle, { color: t.text }]} numberOfLines={2}>
-          {item.type === 'project' ? '▦ ' : ''}
+          {item.type === 'project' ? '▦ ' : item.recurrenceRuleId ? '↻ ' : ''}
           {item.title}
         </Text>
         {meta ? <Text style={[styles.rowMeta, { color: t.muted }]}>{meta}</Text> : null}

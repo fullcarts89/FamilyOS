@@ -1,9 +1,11 @@
 import type { ColumnType, Generated } from 'kysely';
-import type { MemberRole, WorkItemStatus } from '@familyos/domain';
+import type { MemberRole, RecurrenceRule, WorkItemStatus } from '@familyos/domain';
 
 /** Kysely table types for schema `app` (migrations in supabase/migrations). */
 
 type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
+/** A DATE column: read as YYYY-MM-DD (see client.ts), never shifted through a timezone. */
+type LocalDate = ColumnType<string, string, string>;
 type Json = ColumnType<
   Record<string, unknown>,
   Record<string, unknown> | undefined,
@@ -83,9 +85,44 @@ export interface WorkItemTable {
   visibility: Generated<Visibility>;
   created_by_member_id: string;
   source_id: string | null;
+  /** Set on routine occurrences: the rule and the occurrence's place in the series. */
+  recurrence_rule_id: string | null;
+  occurrence_index: number | null;
+  occurrence_on: ColumnType<string | null, string | null | undefined, string | null>;
+  completed_at: Timestamp | null;
+  completed_by_member_id: string | null;
   version: Generated<number>;
   created_at: Timestamp;
   updated_at: Timestamp;
+}
+
+export interface RecurrenceRuleTable {
+  id: Generated<string>;
+  household_id: string;
+  routine_id: string;
+  rule: ColumnType<RecurrenceRule, RecurrenceRule, RecurrenceRule>;
+  timezone: string;
+  start_on: LocalDate;
+  /** HH:MM:SS local wall-clock time, or null for all-day. */
+  local_time: string | null;
+  rotation: ColumnType<string[], string[] | undefined, string[]>;
+  paused_at: Timestamp | null;
+  generate_from: LocalDate;
+  materialized_through: ColumnType<string | null, string | null | undefined, string | null>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface OccurrenceExceptionTable {
+  id: Generated<string>;
+  household_id: string;
+  recurrence_rule_id: string;
+  occurrence_index: number;
+  kind: 'skip' | 'owner';
+  reason: 'member' | 'paused' | null;
+  owner_member_id: string | null;
+  created_by_member_id: string | null;
+  created_at: Timestamp;
 }
 
 export interface CommentTable {
@@ -116,6 +153,8 @@ export interface Database {
   'app.invite': InviteTable;
   'app.source': SourceTable;
   'app.work_item': WorkItemTable;
+  'app.recurrence_rule': RecurrenceRuleTable;
+  'app.occurrence_exception': OccurrenceExceptionTable;
   'app.comment': CommentTable;
   'app.audit_event': AuditEventTable;
 }

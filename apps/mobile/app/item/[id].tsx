@@ -1,13 +1,13 @@
 import {
   STATUS_ACTIONS,
   STATUS_PRESENTATION,
-  formatDue,
+  describeDue,
   workItemMachine,
   type WorkItemStatus,
 } from '@familyos/domain';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Chip, ItemRow, ListScreen, Section, StatusBadge } from '../../components/items';
 import { Body, Button, ErrorText, Field, Title } from '../../components/ui';
 import {
@@ -34,6 +34,7 @@ function describe(
 }
 
 const DONE: readonly WorkItemStatus[] = ['verified_complete', 'done_unverified'];
+const CLOSED: readonly WorkItemStatus[] = [...DONE, 'cancelled'];
 
 const TIMELINE_LABELS: Record<string, string> = {
   'work_item.captured': 'captured this',
@@ -42,12 +43,19 @@ const TIMELINE_LABELS: Record<string, string> = {
   'work_item.discarded': 'discarded it',
   'work_item.updated': 'updated it',
   'work_item.commented': 'commented',
+  'routine.occurrence_created': 'scheduled this from the routine',
+  'routine.occurrence_skipped': 'skipped this one',
+  'routine.occurrence_unskipped': 'brought this one back',
+  'routine.occurrence_reassigned': 'changed whose turn it is',
+  'routine.occurrence_paused': 'paused the routine',
+  'routine.occurrence_resumed': 'resumed the routine',
+  'routine.occurrence_cancelled': 'ended the routine',
 };
 
 export default function ItemScreen() {
   const t = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { household, members, memberName } = useHousehold();
+  const { household, members, memberName, timeZone } = useHousehold();
   const [detail, setDetail] = useState<ItemDetail | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [today, setToday] = useState('');
@@ -86,7 +94,7 @@ export default function ItemScreen() {
     );
   }
 
-  const { item, subtasks, progress, timeline } = detail;
+  const { item, subtasks, progress, timeline, routine } = detail;
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -118,17 +126,25 @@ export default function ItemScreen() {
     );
 
   const nextStatuses = item.status === 'new' ? [] : workItemMachine.table[item.status];
-  const due = item.dueOn ?? item.dueAt?.slice(0, 10) ?? null;
+  const due = today ? describeDue(item, today, timeZone) : null;
 
   return (
     <ListScreen footer={<Button title="Back" onPress={() => goBack()} />}>
       <Title>{item.title}</Title>
       <View style={styles.row}>
         <StatusBadge status={item.status} />
-        {due && today ? <Body muted>Due {formatDue(due, today)}</Body> : null}
+        {due ? <Body muted>Due {due}</Body> : null}
         {item.visibility === 'private' ? <Body muted>Private</Body> : null}
       </View>
       {item.description ? <Body>{item.description}</Body> : null}
+      {routine && (
+        <Pressable
+          accessibilityRole="link"
+          onPress={() => router.push({ pathname: '/routine/[id]', params: { id: routine.id } })}
+        >
+          <Body muted>↻ Part of the routine “{routine.title}” →</Body>
+        </Pressable>
+      )}
       {error && <ErrorText>{error}</ErrorText>}
 
       {item.status === 'new' ? (
@@ -147,6 +163,29 @@ export default function ItemScreen() {
             ))}
         </Section>
       )}
+
+      {routine &&
+        !routine.ended &&
+        item.occurrenceIndex !== null &&
+        !CLOSED.includes(item.status) && (
+          <Section title="This occurrence" row>
+            {[
+              <Chip
+                key="skip"
+                label="Skip this one"
+                selected={false}
+                onPress={() =>
+                  run(() =>
+                    api(
+                      `/households/${household.id}/routines/${routine.id}/occurrences/${item.occurrenceIndex}/skip`,
+                      { method: 'POST', body: { expectedVersion: routine.version } },
+                    ),
+                  )
+                }
+              />,
+            ]}
+          </Section>
+        )}
 
       {nextStatuses.length > 0 && (
         <Section title="Change status" row>
@@ -229,8 +268,8 @@ export default function ItemScreen() {
       <Section title="Timeline">
         {timeline.map((e) => (
           <Text key={e.id} style={{ color: t.muted, fontSize: 13 }}>
-            {memberName(e.actorMemberId) ?? 'Someone'} {describe(e.action, e.payload)} ·{' '}
-            {new Date(e.createdAt).toLocaleString()}
+            {e.actorMemberId ? (memberName(e.actorMemberId) ?? 'Someone') : 'FamilyOS'}{' '}
+            {describe(e.action, e.payload)} · {new Date(e.createdAt).toLocaleString()}
           </Text>
         ))}
       </Section>

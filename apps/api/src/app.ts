@@ -11,6 +11,7 @@ import { householdRoutes } from './routes/household';
 import { workItemRoutes } from './routes/work-items';
 import { exportRoutes } from './routes/export';
 import { todayRoutes } from './routes/today';
+import { routineRoutes } from './routes/routines';
 
 export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();
@@ -61,6 +62,7 @@ export function createApp(deps: Deps) {
   household.route('/', householdRoutes(deps));
   household.route('/', todayRoutes(deps));
   household.route('/work-items', workItemRoutes(deps));
+  household.route('/routines', routineRoutes(deps));
   household.route('/export', exportRoutes());
   authed.route('/households/:householdId', household);
 
