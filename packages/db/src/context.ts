@@ -39,3 +39,20 @@ export async function setContext(
       set_config('app.member_id', ${context.memberId ?? ''}, true)
   `.execute(trx);
 }
+
+/**
+ * Runs `fn` in a transaction as role `familyos_scheduler`, limited to one household. Used by the
+ * worker, which acts for no member: it sees that household's rows (private ones included, since
+ * it creates their occurrences) and nothing else, with only the scheduler's grants.
+ */
+export async function withSchedulerContext<T>(
+  db: Kysely<Database>,
+  householdId: string | null,
+  fn: (trx: Transaction<Database>) => Promise<T>,
+): Promise<T> {
+  return db.transaction().execute(async (trx) => {
+    await sql`set local role familyos_scheduler`.execute(trx);
+    await sql`select set_config('app.household_id', ${householdId ?? ''}, true)`.execute(trx);
+    return fn(trx);
+  });
+}

@@ -1,0 +1,46 @@
+name: Production backup
+
+# Daily encrypted logical backup (plan M4), kept 30 days as a workflow artifact. A second copy
+# beside Supabase's own daily backups. Encrypted to the founder's GPG public key; the private key
+# never touches GitHub. Off until the repository variable BACKUPS_ENABLED is 'true'.
+
+on:
+  schedule:
+    - cron: '17 11 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-database
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    if: vars.BACKUPS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/postgres-client
+      - name: Back up
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PUBLIC_KEY_ASC: ${{ vars.BACKUP_PUBLIC_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/backup"
+          printf '%s\n' "$BACKUP_PUBLIC_KEY_ASC" > "$RUNNER_TEMP/backup-public.asc"
+          BACKUP_PUBLIC_KEY="$RUNNER_TEMP/backup-public.asc" node scripts/ops/backup.mjs "$RUNNER_TEMP/backup"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: familyos-backup-${{ github.run_id }}
+          path: ${{ runner.temp }}/backup/*.tar.gpg
+          retention-days: 30
+          if-no-files-found: error

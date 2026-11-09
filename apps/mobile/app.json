@@ -9,7 +9,10 @@
     "platforms": ["ios", "android", "web"],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "app.familyos.household"
+      "bundleIdentifier": "app.familyos.household",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "web": {
       "output": "single"

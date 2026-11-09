@@ -1,3 +1,4 @@
+import { workerLastSeen } from '@familyos/db';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
@@ -12,6 +13,14 @@ import { workItemRoutes } from './routes/work-items';
 import { exportRoutes } from './routes/export';
 import { todayRoutes } from './routes/today';
 import { routineRoutes } from './routes/routines';
+
+/** Three missed heartbeats (every 10 minutes) mean the worker has stopped. */
+const WORKER_STALE_AFTER_MS = 30 * 60 * 1000;
+
+export function workerStatus(lastSeen: Date | null, now: Date): 'ok' | 'stale' | 'never_seen' {
+  if (lastSeen === null) return 'never_seen';
+  return now.getTime() - lastSeen.getTime() > WORKER_STALE_AFTER_MS ? 'stale' : 'ok';
+}
 
 export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();
@@ -51,7 +60,31 @@ export function createApp(deps: Deps) {
     });
   });
 
-  app.get('/health', (c) => c.json({ status: 'ok' }));
+  const version = deps.version ?? 'dev';
+  app.get('/health', (c) => c.json({ status: 'ok', version }));
+
+  // Readiness (plan M4): 503 only when the database can't be used, so a stopped worker never
+  // blocks an API deploy; it shows as `degraded` for the uptime check instead.
+  app.get('/health/ready', async (c) => {
+    try {
+      const worker = workerStatus(
+        await workerLastSeen(deps.db),
+        (deps.now ?? (() => new Date()))(),
+      );
+      return c.json({
+        status: worker === 'ok' ? 'ok' : 'degraded',
+        database: 'ok',
+        worker,
+        version,
+      });
+    } catch (error) {
+      deps.logger.error('readiness_failed', {
+        requestId: c.get('requestId'),
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
+      return c.json({ status: 'unavailable', database: 'unavailable', version }, 503);
+    }
+  });
 
   const authed = new Hono<AppEnv>();
   authed.use('*', requireUser(deps));

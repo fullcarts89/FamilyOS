@@ -94,6 +94,9 @@ export default function Today() {
         <Pressable accessibilityRole="link" onPress={() => router.push('/routines')}>
           <Body muted>Routines →</Body>
         </Pressable>
+        <Pressable accessibilityRole="link" onPress={() => router.push('/household')}>
+          <Body muted>Household →</Body>
+        </Pressable>
       </View>
       {error && <ErrorText>Couldn’t refresh. Pull down to try again.</ErrorText>}
       {!today && !error && <ActivityIndicator />}
