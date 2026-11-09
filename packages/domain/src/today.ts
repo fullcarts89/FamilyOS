@@ -102,11 +102,11 @@ export function buildToday<T extends TodayItem>({
 
     const mine = item.ownerMemberId === memberId;
     const dueDate = due(item);
+    const overdue = isOverdue(item, today, timeZone);
+    // A missed item nobody owns needs every adult's attention (WF-02: missed → needs attention).
     if (
-      mine &&
-      (item.status === 'needs_you' ||
-        item.status === 'awaiting_completion' ||
-        isOverdue(item, today, timeZone))
+      (mine && (item.status === 'needs_you' || item.status === 'awaiting_completion' || overdue)) ||
+      (item.ownerMemberId === null && overdue)
     ) {
       view.needsYou.push(item);
     } else if (

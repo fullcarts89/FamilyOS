@@ -1,6 +1,6 @@
 import { Redirect, router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { ItemRow, ListScreen, Section } from '../components/items';
 import { Body, Button, ErrorText, Screen, Title } from '../components/ui';
 import { api, type TodayResponse } from '../lib/api';
@@ -87,9 +87,14 @@ export default function Today() {
       }
     >
       <Title>Today</Title>
-      <Pressable accessibilityRole="link" onPress={() => router.push('/work')}>
-        <Body muted>All to-dos →</Body>
-      </Pressable>
+      <View style={styles.links}>
+        <Pressable accessibilityRole="link" onPress={() => router.push('/work')}>
+          <Body muted>All to-dos →</Body>
+        </Pressable>
+        <Pressable accessibilityRole="link" onPress={() => router.push('/routines')}>
+          <Body muted>Routines →</Body>
+        </Pressable>
+      </View>
       {error && <ErrorText>Couldn’t refresh. Pull down to try again.</ErrorText>}
       {!today && !error && <ActivityIndicator />}
       {today && (
@@ -123,3 +128,5 @@ export default function Today() {
     </ListScreen>
   );
 }
+
+const styles = StyleSheet.create({ links: { flexDirection: 'row', gap: 20 } });

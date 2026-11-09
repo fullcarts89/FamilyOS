@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
+import type { RecurrenceRule } from '@familyos/domain';
 import type { Database, MemberRole } from '../schema';
 
 /**
@@ -107,4 +108,50 @@ export async function purgeHouseholds(db: Kysely<Database>, ids: string[]): Prom
   for (const id of ids) {
     await sql`select app.purge_household(${id}::uuid)`.execute(db);
   }
+}
+
+/** A routine with its rule, inserted directly (the API path is tested separately). */
+export async function seedRoutine(
+  db: Kysely<Database>,
+  household: SeededHousehold,
+  options: {
+    title?: string;
+    rule: RecurrenceRule;
+    startOn: string;
+    generateFrom?: string;
+    time?: string | null;
+    timezone?: string;
+    ownerMemberId?: string | null;
+    rotation?: string[];
+    visibility?: 'household' | 'private';
+  },
+): Promise<{ routineId: string; ruleId: string }> {
+  const routine = await db
+    .insertInto('app.work_item')
+    .values({
+      household_id: household.id,
+      type: 'routine',
+      title: options.title ?? `${household.name} routine`,
+      status: 'ready',
+      owner_member_id: options.ownerMemberId ?? null,
+      visibility: options.visibility ?? 'household',
+      created_by_member_id: household.owner.id,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  const rule = await db
+    .insertInto('app.recurrence_rule')
+    .values({
+      household_id: household.id,
+      routine_id: routine.id,
+      rule: options.rule,
+      timezone: options.timezone ?? 'America/Los_Angeles',
+      start_on: options.startOn,
+      local_time: options.time ?? null,
+      rotation: options.rotation ?? [],
+      generate_from: options.generateFrom ?? options.startOn,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  return { routineId: routine.id, ruleId: rule.id };
 }

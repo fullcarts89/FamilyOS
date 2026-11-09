@@ -1,4 +1,4 @@
-import type { WorkItemStatus } from '@familyos/domain';
+import type { RecurrenceRule, WorkItemStatus } from '@familyos/domain';
 import { config } from './config';
 import { supabase } from './supabase';
 
@@ -58,6 +58,11 @@ export interface WorkItem {
   dueAt: string | null;
   visibility: 'household' | 'private';
   createdByMemberId: string;
+  /** Set when this is one occurrence of a routine. */
+  recurrenceRuleId: string | null;
+  occurrenceIndex: number | null;
+  occurrenceOn: string | null;
+  completedByMemberId: string | null;
   version: number;
   updatedAt: string;
 }
@@ -83,6 +88,50 @@ export interface ItemDetail {
     payload: { toStatus?: WorkItemStatus; fields?: string[] };
     createdAt: string;
   }[];
+  routine: {
+    id: string;
+    title: string;
+    ended: boolean;
+    rotation: string[];
+    version: number;
+  } | null;
+}
+
+export interface Routine {
+  id: string;
+  title: string;
+  description: string | null;
+  visibility: 'household' | 'private';
+  ended: boolean;
+  paused: boolean;
+  ownerMemberId: string | null;
+  rotation: string[];
+  rule: RecurrenceRule;
+  startOn: string;
+  time: string | null;
+  summary: string;
+  version: number;
+}
+
+export interface RoutineListEntry extends Routine {
+  next: { id: string; date: string; ownerMemberId: string | null; status: WorkItemStatus } | null;
+}
+
+export interface UpcomingOccurrence {
+  index: number;
+  date: string;
+  ownerMemberId: string | null;
+  skipped: boolean;
+  itemId: string | null;
+  status: WorkItemStatus | null;
+}
+
+export interface RoutineDetail {
+  routine: Routine;
+  today: string;
+  upcoming: UpcomingOccurrence[];
+  history: WorkItem[];
+  fairness: { days: number; counts: { memberId: string | null; completed: number }[] };
 }
 
 export interface Comment {
@@ -110,6 +159,21 @@ export function errorMessage(error: unknown): string {
       return 'Your role can’t do that.';
     case 'not_in_inbox':
       return 'This was already sorted.';
+    case 'routine_ended':
+      return 'This routine has ended.';
+    case 'not_skippable':
+      return 'That one can’t be skipped any more.';
+    case 'already_skipped':
+      return 'That one is already skipped.';
+    case 'not_skipped':
+      return 'That one isn’t skipped.';
+    case 'not_swappable':
+    case 'same_owner':
+      return 'That turn can’t be swapped.';
+    case 'no_turn_found':
+      return 'They have no upcoming turn to swap with.';
+    case 'use_routine':
+      return 'Change this from its routine.';
     default:
       return 'Something went wrong. Try again.';
   }

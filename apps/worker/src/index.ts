@@ -1,6 +1,7 @@
+import { createDb } from '@familyos/db';
 import { run } from 'graphile-worker';
 import { z } from 'zod';
-import { taskList } from './tasks';
+import { CRONTAB, createTaskList } from './tasks';
 
 const env = z
   .object({
@@ -15,10 +16,13 @@ if (!env.success) {
   );
 }
 
+const db = createDb({ connectionString: env.data.DATABASE_URL });
 const runner = await run({
   connectionString: env.data.DATABASE_URL,
   concurrency: env.data.WORKER_CONCURRENCY,
-  taskList,
+  taskList: createTaskList(db),
+  crontab: CRONTAB,
 });
 
 await runner.promise;
+await db.destroy();

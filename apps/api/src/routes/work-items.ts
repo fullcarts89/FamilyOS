@@ -5,7 +5,7 @@ import {
   assertWorkItemTransition,
   type WorkItemStatus,
 } from '@familyos/domain';
-import type { Database } from '@familyos/db';
+import { materializeRoutine, type Database } from '@familyos/db';
 import { Hono } from 'hono';
 import type { Transaction } from 'kysely';
 import { z } from 'zod';
@@ -28,6 +28,11 @@ export const ITEM_COLUMNS = [
   'priority',
   'visibility',
   'created_by_member_id as createdByMemberId',
+  'recurrence_rule_id as recurrenceRuleId',
+  'occurrence_index as occurrenceIndex',
+  'occurrence_on as occurrenceOn',
+  'completed_at as completedAt',
+  'completed_by_member_id as completedByMemberId',
   'version',
   'created_at as createdAt',
   'updated_at as updatedAt',
@@ -86,7 +91,11 @@ const VersionOnly = z.object({ expectedVersion: z.number().int().min(1) }).stric
 const NewComment = z.object({ body: z.string().trim().min(1).max(4000) }).strict();
 
 /** Owners must be active, account-holding members of the same household. */
-async function assertAssignable(trx: Transaction<Database>, householdId: string, memberId: string) {
+export async function assertAssignable(
+  trx: Transaction<Database>,
+  householdId: string,
+  memberId: string,
+) {
   const owner = await trx
     .selectFrom('app.member')
     .select('id')
@@ -151,13 +160,15 @@ async function loadForUpdate(
 ) {
   const current = await trx
     .selectFrom('app.work_item')
-    .select(['id', 'type', 'status', 'version', 'due_on', 'due_at'])
+    .select(['id', 'type', 'status', 'version', 'due_on', 'due_at', 'recurrence_rule_id'])
     .where('id', '=', itemId)
     .where('household_id', '=', member.householdId)
     .forUpdate()
     .executeTakeFirst();
   if (!current) throw notFound();
   if (current.version !== expectedVersion) throw conflict();
+  // A routine's own row changes through /routines, which keeps its schedule consistent.
+  if (current.type === 'routine') throw new ApiError(422, 'use_routine');
   return current;
 }
 
@@ -173,6 +184,7 @@ export function workItemRoutes(deps: Deps) {
       .selectFrom('app.work_item')
       .select(ITEM_COLUMNS)
       .where('household_id', '=', c.get('member').householdId)
+      .where('type', '!=', 'routine')
       .where('status', 'not in', ['new', 'cancelled']);
     if (parentId) query = query.where('parent_id', '=', uuidParam(parentId));
     const items = await query.orderBy('created_at', 'desc').limit(500).execute();
@@ -259,6 +271,17 @@ export function workItemRoutes(deps: Deps) {
       .where('entity_id', '=', itemId)
       .orderBy('id')
       .execute();
+    const routine = item.recurrenceRuleId
+      ? ((await trx
+          .selectFrom('app.recurrence_rule as r')
+          .innerJoin('app.work_item as w', (join) =>
+            join.onRef('w.id', '=', 'r.routine_id').onRef('w.household_id', '=', 'r.household_id'),
+          )
+          .select(['w.id', 'w.title', 'w.status', 'w.version', 'r.rotation'])
+          .where('r.id', '=', item.recurrenceRuleId)
+          .where('r.household_id', '=', householdId)
+          .executeTakeFirst()) ?? null)
+      : null;
     const progress =
       item.type === 'project'
         ? {
@@ -266,7 +289,19 @@ export function workItemRoutes(deps: Deps) {
             total: subtasks.length,
           }
         : null;
-    return c.json({ item, subtasks, progress, timeline });
+    return c.json({
+      item,
+      subtasks,
+      progress,
+      timeline,
+      routine: routine && {
+        id: routine.id,
+        title: routine.title,
+        ended: routine.status === 'cancelled',
+        rotation: routine.rotation,
+        version: routine.version,
+      },
+    });
   });
 
   app.patch('/:itemId', async (c) => {
@@ -291,6 +326,10 @@ export function workItemRoutes(deps: Deps) {
     const dueAt = body.dueAt !== undefined ? body.dueAt : body.dueOn ? null : undefined;
     if (body.dueOn && body.dueAt) throw new ApiError(422, 'invalid_body');
 
+    const statusChanged = body.status !== undefined && body.status !== current.status;
+    const finishing =
+      statusChanged && body.status !== undefined && DONE_STATUSES.includes(body.status);
+    const reopening = statusChanged && DONE_STATUSES.includes(current.status) && !finishing;
     const changes = {
       ...(body.title !== undefined && { title: body.title }),
       ...(body.description !== undefined && { description: body.description }),
@@ -303,9 +342,16 @@ export function workItemRoutes(deps: Deps) {
     };
     if (Object.keys(changes).length === 0) throw new ApiError(422, 'no_changes');
 
+    // Who finished it, for Handled and the routine fairness view (J3b).
+    const completion = finishing
+      ? { completed_at: now(), completed_by_member_id: member.id }
+      : reopening
+        ? { completed_at: null, completed_by_member_id: null }
+        : {};
+
     const item = await trx
       .updateTable('app.work_item')
-      .set({ ...changes, version: current.version + 1, updated_at: now() })
+      .set({ ...changes, ...completion, version: current.version + 1, updated_at: now() })
       .where('id', '=', itemId)
       .where('version', '=', body.expectedVersion)
       .returning(ITEM_COLUMNS)
@@ -329,6 +375,24 @@ export function workItemRoutes(deps: Deps) {
       },
       requestId: c.get('requestId'),
     });
+
+    // Closing a routine occurrence may bring the next one due (after-completion routines).
+    if (statusChanged && current.recurrence_rule_id) {
+      const rule = await trx
+        .selectFrom('app.recurrence_rule')
+        .select('routine_id')
+        .where('id', '=', current.recurrence_rule_id)
+        .where('household_id', '=', member.householdId)
+        .executeTakeFirst();
+      if (rule) {
+        await materializeRoutine(trx, {
+          householdId: member.householdId,
+          routineId: rule.routine_id,
+          now: now(),
+          requestId: c.get('requestId'),
+        });
+      }
+    }
     return c.json({ item });
   });
 

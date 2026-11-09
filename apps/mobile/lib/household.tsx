@@ -5,6 +5,8 @@ import { useSession } from './session';
 interface HouseholdState {
   household: MyHousehold | null;
   members: Member[];
+  /** IANA timezone of the household; dates and times show in it, not the phone's. */
+  timeZone: string;
   loading: boolean;
   error: boolean;
   reload: () => void;
@@ -18,6 +20,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const { session } = useSession();
   const [household, setHousehold] = useState<MyHousehold | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [timeZone, setTimeZone] = useState('UTC');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -35,8 +38,11 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       const first = me.households[0] ?? null;
       setHousehold(first);
       if (first) {
-        const detail = await api<{ members: Member[] }>(`/households/${first.id}`);
+        const detail = await api<{ members: Member[]; household: { timezone: string } }>(
+          `/households/${first.id}`,
+        );
         setMembers(detail.members);
+        setTimeZone(detail.household.timezone);
       }
     } catch {
       setError(true);
@@ -54,7 +60,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
 
   return (
     <HouseholdContext.Provider
-      value={{ household, members, loading, error, reload: load, memberName }}
+      value={{ household, members, timeZone, loading, error, reload: load, memberName }}
     >
       {children}
     </HouseholdContext.Provider>

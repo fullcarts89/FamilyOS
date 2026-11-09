@@ -15,6 +15,7 @@ export const ACTIONS = [
   'work_item.create',
   'work_item.update',
   'work_item.comment',
+  'routine.manage',
   'household.export',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
@@ -28,6 +29,7 @@ const GRANTS: Readonly<Record<MemberRole, readonly Action[]>> = {
     'work_item.create',
     'work_item.update',
     'work_item.comment',
+    'routine.manage',
     'household.export',
   ],
   caregiver: ['household.read', 'work_item.read'],

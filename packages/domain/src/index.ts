@@ -9,3 +9,4 @@ export * from './permissions';
 export * from './today';
 export * from './presentation';
 export * from './due-options';
+export * from './recurrence';

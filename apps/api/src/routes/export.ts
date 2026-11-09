@@ -78,9 +78,46 @@ export function exportRoutes() {
         'priority',
         'visibility',
         'created_by_member_id as createdByMemberId',
+        'recurrence_rule_id as recurrenceRuleId',
+        'occurrence_index as occurrenceIndex',
+        'occurrence_on as occurrenceOn',
+        'completed_at as completedAt',
+        'completed_by_member_id as completedByMemberId',
         'version',
         'created_at as createdAt',
         'updated_at as updatedAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    const recurrenceRules = await trx
+      .selectFrom('app.recurrence_rule')
+      .select([
+        'id',
+        'routine_id as routineId',
+        'rule',
+        'timezone',
+        'start_on as startOn',
+        'local_time as localTime',
+        'rotation',
+        'paused_at as pausedAt',
+        'generate_from as generateFrom',
+        'created_at as createdAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    const occurrenceExceptions = await trx
+      .selectFrom('app.occurrence_exception')
+      .select([
+        'id',
+        'recurrence_rule_id as recurrenceRuleId',
+        'occurrence_index as occurrenceIndex',
+        'kind',
+        'reason',
+        'owner_member_id as ownerMemberId',
+        'created_by_member_id as createdByMemberId',
+        'created_at as createdAt',
       ])
       .where('household_id', '=', householdId)
       .orderBy('created_at')
@@ -121,6 +158,8 @@ export function exportRoutes() {
       invites,
       sources,
       workItems,
+      recurrenceRules,
+      occurrenceExceptions,
       comments,
       auditEvents: auditEvents.map((e) => ({ ...e, id: String(e.id) })),
       files: sources.flatMap((s) =>

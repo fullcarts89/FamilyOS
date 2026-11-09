@@ -4,6 +4,7 @@ import {
   purgeHouseholds,
   seedHousehold,
   seedInvite,
+  seedRoutine,
   type SeededHousehold,
 } from '@familyos/db/testing';
 import type { Kysely } from 'kysely';
@@ -28,6 +29,7 @@ describe.skipIf(!db)('API security (G1)', () => {
   let a: SeededHousehold;
   let b: SeededHousehold;
   let bInviteId: string;
+  let bRoutineId: string;
   const created: string[] = [];
 
   const tokenOf = (member: SeededHousehold['owner']) =>
@@ -41,6 +43,10 @@ describe.skipIf(!db)('API security (G1)', () => {
       email: 'beta-invitee@example.test',
       token: randomUUID(),
     });
+    ({ routineId: bRoutineId } = await seedRoutine(requireDb(), b, {
+      rule: { freq: 'weekly', interval: 1, weekdays: [7] },
+      startOn: '2026-11-08',
+    }));
   });
 
   afterAll(async () => {
@@ -51,7 +57,13 @@ describe.skipIf(!db)('API security (G1)', () => {
   /** Everything in household B that an attack could change. */
   const snapshotB = async () => {
     const count = async (
-      table: 'app.member' | 'app.invite' | 'app.work_item' | 'app.audit_event',
+      table:
+        | 'app.member'
+        | 'app.invite'
+        | 'app.work_item'
+        | 'app.audit_event'
+        | 'app.recurrence_rule'
+        | 'app.occurrence_exception',
     ) =>
       Number(
         (
@@ -81,6 +93,8 @@ describe.skipIf(!db)('API security (G1)', () => {
       members: await count('app.member'),
       invites: await count('app.invite'),
       items: await count('app.work_item'),
+      rules: await count('app.recurrence_rule'),
+      exceptions: await count('app.occurrence_exception'),
       audit: await count('app.audit_event'),
       item,
       adult,
@@ -114,7 +128,34 @@ describe.skipIf(!db)('API security (G1)', () => {
       ['GET', `/households/${a.id}/work-items/${b.sharedItemId}/comments`],
       ['POST', `/households/${a.id}/work-items/${b.sharedItemId}/comments`, { body: 'intrusion' }],
       ['POST', `/households/${a.id}/work-items/${b.sharedItemId}/accept`, { expectedVersion: 1 }],
+      ['GET', `/households/${b.id}/routines`],
+      [
+        'POST',
+        `/households/${b.id}/routines`,
+        { title: 'x', rule: { freq: 'daily', interval: 1 }, startOn: '2026-11-08' },
+      ],
+      ['GET', `/households/${b.id}/routines/${bRoutineId}`],
+      ['PATCH', `/households/${b.id}/routines/${bRoutineId}`, { expectedVersion: 1, paused: true }],
+      ['POST', `/households/${b.id}/routines/${bRoutineId}/end`, { expectedVersion: 1 }],
+      [
+        'POST',
+        `/households/${b.id}/routines/${bRoutineId}/occurrences/0/skip`,
+        { expectedVersion: 1 },
+      ],
       // Own household, foreign resource IDs.
+      ['GET', `/households/${a.id}/routines/${bRoutineId}`],
+      ['PATCH', `/households/${a.id}/routines/${bRoutineId}`, { expectedVersion: 1, paused: true }],
+      ['POST', `/households/${a.id}/routines/${bRoutineId}/end`, { expectedVersion: 1 }],
+      [
+        'POST',
+        `/households/${a.id}/routines/${bRoutineId}/occurrences/0/skip`,
+        { expectedVersion: 1 },
+      ],
+      [
+        'POST',
+        `/households/${a.id}/routines/${bRoutineId}/occurrences/1/swap`,
+        { expectedVersion: 1, withMemberId: a.adult.id },
+      ],
       ['GET', `/households/${a.id}/work-items/${b.sharedItemId}`],
       [
         'PATCH',
@@ -174,6 +215,16 @@ describe.skipIf(!db)('API security (G1)', () => {
         ).status,
       ).toBe(403);
       expect((await request(`/households/${a.id}/export`, { token })).status).toBe(403);
+      expect((await request(`/households/${a.id}/routines`, { token })).status).toBe(200);
+      expect(
+        (
+          await request(`/households/${a.id}/routines`, {
+            method: 'POST',
+            token,
+            body: { title: 'x', rule: { freq: 'daily', interval: 1 }, startOn: '2026-11-08' },
+          })
+        ).status,
+      ).toBe(403);
       expect((await request(`/households/${a.id}/invites`, { token })).status).toBe(403);
     });
 

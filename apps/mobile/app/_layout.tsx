@@ -9,6 +9,7 @@ export default function RootLayout() {
       <HouseholdProvider>
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="capture" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="routine/new" options={{ presentation: 'modal' }} />
         </Stack>
         <StatusBar style="auto" />
       </HouseholdProvider>
