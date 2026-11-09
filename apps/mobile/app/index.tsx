@@ -1,26 +1,49 @@
-import { StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { Redirect } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator } from 'react-native';
+import { Body, Button, ErrorText, Screen, Title } from '../components/ui';
+import { api, type MyHousehold } from '../lib/api';
+import { useSession } from '../lib/session';
+import { supabase } from '../lib/supabase';
 
-// M0 placeholder. Sign-in arrives in M1 and Today in M2.
+// M1 home: who you are and which household you belong to. Today arrives in M2.
 export default function Home() {
-  const dark = useColorScheme() === 'dark';
+  const { session, loading } = useSession();
+  const [households, setHouseholds] = useState<MyHousehold[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session) return;
+    api<{ households: MyHousehold[] }>('/me')
+      .then((me) => setHouseholds(me.households))
+      .catch(() => setError('Couldn’t load your household. Pull to try again later.'));
+  }, [session]);
+
+  if (loading)
+    return (
+      <Screen>
+        <ActivityIndicator />
+      </Screen>
+    );
+  if (!session) return <Redirect href="/sign-in" />;
+
   return (
-    <View style={[styles.screen, dark ? styles.screenDark : styles.screenLight]}>
-      <Text style={[styles.title, dark ? styles.textDark : styles.textLight]}>FamilyOS</Text>
-      <Text style={[styles.body, dark ? styles.mutedDark : styles.mutedLight]}>
-        Repository foundation. Nothing here yet.
-      </Text>
-    </View>
+    <Screen>
+      <Title>FamilyOS</Title>
+      {error && <ErrorText>{error}</ErrorText>}
+      {households === null && !error && <ActivityIndicator />}
+      {households?.length === 0 && (
+        <Body muted>
+          You’re signed in but not in a household yet. Open the invite link your household owner
+          sent you.
+        </Body>
+      )}
+      {households?.map((h) => (
+        <Body key={h.id}>
+          {h.name} · {h.role}
+        </Body>
+      ))}
+      <Button title="Sign out" onPress={() => supabase.auth.signOut()} />
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 8 },
-  screenLight: { backgroundColor: '#FAF8F5' },
-  screenDark: { backgroundColor: '#1C1B19' },
-  title: { fontSize: 28, fontWeight: '600' },
-  body: { fontSize: 16, textAlign: 'center' },
-  textLight: { color: '#1C1B19' },
-  textDark: { color: '#F4F1EC' },
-  mutedLight: { color: '#5C5850' },
-  mutedDark: { color: '#B5AFA5' },
-});

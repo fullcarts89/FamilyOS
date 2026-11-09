@@ -31,7 +31,7 @@ jobs:
       - run: pnpm licenses:check
 
   database:
-    name: Migrations and database tests
+    name: Migrations, database and auth tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -44,8 +44,17 @@ jobs:
           version: 2.119.0
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
-      # Starts only Postgres and applies supabase/migrations.
-      - run: supabase db start
+      # Postgres, Auth, Kong and Mailpit only; applies supabase/migrations.
+      - run: >
+          supabase start -x studio,imgproxy,storage-api,edge-runtime,logflare,vector,postgres-meta,realtime,supavisor,postgrest
+      - name: Export local stack settings
+        run: |
+          supabase status -o json > "$RUNNER_TEMP/supabase.json"
+          {
+            echo "SUPABASE_URL=$(jq -r .API_URL "$RUNNER_TEMP/supabase.json")"
+            echo "SUPABASE_SECRET_KEY=$(jq -r .SECRET_KEY "$RUNNER_TEMP/supabase.json")"
+            echo "SUPABASE_PUBLISHABLE_KEY=$(jq -r .PUBLISHABLE_KEY "$RUNNER_TEMP/supabase.json")"
+          } >> "$GITHUB_ENV"
       - run: pnpm test
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55322/postgres

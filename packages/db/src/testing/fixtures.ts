@@ -1,0 +1,110 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { sql, type Kysely } from 'kysely';
+import type { Database, MemberRole } from '../schema';
+
+/**
+ * Synthetic households for tests. Never real data (brief rule 8). Inserts run on the
+ * privileged connection, outside row-level security, the way an operator bootstrap would.
+ */
+export interface SeededMember {
+  id: string;
+  userId: string | null;
+  role: MemberRole;
+  displayName: string;
+}
+
+export interface SeededHousehold {
+  id: string;
+  name: string;
+  owner: SeededMember;
+  adult: SeededMember;
+  caregiver: SeededMember;
+  child: SeededMember;
+  sharedItemId: string;
+  privateItemId: string;
+}
+
+export async function seedHousehold(db: Kysely<Database>, name: string): Promise<SeededHousehold> {
+  const household = await db
+    .insertInto('app.household')
+    .values({ name })
+    .returning(['id', 'name'])
+    .executeTakeFirstOrThrow();
+
+  const addMember = async (role: MemberRole, displayName: string): Promise<SeededMember> => {
+    const userId = role === 'child' ? null : randomUUID();
+    const row = await db
+      .insertInto('app.member')
+      .values({ household_id: household.id, user_id: userId, display_name: displayName, role })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    return { id: row.id, userId, role, displayName };
+  };
+
+  const owner = await addMember('owner', `${name} Owner`);
+  const adult = await addMember('adult', `${name} Adult`);
+  const caregiver = await addMember('caregiver', `${name} Caregiver`);
+  const child = await addMember('child', `${name} Child`);
+
+  const shared = await db
+    .insertInto('app.work_item')
+    .values({
+      household_id: household.id,
+      title: `${name} shared item`,
+      created_by_member_id: owner.id,
+      owner_member_id: adult.id,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+
+  const privateItem = await db
+    .insertInto('app.work_item')
+    .values({
+      household_id: household.id,
+      title: `${name} private item`,
+      created_by_member_id: owner.id,
+      visibility: 'private',
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+
+  return {
+    id: household.id,
+    name: household.name,
+    owner,
+    adult,
+    caregiver,
+    child,
+    sharedItemId: shared.id,
+    privateItemId: privateItem.id,
+  };
+}
+
+export const hashToken = (token: string): Buffer => createHash('sha256').update(token).digest();
+
+export async function seedInvite(
+  db: Kysely<Database>,
+  household: SeededHousehold,
+  options: { email: string; token: string; expiresAt?: Date; role?: 'adult' | 'caregiver' },
+): Promise<string> {
+  const row = await db
+    .insertInto('app.invite')
+    .values({
+      household_id: household.id,
+      email: options.email,
+      role: options.role ?? 'adult',
+      token_hash: hashToken(options.token),
+      invited_by_member_id: household.owner.id,
+      expires_at: options.expiresAt ?? new Date(Date.now() + 48 * 3600 * 1000),
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  return row.id;
+}
+
+/** Removes test households, including their append-only audit rows. */
+export async function purgeHouseholds(db: Kysely<Database>, ids: string[]): Promise<void> {
+  for (const id of ids) {
+    await sql`select app.purge_household(${id}::uuid)`.execute(db);
+  }
+}
