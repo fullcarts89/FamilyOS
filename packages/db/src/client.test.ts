@@ -25,6 +25,11 @@ describe.skipIf(!db)('database baseline', () => {
     expect(row?.value).toBe('m0');
   });
 
+  it('returns calendar dates as YYYY-MM-DD strings, not shifted Date objects', async () => {
+    const { rows } = await sql<{ d: unknown }>`select date '2026-11-10' as d`.execute(requireDb());
+    expect(rows[0]?.d).toBe('2026-11-10');
+  });
+
   it('gives anon and authenticated no access to schema app', async () => {
     const { rows } = await sql<{ role: string; usage: boolean }>`
       select r.rolname as role, has_schema_privilege(r.rolname, 'app', 'USAGE') as usage

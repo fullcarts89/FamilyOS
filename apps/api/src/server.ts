@@ -22,6 +22,7 @@ const app = createApp({
   }),
   logger,
   inviteLinkBase: config.INVITE_LINK_BASE,
+  corsOrigins: config.CORS_ORIGINS,
 });
 
 serve({ fetch: app.fetch, port: config.API_PORT }, (info) => {

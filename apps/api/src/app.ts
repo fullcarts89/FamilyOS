@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { cors } from 'hono/cors';
 import { requestId } from 'hono/request-id';
 import { secureHeaders } from 'hono/secure-headers';
 import type { AppEnv, Deps } from './http/env';
@@ -9,12 +10,25 @@ import { accountRoutes } from './routes/account';
 import { householdRoutes } from './routes/household';
 import { workItemRoutes } from './routes/work-items';
 import { exportRoutes } from './routes/export';
+import { todayRoutes } from './routes/today';
 
 export function createApp(deps: Deps) {
   const app = new Hono<AppEnv>();
 
   app.use('*', requestId());
   app.use('*', secureHeaders());
+  const corsOrigins = deps.corsOrigins ?? [];
+  if (corsOrigins.length > 0) {
+    app.use(
+      '*',
+      cors({
+        origin: (origin) => (corsOrigins.includes(origin) ? origin : null),
+        allowMethods: ['GET', 'POST', 'PATCH', 'DELETE'],
+        allowHeaders: ['authorization', 'content-type'],
+        maxAge: 600,
+      }),
+    );
+  }
   app.use(
     '*',
     bodyLimit({
@@ -45,6 +59,7 @@ export function createApp(deps: Deps) {
   const household = new Hono<AppEnv>();
   household.use('*', householdScope(deps));
   household.route('/', householdRoutes(deps));
+  household.route('/', todayRoutes(deps));
   household.route('/work-items', workItemRoutes(deps));
   household.route('/export', exportRoutes());
   authed.route('/households/:householdId', household);

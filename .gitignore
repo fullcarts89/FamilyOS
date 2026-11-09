@@ -15,3 +15,6 @@ __pycache__/
 supabase/.temp/
 supabase/.branches/
 apps/mobile/expo-env.d.ts
+
+# Local preview launcher (machine-specific paths)
+.claude/launch.json
