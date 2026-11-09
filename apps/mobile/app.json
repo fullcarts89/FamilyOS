@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "FamilyOS",
+    "slug": "familyos",
+    "scheme": "familyos",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "platforms": ["ios", "android", "web"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.familyos.household"
+    },
+    "web": {
+      "output": "single"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

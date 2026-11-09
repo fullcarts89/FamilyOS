@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Expo and Metro resolve dependencies most reliably from a hoisted node_modules.
+nodeLinker: hoisted
+
+# Dependency install scripts are blocked unless approved here.
+allowBuilds:
+  esbuild: true
