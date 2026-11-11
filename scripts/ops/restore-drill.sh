@@ -33,9 +33,12 @@ if [[ "$households" == "0" ]]; then
   echo "drill: no household found; bootstrapping a synthetic one"
   : "${SUPABASE_URL:=http://127.0.0.1:55321}"
   : "${SUPABASE_SECRET_KEY:=$(supabase status -o json | jq -r .SECRET_KEY)}"
-  DATABASE_URL="$admin_url" SUPABASE_URL="$SUPABASE_URL" SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" \
-    pnpm --silent --filter @familyos/api household:bootstrap --name 'Drill Home' \
-    --timezone America/Los_Angeles --owner-email drill-owner@familyos.test --owner-name Drill
+  # The bootstrap asks for the owner's password twice; the drill's owner never signs in.
+  drill_password=$(openssl rand -hex 16)
+  printf '%s\n%s\n' "$drill_password" "$drill_password" |
+    DATABASE_URL="$admin_url" SUPABASE_URL="$SUPABASE_URL" SUPABASE_SECRET_KEY="$SUPABASE_SECRET_KEY" \
+      pnpm --silent --filter @familyos/api household:bootstrap --name 'Drill Home' \
+      --timezone America/Los_Angeles --owner-email drill-owner@familyos.test --owner-name Drill
   psql "$admin_url" -q -v ON_ERROR_STOP=1 -f scripts/ops/drill-seed.sql
 fi
 
