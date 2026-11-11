@@ -69,8 +69,7 @@ export function householdRoutes(deps: Deps) {
       payload: { role: invite.role },
       requestId: c.get('requestId'),
     });
-    // Inside the transaction: if the account can't be prepared, the invite is rolled back.
-    await deps.authAdmin.ensureUser(body.email);
+    // No account is created here: the invitee creates theirs, with a password, from the link.
     const link = `${deps.inviteLinkBase}?token=${encodeURIComponent(token)}`;
     // The token is returned once, to the owner, to share by hand. It is never stored or logged.
     return c.json({ invite: { ...invite, email: body.email }, token, link }, 201);

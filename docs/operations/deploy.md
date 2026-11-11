@@ -1,7 +1,8 @@
 # Private deploy runbook (M4)
 
 **Status:** ready for the founder's setup. Nothing in this runbook has been created or deployed yet. Every step marked **You** needs your own account, payment details or secrets; nobody else does them.
-**Decision 3 (2026-11-08):** Railway Hobby for the API and the worker. Supabase as a new project in your existing organisation. The iPhone app goes out through TestFlight. A subdomain you own serves the app and sends sign-in email.
+**Decision 3 (2026-11-08):** Railway Hobby for the API and the worker. Supabase as a new project in your existing organisation. The iPhone app goes out through TestFlight. A subdomain you own serves the app.
+**Decision 4 (2026-11-11):** sign-in is email and password, not an emailed code, so there is no email provider. The owner's password is set by the household bootstrap; the second adult chooses theirs when opening the invite link. A forgotten password is reset by the operator command in Everyday operations.
 
 ## What runs where
 
@@ -10,7 +11,6 @@
 | Web app and API, one service (`deploy/api.Dockerfile`) | Railway service `api`, on your subdomain | Supabase Postgres as `familyos_api_login`; Supabase Auth |
 | Worker (`deploy/worker.Dockerfile`) | Railway service `worker`, no public address | Supabase Postgres as `familyos_worker_login` |
 | Database, sign-in and daily backups | Supabase project `familyos` | — |
-| Sign-in email | Postmark, through Supabase's custom SMTP setting | — |
 | Second backup copy (encrypted) | GitHub Actions artifacts, kept 30 days | — |
 | iPhone app | TestFlight, built by EAS | The same API and Supabase |
 
@@ -42,22 +42,13 @@ Do the steps in order. Every value you create goes into your password manager an
   - Generate a database password and save it.
 - **Auth → Sign In / Providers:**
   - Turn off "Allow new users to sign up". Accounts are created only by the household bootstrap and by invites.
-  - Email OTP: 6 digits, expiring after 600 seconds.
-- **Auth → Emails → Magic link template:** paste `supabase/templates/magic-link.html`, with the subject "Your FamilyOS sign-in code".
+  - Leave the Email provider on: it carries password sign-in.
+  - Email: set "Minimum password length" to 12, and turn on "Prevent use of leaked passwords".
 - **Auth → URL Configuration:** set the Site URL to `https://<app subdomain>`.
 - **Connect (top bar) → Session pooler:** copy the connection string for `postgres`. This is the *admin URL* used below. It goes over IPv4, which Railway and GitHub can reach.
 - **API keys:** note the project URL, the publishable key and a secret key.
 
-**4. Email sender (You).**
-- **Postmark:**
-  - Create a Postmark account.
-  - Add a sender for `<app subdomain>`. New accounts may need Postmark's approval before they can email outside addresses.
-- **DNS:** add Postmark's DKIM and Return-Path records at your DNS provider.
-- **Supabase → Auth → SMTP settings:**
-  - Host `smtp.postmarkapp.com`, port 587.
-  - Username and password: the Postmark server token.
-  - Sender: `FamilyOS <signin@<app subdomain>>`.
-- **Test:** without custom SMTP, Supabase sends only to organisation members, at about 2 emails an hour. Send a code to each adult's address and check that it arrives.
+**4. Email sender: not needed.** Sign-in is by password (decision 4), so Supabase sends no email and there is no custom SMTP to set up.
 
 **5. Backup key (You).** On your laptop:
 ```bash
@@ -87,7 +78,7 @@ Store the private key and its passphrase in your password manager. Without them 
   ```bash
   node scripts/ops/enable-login.mjs familyos_worker_login
   ```
-- **Create your household and owner account:**
+- **Create your household and owner account.** It asks twice for your password (at least 12 characters) without showing it.
   ```bash
   DATABASE_URL="$ADMIN_DATABASE_URL" SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SECRET_KEY=<secret key> pnpm --filter @familyos/api household:bootstrap --name "<household>" --timezone <IANA zone> --owner-email <your email> --owner-name <your name>
   ```
@@ -128,8 +119,8 @@ Railway's config-file format is deprecated and stops being read on 2026-12-01, s
 
 **9. First deploy (needs your approval), then checks.**
 - **Readiness:** `https://<app subdomain>/api/health/ready` returns `"status":"ok"`, which means the database answered through the API's own login and the worker reported in during the last 30 minutes.
-- **Sign in:** sign in on the web app.
-- **Invite the second adult:** use Household → Invite. The second adult accepts from the link and signs in.
+- **Sign in:** sign in on the web app with your email and password.
+- **Invite the second adult:** use Household → Invite with their email, and send them the link it shows. They open it, enter their name, that email and a new password, and are signed in.
 - **Turn on daily backups:** set `BACKUPS_ENABLED` to `true`, then run *Production backup* once by hand.
 
 **10. Gate G4 evidence (You, with me).**
@@ -180,6 +171,10 @@ Railway's config-file format is deprecated and stops being read on 2026-12-01, s
 - **Backups:** Supabase keeps 7 daily backups. GitHub keeps 30 days of encrypted dumps, plus 90 days of pre-migration dumps. CI runs the restore drill (`scripts/ops/restore-drill.sh`) on every pull request.
 - **Rotate a database password:** run `enable-login.mjs` again for that login, then update `DATABASE_URL` on that Railway service.
 - **Rotate the Supabase secret key:** create a new key in Supabase, update `SUPABASE_SECRET_KEY` on `api`, then revoke the old key.
+- **Reset a forgotten password** (on your laptop, with the admin URL and the secret key). It asks for the new password without showing it.
+  ```bash
+  DATABASE_URL="$ADMIN_DATABASE_URL" SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SECRET_KEY=<secret key> pnpm --filter @familyos/api household:set-password --email <their email>
+  ```
 - **Is the worker running?** Check `/api/health/ready`: `"worker":"stale"` means no heartbeat for 30 minutes. Then look at the worker's logs in Railway.
 
 ## Cost
@@ -188,7 +183,6 @@ Railway's config-file format is deprecated and stops being read on 2026-12-01, s
 |---|---|
 | Railway Hobby (two small services) | about $5/month, including $5 of usage |
 | Supabase project in an existing Pro organisation | about $10/month of compute, if the org's included $10 credit is already used |
-| Postmark | free tier (100 emails/month) is enough for sign-in codes |
 | Apple Developer | $99/year, if you don't already have it |
 | GitHub Actions (private repository) | within the free minutes and storage |
 

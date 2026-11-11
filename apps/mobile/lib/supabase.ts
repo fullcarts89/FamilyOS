@@ -11,16 +11,6 @@ export const supabase = createClient(config.supabaseUrl, config.supabasePublisha
   },
 });
 
-/** Sends a 6-digit sign-in code. Never creates an account: accounts exist only through invites. */
-export const sendSignInCode = (email: string) =>
-  supabase.auth.signInWithOtp({
-    email: email.trim().toLowerCase(),
-    options: { shouldCreateUser: false },
-  });
-
-export const verifySignInCode = (email: string, token: string) =>
-  supabase.auth.verifyOtp({
-    email: email.trim().toLowerCase(),
-    token: token.trim(),
-    type: 'email',
-  });
+/** Signs in with email and password. There is no public sign-up: accounts come from invites. */
+export const signInWithPassword = (email: string, password: string) =>
+  supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });

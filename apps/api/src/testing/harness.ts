@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { createDb, type Database } from '@familyos/db';
 import { SignJWT } from 'jose';
 import type { Kysely } from 'kysely';
@@ -9,16 +9,31 @@ import { createLogger } from '../logger';
 
 export const TEST_ISSUER = 'http://127.0.0.1:55321/auth/v1';
 
-/** Test app with a per-run random signing secret, a recording auth admin and captured logs. */
+/** The in-memory auth admin refuses this password, as Supabase does a leaked one. */
+export const LEAKED_PASSWORD = 'password1234';
+
+/** Test app with a per-run random signing secret, an in-memory auth admin and captured logs. */
 export function createTestApp(
   options: { db?: Kysely<Database>; now?: () => Date; corsOrigins?: string[] } = {},
 ) {
   const secret = randomBytes(32).toString('hex');
   const logs: string[] = [];
-  const ensuredEmails: string[] = [];
+  /** Accounts the auth admin holds: email → user ID and password. */
+  const accounts = new Map<string, { userId: string; password: string }>();
   const authAdmin: AuthAdmin = {
-    ensureUser: async (email) => {
-      ensuredEmails.push(email);
+    createUser: async (email, password) => {
+      if (accounts.has(email)) return 'exists';
+      // Stands in for Supabase's leaked-password check.
+      if (password === LEAKED_PASSWORD) return 'weak_password';
+      const userId = randomUUID();
+      accounts.set(email, { userId, password });
+      return { userId };
+    },
+    setPassword: async (userId, password) => {
+      for (const account of accounts.values()) {
+        if (account.userId === userId) account.password = password;
+      }
+      return 'ok';
     },
   };
   // A pool that is never used when no database is given: pg connects lazily.
@@ -59,5 +74,5 @@ export function createTestApp(
       ...(init.body !== undefined && { body: JSON.stringify(init.body) }),
     });
 
-  return { app, db, logs, ensuredEmails, tokenFor, request };
+  return { app, db, logs, accounts, tokenFor, request };
 }

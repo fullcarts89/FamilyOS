@@ -7,7 +7,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import type { AppEnv, Deps } from './http/env';
 import { ApiError } from './http/errors';
 import { householdScope, requireUser } from './http/middleware';
-import { accountRoutes } from './routes/account';
+import { accountRoutes, inviteClaimRoutes } from './routes/account';
 import { householdRoutes } from './routes/household';
 import { workItemRoutes } from './routes/work-items';
 import { exportRoutes } from './routes/export';
@@ -85,6 +85,9 @@ export function createApp(deps: Deps) {
       return c.json({ status: 'unavailable', database: 'unavailable', version }, 503);
     }
   });
+
+  // Before the signed-in routes, so their auth check never runs for it.
+  app.route('/', inviteClaimRoutes(deps));
 
   const authed = new Hono<AppEnv>();
   authed.use('*', requireUser(deps));
