@@ -7,7 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "household:bootstrap": "tsx src/cli/bootstrap-household.ts"
+    "household:bootstrap": "tsx src/cli/bootstrap-household.ts",
+    "household:set-password": "tsx src/cli/set-password.ts"
   },
   "dependencies": {
     "@familyos/db": "workspace:*",

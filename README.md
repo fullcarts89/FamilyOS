@@ -49,7 +49,7 @@ There is no public sign-up. An operator creates the household and its owner once
 pnpm --filter @familyos/api household:bootstrap --name "Our Home" --timezone America/Los_Angeles --owner-email you@example.com --owner-name Sam
 ```
 
-The owner then signs in with an emailed 6-digit code and invites the other adult from the app. Locally, sign-in emails land in Mailpit at http://127.0.0.1:55324.
+It asks for the owner's password without showing it. The owner then signs in with email and password and invites the other adult from the app; they choose their own password when they open the invite link. `household:set-password --email <email>` resets a forgotten password.
 
 ## Inputs
 

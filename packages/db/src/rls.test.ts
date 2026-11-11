@@ -172,6 +172,41 @@ describe.skipIf(!db)('row-level security', () => {
       await expect(accept(token, 'invitee@example.test')).rejects.toThrow(/invite_not_found/);
     });
 
+    it('tells the claim check only whether a pending invite matches that email', async () => {
+      const claimable = (token: string, email: string) =>
+        withRequestContext(requireDb(), { userId: randomUUID() }, (trx) =>
+          sql<{
+            ok: boolean;
+          }>`select app.invite_claimable(${hashToken(token)}, ${email}) as ok`.execute(trx),
+        ).then((r) => r.rows[0]?.ok);
+
+      const token = randomUUID();
+      const id = await seedInvite(requireDb(), a, { email: 'claimer@example.test', token });
+      expect(await claimable(token, 'Claimer@Example.test')).toBe(true);
+      expect(await claimable(token, 'other@example.test')).toBe(false);
+      expect(await claimable(randomUUID(), 'claimer@example.test')).toBe(false);
+
+      const expired = randomUUID();
+      await seedInvite(requireDb(), a, {
+        email: 'claimer@example.test',
+        token: expired,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+      expect(await claimable(expired, 'claimer@example.test')).toBe(false);
+
+      await requireDb()
+        .updateTable('app.invite')
+        .set({ revoked_at: new Date() })
+        .where('id', '=', id)
+        .execute();
+      expect(await claimable(token, 'claimer@example.test')).toBe(false);
+
+      const used = randomUUID();
+      await seedInvite(requireDb(), a, { email: 'used@example.test', token: used });
+      await accept(used, 'used@example.test');
+      expect(await claimable(used, 'used@example.test')).toBe(false);
+    });
+
     it('rejects expired and revoked invites with the same error', async () => {
       const expired = randomUUID();
       await seedInvite(requireDb(), a, {

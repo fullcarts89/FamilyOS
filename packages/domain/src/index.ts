@@ -10,3 +10,4 @@ export * from './today';
 export * from './presentation';
 export * from './due-options';
 export * from './recurrence';
+export * from './password';

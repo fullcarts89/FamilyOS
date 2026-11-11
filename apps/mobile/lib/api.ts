@@ -12,18 +12,15 @@ export class ApiRequestError extends Error {
   }
 }
 
-/** Calls the FamilyOS API with the current session token. The app never queries the database directly. */
-export async function api<T>(
+async function send<T>(
   path: string,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: unknown },
+  token: string | null,
 ): Promise<T> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) throw new ApiRequestError(401, 'unauthenticated');
   const res = await fetch(`${config.apiUrl}${path}`, {
     method: init.method ?? 'GET',
     headers: {
-      authorization: `Bearer ${token}`,
+      ...(token && { authorization: `Bearer ${token}` }),
       ...(init.body !== undefined && { 'content-type': 'application/json' }),
     },
     ...(init.body !== undefined && { body: JSON.stringify(init.body) }),
@@ -32,6 +29,26 @@ export async function api<T>(
   if (!res.ok) throw new ApiRequestError(res.status, payload.error ?? 'request_failed');
   return payload as T;
 }
+
+/** Calls the FamilyOS API with the current session token. The app never queries the database directly. */
+export async function api<T>(
+  path: string,
+  init: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new ApiRequestError(401, 'unauthenticated');
+  return send<T>(path, init, token);
+}
+
+/** The one call made before sign-in: creates the invitee's account from the link and joins. */
+export const claimInvite = (body: {
+  token: string;
+  email: string;
+  password: string;
+  displayName: string;
+}) =>
+  send<{ householdId: string; memberId: string }>('/invites/claim', { method: 'POST', body }, null);
 
 export interface MyHousehold {
   id: string;

@@ -1,6 +1,8 @@
 /**
  * Operator command: creates a household and its owner account. There is no public sign-up or
- * onboarding (product contract §6); this is how the first household comes to exist.
+ * onboarding (product contract §6); this is how the first household comes to exist. It asks for
+ * the owner's password without echoing it. If the email already has an account, that account
+ * and its password are kept.
  *
  *   pnpm --filter @familyos/api household:bootstrap --name "Our Home" \
  *     --timezone America/Los_Angeles --owner-email you@example.com --owner-name Sam
@@ -10,6 +12,7 @@ import { createDb } from '@familyos/db';
 import { sql } from 'kysely';
 import { z } from 'zod';
 import { createSupabaseAuthAdmin } from '../auth/admin';
+import { readNewPassword } from './read-password';
 
 const args = z
   .object({
@@ -39,12 +42,19 @@ const env = z
   })
   .parse(process.env);
 
+const password = await readNewPassword();
 const db = createDb({ connectionString: env.DATABASE_URL, maxConnections: 1 });
 try {
-  await createSupabaseAuthAdmin({
+  const created = await createSupabaseAuthAdmin({
     supabaseUrl: env.SUPABASE_URL,
     secretKey: env.SUPABASE_SECRET_KEY,
-  }).ensureUser(args['owner-email']);
+  }).createUser(args['owner-email'], password);
+  if (created === 'weak_password') {
+    throw new Error('Supabase refused that password as weak or leaked; run again with another');
+  }
+  if (created === 'exists') {
+    console.warn('That email already has an account; its password is unchanged.');
+  }
   const { rows } = await sql<{
     id: string;
   }>`select id from auth.users where email = ${args['owner-email']}`.execute(db);

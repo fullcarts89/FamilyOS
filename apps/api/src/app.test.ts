@@ -49,6 +49,22 @@ describe('api http layer', () => {
     expect(logs.join('\n')).not.toContain('household secret');
   });
 
+  it('opens only the invite claim before sign-in, and validates it', async () => {
+    const { request, accounts } = createTestApp();
+    const claim = (body: unknown) => request('/invites/claim', { method: 'POST', body });
+    const base = { token: 'x'.repeat(43), email: 'new@example.test', displayName: 'New' };
+    // Rejected by validation (422), not by the auth check (401), and before any database call.
+    expect((await claim({ ...base, password: 'too short' })).status).toBe(422);
+    expect((await claim({ ...base, password: 'a'.repeat(73) })).status).toBe(422);
+    expect(
+      (await claim({ ...base, email: 'not an email', password: 'long enough password' })).status,
+    ).toBe(422);
+    expect(accounts.size).toBe(0);
+    // Everything else still needs a token.
+    expect((await request('/invites/accept', { method: 'POST', body: base })).status).toBe(401);
+    expect((await request('/me')).status).toBe(401);
+  });
+
   it('rejects oversized bodies', async () => {
     const { request, tokenFor } = createTestApp();
     const res = await request('/invites/accept', {

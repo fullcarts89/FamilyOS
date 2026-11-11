@@ -10,7 +10,7 @@ import {
 import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HouseholdExportSchema } from './export-schema';
-import { createTestApp } from './testing/harness';
+import { createTestApp, LEAKED_PASSWORD } from './testing/harness';
 
 // Gate G1, through the HTTP API against the local database. Skipped without DATABASE_URL.
 const url = process.env.DATABASE_URL;
@@ -25,7 +25,7 @@ function requireDb() {
 
 describe.skipIf(!db)('API security (G1)', () => {
   const harness = db ? createTestApp({ db }) : createTestApp();
-  const { request, tokenFor, logs, ensuredEmails } = harness;
+  const { request, tokenFor, logs, accounts } = harness;
   let a: SeededHousehold;
   let b: SeededHousehold;
   let bInviteId: string;
@@ -291,7 +291,8 @@ describe.skipIf(!db)('API security (G1)', () => {
       };
       expect(invite.email).toBe(email);
       expect(link).toContain(encodeURIComponent(token));
-      expect(ensuredEmails).toContain(email);
+      // Inviting creates no account; the invitee creates theirs from the link.
+      expect(accounts.has(email)).toBe(false);
 
       const invitee = { userId: randomUUID(), email };
       const stranger = { userId: randomUUID(), email: 'stranger@example.test' };
@@ -340,6 +341,109 @@ describe.skipIf(!db)('API security (G1)', () => {
         body: { token, displayName: 'Late' },
       });
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe('creating an account from an invite', () => {
+    const PASSWORD = 'a long enough password';
+    const invite = async (email: string) => {
+      const created = await request(`/households/${a.id}/invites`, {
+        method: 'POST',
+        token: await tokenOf(a.owner),
+        body: { email, role: 'adult' },
+      });
+      return (await created.json()) as { token: string; invite: { id: string } };
+    };
+    const claim = (body: Record<string, unknown>) =>
+      request('/invites/claim', { method: 'POST', body });
+
+    it('creates the account and joins, only for the invited email, once, without signing in', async () => {
+      const email = `claim-${randomUUID()}@example.test`;
+      const { token } = await invite(email);
+
+      const wrongEmail = await claim({
+        token,
+        email: 'someone-else@example.test',
+        password: PASSWORD,
+        displayName: 'X',
+      });
+      expect(wrongEmail.status).toBe(404);
+      expect(accounts.has('someone-else@example.test')).toBe(false);
+      expect(
+        (
+          await claim({
+            token: randomUUID() + randomUUID(),
+            email,
+            password: PASSWORD,
+            displayName: 'X',
+          })
+        ).status,
+      ).toBe(404);
+      expect(accounts.has(email)).toBe(false);
+
+      const ok = await claim({
+        token,
+        email: email.toUpperCase(),
+        password: PASSWORD,
+        displayName: 'Partner',
+      });
+      expect(ok.status).toBe(201);
+      const { householdId } = (await ok.json()) as { householdId: string };
+      expect(householdId).toBe(a.id);
+      const account = accounts.get(email);
+      expect(account?.password).toBe(PASSWORD);
+
+      const me = await request('/me', {
+        token: await tokenFor({ userId: account?.userId ?? '', email }),
+      });
+      const { households } = (await me.json()) as { households: { id: string; role: string }[] };
+      expect(households).toEqual([expect.objectContaining({ id: a.id, role: 'adult' })]);
+
+      // The link is used up.
+      const again = await claim({
+        token,
+        email,
+        password: 'another long password',
+        displayName: 'P',
+      });
+      expect(again.status).toBe(404);
+      expect(accounts.get(email)?.password).toBe(PASSWORD);
+      expect(logs.join('\n')).not.toContain(PASSWORD);
+    });
+
+    it('never changes an existing account, and leaves the invite usable by signing in', async () => {
+      const email = `existing-${randomUUID()}@example.test`;
+      accounts.set(email, { userId: randomUUID(), password: 'the original password' });
+      const { token } = await invite(email);
+
+      const res = await claim({ token, email, password: PASSWORD, displayName: 'Taken' });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: 'account_exists' });
+      expect(accounts.get(email)?.password).toBe('the original password');
+
+      const accept = await request('/invites/accept', {
+        method: 'POST',
+        token: await tokenFor({ userId: accounts.get(email)?.userId ?? '', email }),
+        body: { token, displayName: 'Signed in' },
+      });
+      expect(accept.status).toBe(201);
+    });
+
+    it('refuses revoked invites, short passwords and leaked ones, creating nothing', async () => {
+      const email = `revoked-claim-${randomUUID()}@example.test`;
+      const { token, invite: created } = await invite(email);
+      expect((await claim({ token, email, password: 'short', displayName: 'S' })).status).toBe(422);
+      const leaked = await claim({ token, email, password: LEAKED_PASSWORD, displayName: 'S' });
+      expect(leaked.status).toBe(422);
+      expect(await leaked.json()).toEqual({ error: 'weak_password' });
+      await request(`/households/${a.id}/invites/${created.id}`, {
+        method: 'DELETE',
+        token: await tokenOf(a.owner),
+      });
+      expect((await claim({ token, email, password: PASSWORD, displayName: 'S' })).status).toBe(
+        404,
+      );
+      expect(accounts.has(email)).toBe(false);
     });
   });
 

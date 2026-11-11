@@ -30,51 +30,43 @@ describe.skipIf(!enabled)('Supabase Auth (local stack)', () => {
     expect(otp.ok).toBe(false);
   });
 
-  it('creates invited accounts idempotently, and their tokens pass our verifier', async () => {
+  it('creates password accounts without touching existing ones, and their tokens pass our verifier', async () => {
     const email = `invited-${randomUUID()}@example.test`;
+    const password = `first ${randomUUID()}`;
     const admin = createSupabaseAuthAdmin({
       supabaseUrl: supabaseUrl ?? '',
       secretKey: secretKey ?? '',
     });
-    await admin.ensureUser(email);
-    await admin.ensureUser(email);
+    const created = await admin.createUser(email, password);
+    if (typeof created === 'string') throw new Error(`expected a new account, got ${created}`);
+    expect(await admin.createUser(email, `second ${randomUUID()}`)).toBe('exists');
 
-    const adminHeaders = {
-      apikey: secretKey ?? '',
-      authorization: `Bearer ${secretKey}`,
-      'content-type': 'application/json',
-    };
-    const link = await fetch(auth('/admin/generate_link'), {
-      method: 'POST',
-      headers: adminHeaders,
-      body: JSON.stringify({ type: 'magiclink', email }),
-    });
-    expect(link.status).toBe(200);
-    const linkBody = (await link.json()) as {
-      hashed_token?: string;
-      properties?: { hashed_token?: string };
-      id?: string;
-    };
-    const tokenHash = linkBody.properties?.hashed_token ?? linkBody.hashed_token;
-    expect(tokenHash).toBeTruthy();
-
-    const verified = await fetch(auth('/verify'), {
-      method: 'POST',
-      headers: { apikey: publishableKey ?? '', 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'magiclink', token_hash: tokenHash }),
-    });
-    expect(verified.status).toBe(200);
-    const session = (await verified.json()) as { access_token: string; user: { id: string } };
+    const signIn = (pw: string) =>
+      fetch(auth('/token?grant_type=password'), {
+        method: 'POST',
+        headers: { apikey: publishableKey ?? '', 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password: pw }),
+      });
+    // The second createUser left the first password in place.
+    const signedIn = await signIn(password);
+    expect(signedIn.status).toBe(200);
+    const session = (await signedIn.json()) as { access_token: string; user: { id: string } };
+    expect(session.user.id).toBe(created.userId);
 
     const verify = createTokenVerifier({
       issuer: auth('').toString(),
       jwksUrl: auth('/.well-known/jwks.json').toString(),
     });
-    expect(await verify(session.access_token)).toEqual({ userId: session.user.id, email });
+    expect(await verify(session.access_token)).toEqual({ userId: created.userId, email });
 
-    await fetch(auth(`/admin/users/${session.user.id}`), {
+    const reset = `reset ${randomUUID()}`;
+    expect(await admin.setPassword(created.userId, reset)).toBe('ok');
+    expect((await signIn(password)).status).toBe(400);
+    expect((await signIn(reset)).status).toBe(200);
+
+    await fetch(auth(`/admin/users/${created.userId}`), {
       method: 'DELETE',
-      headers: adminHeaders,
+      headers: { apikey: secretKey ?? '', authorization: `Bearer ${secretKey}` },
     });
   });
 });
