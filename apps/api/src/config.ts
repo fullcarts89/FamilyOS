@@ -1,9 +1,12 @@
+import { databaseUrl } from '@familyos/db';
 import { z } from 'zod';
 
 const ConfigSchema = z
   .object({
     API_PORT: z.coerce.number().int().min(1).max(65535).default(8787),
     DATABASE_URL: z.string().url(),
+    /** The password for DATABASE_URL, when the host keeps it separately (Railway). */
+    DATABASE_PASSWORD: z.string().min(1).optional(),
     SUPABASE_URL: z.string().url(),
     /** Server-side key for the Auth admin API (creating invited accounts). Never sent to clients. */
     SUPABASE_SECRET_KEY: z.string().min(20),
@@ -11,7 +14,10 @@ const ConfigSchema = z
     SUPABASE_JWKS_URL: z.string().url().optional(),
     /** ... or with the legacy shared secret (HS256), as the local CLI stack does. */
     SUPABASE_JWT_SECRET: z.string().min(32).optional(),
-    INVITE_LINK_BASE: z.string().default('familyos://invite'),
+    /** Defaults to the app's own /invite page on Railway's address, else the iPhone app's link. */
+    INVITE_LINK_BASE: z.string().optional(),
+    /** Set by Railway: the service's public hostname. */
+    RAILWAY_PUBLIC_DOMAIN: z.string().optional(),
     /** Directory of the Expo web export to serve beside the API (production); unset in development. */
     WEB_DIST_DIR: z.string().min(1).optional(),
     /** Supabase URL compiled into that export, if it differs from SUPABASE_URL (set by the image). */
@@ -34,7 +40,9 @@ const ConfigSchema = z
     path: ['SUPABASE_JWKS_URL'],
   });
 
-export type ApiConfig = z.infer<typeof ConfigSchema>;
+export type ApiConfig = Omit<z.infer<typeof ConfigSchema>, 'INVITE_LINK_BASE'> & {
+  INVITE_LINK_BASE: string;
+};
 
 /** Reads configuration from the environment. Values are never logged or echoed. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
@@ -46,5 +54,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     );
     throw new Error(`Invalid API configuration: ${fields}`);
   }
-  return parsed.data;
+  const c = parsed.data;
+  return {
+    ...c,
+    DATABASE_URL: databaseUrl(c.DATABASE_URL, c.DATABASE_PASSWORD),
+    INVITE_LINK_BASE:
+      c.INVITE_LINK_BASE ??
+      (c.RAILWAY_PUBLIC_DOMAIN ? `https://${c.RAILWAY_PUBLIC_DOMAIN}/invite` : 'familyos://invite'),
+  };
 }

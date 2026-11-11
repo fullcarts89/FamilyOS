@@ -1,0 +1,81 @@
+name: Production setup
+
+# One-time production setup, run by hand after *Migrate production* (docs/operations/deploy.md,
+# step 7). Does in GitHub Actions what would otherwise need the founder's laptop, reading every
+# credential from the `production` environment's secrets, so none is typed or shown anywhere:
+#   1. turns on the API's and the worker's database logins with API_DB_PASSWORD and
+#      WORKER_DB_PASSWORD (the same values go into DATABASE_PASSWORD on each Railway service);
+#   2. creates the household and the owner's account, with OWNER_PASSWORD, unless a household
+#      already exists.
+# Safe to run again: step 1 re-sets the same passwords, step 2 does nothing the second time.
+
+on:
+  workflow_dispatch:
+    inputs:
+      household_name:
+        description: Household name
+        required: true
+      timezone:
+        description: Household time zone (IANA, for example America/Los_Angeles)
+        required: true
+        default: America/Los_Angeles
+      owner_email:
+        description: The owner's sign-in email
+        required: true
+      owner_name:
+        description: The owner's first name
+        required: true
+      confirm:
+        description: Type "set up production" to confirm
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-database
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    if: >-
+      vars.PRODUCTION_ENABLED == 'true' && github.ref == 'refs/heads/main' &&
+      inputs.confirm == 'set up production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Turn on the API's database login
+        env:
+          ADMIN_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          LOGIN_PASSWORD: ${{ secrets.API_DB_PASSWORD }}
+        run: node scripts/ops/enable-login.mjs familyos_api_login
+      - name: Turn on the worker's database login
+        env:
+          ADMIN_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          LOGIN_PASSWORD: ${{ secrets.WORKER_DB_PASSWORD }}
+        run: node scripts/ops/enable-login.mjs familyos_worker_login
+      - name: Create the household and the owner's account
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          OWNER_PASSWORD: ${{ secrets.OWNER_PASSWORD }}
+          # Inputs reach the shell only as variables, never spliced into the script.
+          HOUSEHOLD_NAME: ${{ inputs.household_name }}
+          HOUSEHOLD_TIMEZONE: ${{ inputs.timezone }}
+          OWNER_EMAIL: ${{ inputs.owner_email }}
+          OWNER_NAME: ${{ inputs.owner_name }}
+        run: |
+          # The project ref is the suffix of the pooler user name: postgres.<ref>.
+          ref=$(node -e 'const u = new URL(process.env.DATABASE_URL); console.log(decodeURIComponent(u.username).split(".")[1] ?? "")')
+          test -n "$ref" || { echo "::error::MIGRATION_DATABASE_URL is not a session-pooler URL (user postgres.<ref>)"; exit 1; }
+          printf '%s\n%s\n' "$OWNER_PASSWORD" "$OWNER_PASSWORD" |
+            SUPABASE_URL="https://$ref.supabase.co" pnpm --silent --filter @familyos/api household:bootstrap --once \
+              --name "$HOUSEHOLD_NAME" --timezone "$HOUSEHOLD_TIMEZONE" \
+              --owner-email "$OWNER_EMAIL" --owner-name "$OWNER_NAME"

@@ -1,4 +1,5 @@
 export { createDb, type DbConfig } from './client';
+export { databaseUrl } from './url';
 export {
   setContext,
   withRequestContext,

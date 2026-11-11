@@ -5,7 +5,9 @@ name: Migrate production
 # applies them, then checks readiness. Railway's "Wait for CI" holds the new code until this
 # passes, so code never runs ahead of its schema. Migrations must keep the previous release
 # working (add, don't rename or drop), so a code rollback never needs a schema rollback.
-# Off until the repository variable PRODUCTION_ENABLED is 'true'.
+# Off until the repository variable PRODUCTION_ENABLED is 'true'. Until BACKUP_PUBLIC_KEY is set it
+# skips its own backup and relies on Supabase's daily backups; until APP_URL is set (the app's
+# first deploy) it skips the readiness check.
 
 on:
   push:
@@ -43,7 +45,11 @@ jobs:
       - uses: supabase/setup-cli@v3.0.1
         with:
           version: 2.119.0
+      - name: No backup key yet
+        if: vars.BACKUP_PUBLIC_KEY == ''
+        run: echo "::warning::BACKUP_PUBLIC_KEY is not set; relying on Supabase's daily backups"
       - name: Back up before migrating
+        if: vars.BACKUP_PUBLIC_KEY != ''
         env:
           BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
           BACKUP_PUBLIC_KEY_ASC: ${{ vars.BACKUP_PUBLIC_KEY }}
@@ -52,6 +58,7 @@ jobs:
           printf '%s\n' "$BACKUP_PUBLIC_KEY_ASC" > "$RUNNER_TEMP/backup-public.asc"
           BACKUP_PUBLIC_KEY="$RUNNER_TEMP/backup-public.asc" node scripts/ops/backup.mjs "$RUNNER_TEMP/backup"
       - uses: actions/upload-artifact@v7.0.2
+        if: vars.BACKUP_PUBLIC_KEY != ''
         with:
           name: familyos-pre-migration-${{ github.run_id }}
           path: ${{ runner.temp }}/backup/*.tar.gpg
@@ -66,4 +73,5 @@ jobs:
         env:
           MIGRATION_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
       - name: Readiness
+        if: vars.APP_URL != ''
         run: curl --fail --silent --show-error --retry 5 --retry-delay 10 "${{ vars.APP_URL }}/api/health/ready"
