@@ -69,6 +69,12 @@ export async function appTables(client) {
 }
 
 export async function migrationVersions(client) {
+  // A project that has never been migrated has no history table yet (the first run of
+  // *Migrate production* backs up before `supabase db push` creates it).
+  const { rows: found } = await client.query(
+    `select to_regclass('supabase_migrations.schema_migrations') is not null as present`,
+  );
+  if (!found[0].present) return [];
   const { rows } = await client.query(
     'select version from supabase_migrations.schema_migrations order by version',
   );
