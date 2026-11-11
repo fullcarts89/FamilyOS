@@ -7,6 +7,10 @@
 //
 // ADMIN_DATABASE_URL is the Supabase session-pooler string for `postgres`. The printed string
 // uses the same pooler with the role's own name (`<role>.<ref>` on Supabase's shared pooler).
+//
+// With LOGIN_PASSWORD set (the *Production setup* workflow, from a GitHub secret), that password
+// is used instead of a generated one and nothing secret is printed: the same password goes into
+// DATABASE_PASSWORD on the Railway service.
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 
@@ -21,7 +25,12 @@ if (!ROLES.includes(role) || !adminUrl) {
   process.exit(2);
 }
 
-const password = randomBytes(24).toString('base64url');
+const given = process.env.LOGIN_PASSWORD;
+if (given !== undefined && given.length < 16) {
+  console.error('LOGIN_PASSWORD must be at least 16 characters');
+  process.exit(2);
+}
+const password = given ?? randomBytes(24).toString('base64url');
 const client = new pg.Client({ connectionString: adminUrl });
 try {
   await client.connect();
@@ -32,6 +41,11 @@ try {
   process.exit(1);
 } finally {
   await client.end().catch(() => {});
+}
+
+if (given !== undefined) {
+  console.log(`${role} enabled with the given password.`);
+  process.exit(0);
 }
 
 const url = new URL(adminUrl);

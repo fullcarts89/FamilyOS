@@ -6,6 +6,9 @@
  *
  *   pnpm --filter @familyos/api household:bootstrap --name "Our Home" \
  *     --timezone America/Los_Angeles --owner-email you@example.com --owner-name Sam
+ *
+ * With --once it does nothing when a household already exists, so the setup workflow can be
+ * run again safely.
  */
 import { parseArgs } from 'node:util';
 import { createDb } from '@familyos/db';
@@ -22,6 +25,7 @@ const args = z
       .refine((tz) => Intl.supportedValuesOf('timeZone').includes(tz), 'unknown timezone'),
     'owner-email': z.email().transform((e) => e.toLowerCase()),
     'owner-name': z.string().trim().min(1).max(60),
+    once: z.boolean().default(false),
   })
   .parse(
     parseArgs({
@@ -30,6 +34,7 @@ const args = z
         timezone: { type: 'string' },
         'owner-email': { type: 'string' },
         'owner-name': { type: 'string' },
+        once: { type: 'boolean' },
       },
     }).values,
   );
@@ -42,9 +47,21 @@ const env = z
   })
   .parse(process.env);
 
-const password = await readNewPassword();
 const db = createDb({ connectionString: env.DATABASE_URL, maxConnections: 1 });
-try {
+
+async function householdExists(): Promise<boolean> {
+  const { rows } = await sql<{ n: number }>`select count(*)::int as n from app.household`.execute(
+    db,
+  );
+  return (rows[0]?.n ?? 0) > 0;
+}
+
+async function bootstrap() {
+  if (args.once && (await householdExists())) {
+    console.warn('A household already exists; nothing to do.');
+    return;
+  }
+  const password = await readNewPassword();
   const created = await createSupabaseAuthAdmin({
     supabaseUrl: env.SUPABASE_URL,
     secretKey: env.SUPABASE_SECRET_KEY,
@@ -91,6 +108,10 @@ try {
     return { householdId: household.id, ownerMemberId: owner.id };
   });
   console.warn(JSON.stringify(result));
+}
+
+try {
+  await bootstrap();
 } finally {
   await db.destroy();
 }
