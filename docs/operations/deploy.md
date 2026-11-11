@@ -1,7 +1,7 @@
 # Private deploy runbook (M4)
 
-**Status:** ready for the founder's setup. Nothing in this runbook has been created or deployed yet. Every step marked **You** needs your own account, payment details or secrets; nobody else does them.
-**Decision 3 (2026-11-08):** Railway Hobby for the API and the worker. Supabase as a new project in your existing organisation. The iPhone app goes out through TestFlight. A subdomain you own serves the app and sends sign-in email.
+**Status (2026-11-10):** steps 1 and 2 are done; step 3 is next. No hosted service has been created or deployed yet. Every step marked **You** needs your own account, payment details or secrets; nobody else does them.
+**Decision 3 (2026-11-08):** Railway Hobby for the API and the worker. Supabase as a new project in your existing organisation ("Fullcarts"). The iPhone app goes out through TestFlight. A subdomain you own serves the app and sends sign-in email.
 
 ## What runs where
 
@@ -28,16 +28,19 @@ Each service gets its own login, and each login can do only what that service ne
 
 Do the steps in order. Every value you create goes into your password manager and the service that needs it, never into the repository or a chat.
 
-**1. Confirm three things (You).**
+**1. Confirm three things (You). Done 2026-11-10.**
 - **Supabase plan:** the existing organisation must be on Pro. Free projects pause after a week without use and have no backups.
+  - *Done:* "Fullcarts" is on Pro. You deleted its Pocket People project on 2026-11-10 to make room, so FamilyOS takes that project's place at about the same monthly cost.
 - **Organisation members:** everyone in that organisation can open the FamilyOS database. If anyone besides you is a member, create a separate organisation instead.
+  - *Still to confirm:* check Organization settings → Team before you put real household data in.
 - **Apple Developer:** you need a membership ($99/year) for TestFlight.
+  - *Done:* you already have one from Kinship.
 
-**2. Merge (needs your approval).** Merge PRs #2–#6 into `main` in order.
+**2. Merge (needs your approval). Done 2026-11-09.** PRs #2–#6 are merged into `main` as merge commits, ending at 4e445f4. *Migrate production* skipped itself, because `PRODUCTION_ENABLED` isn't set.
 
 **3. Supabase project (You).**
 - **Create the project:**
-  - Name it `familyos`.
+  - Create it in the "Fullcarts" organisation and name it `familyos`.
   - Pick the region nearest home.
   - Generate a database password and save it.
 - **Auth → Sign In / Providers:**
@@ -187,9 +190,9 @@ Railway's config-file format is deprecated and stops being read on 2026-12-01, s
 | Item | Cost |
 |---|---|
 | Railway Hobby (two small services) | about $5/month, including $5 of usage |
-| Supabase project in an existing Pro organisation | about $10/month of compute, if the org's included $10 credit is already used |
+| Supabase project in the "Fullcarts" Pro organisation | about $10/month of compute; it replaces the deleted Pocket People project, so the bill stays about the same |
 | Postmark | free tier (100 emails/month) is enough for sign-in codes |
-| Apple Developer | $99/year, if you don't already have it |
+| Apple Developer | already paid (your Kinship membership) |
 | GitHub Actions (private repository) | within the free minutes and storage |
 
 Check current prices before signing up.
