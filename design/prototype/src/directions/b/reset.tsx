@@ -181,7 +181,7 @@ export function Reset() {
                 <Avatar id="maya" size={18} />
                 <Avatar id="theo" size={18} dim={f.state.reset.mode === 'apart'} />
               </span>
-              <span className="mono">
+              <span className="clock">
                 Reset · {time} <span className="b-faint">/ ~25 min</span>
               </span>
               <button
@@ -376,7 +376,7 @@ function LookBack() {
                         ))}
                     </span>
                     <span>
-                      <span className="mono b-faint">{e.kind === 'childcare' && e.who.length === 1 ? 'All day' : clock(e.start)}</span>{' '}
+                      <span className="clock b-faint">{e.kind === 'childcare' && e.who.length === 1 ? 'All day' : clock(e.start)}</span>{' '}
                       {e.title.replace('June: ', '')}
                     </span>
                   </div>
@@ -591,7 +591,7 @@ function Assign({ loose }: { loose: string[] }) {
           {(['drop', 'pick'] as const).map((slot) => (
             <div key={slot} className="b-cover-row" role="row">
               <span role="rowheader" className="b-cover-label">
-                {slot === 'drop' ? 'Drop-off' : 'Pickup'} <span className="mono b-faint">{slot === 'drop' ? '8:15' : '5:30'}</span>
+                {slot === 'drop' ? 'Drop-off' : 'Pickup'} <span className="clock b-faint">{slot === 'drop' ? '8:15' : '5:30'}</span>
               </span>
               {days.map((d) => {
                 const s = coverageSlots.find((x) => x.key === `${d.date}-${slot}`)!;
@@ -936,7 +936,7 @@ function WeekPlan({ loose }: { loose: string[] }) {
                 {d.note && <span className="b-pday-note">{d.note}</span>}
                 {together.map((e) => (
                   <span key={e.id} className="b-pday-note">
-                    <span className="mono">{range(e.start, e.end)}</span> {e.title}
+                    <span className="clock">{range(e.start, e.end)}</span> {e.title}
                   </span>
                 ))}
               </span>
@@ -948,7 +948,7 @@ function WeekPlan({ loose }: { loose: string[] }) {
                     {list.length ? (
                       list.map((x) => (
                         <span key={x.key} className={cx('b-pitem', x.warn && 'b-warn')}>
-                          <span className="mono b-faint">{x.time}</span>
+                          <span className="clock b-faint">{x.time}</span>
                           {x.text}
                           {x.warn && <TriangleAlert size={12} strokeWidth={1.75} aria-label="Maya is away" />}
                         </span>
@@ -966,7 +966,7 @@ function WeekPlan({ loose }: { loose: string[] }) {
                     const who = coverage[`${d.date}-${slot}`];
                     return (
                       <span key={slot} className={cx('b-pitem', !who && 'b-warn')}>
-                        <span className="mono b-faint">{slot === 'drop' ? '8:15' : '5:30'}</span>
+                        <span className="clock b-faint">{slot === 'drop' ? '8:15' : '5:30'}</span>
                         {who ? <Avatar id={who} size={14} /> : <TriangleAlert size={12} strokeWidth={1.75} />}
                         {slot === 'drop' ? 'Drop-off' : 'Pickup'}
                         {!who && ': nobody yet'}

@@ -74,6 +74,10 @@
 }
 
 .dir-b .mono {
+  font-variant-numeric: tabular-nums;
+}
+/* Geist Mono only for clock times, kbd hints and the session timer. */
+.dir-b .clock {
   font-family: 'Geist Mono', ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   font-size: 12px;
@@ -181,8 +185,7 @@
   border: 1px dashed #c8c8ce;
   border-radius: 4px;
   color: var(--muted);
-  font: 500 10.5px/1 'Geist Mono', ui-monospace, monospace;
-  letter-spacing: 0.02em;
+  font: 500 11px/1 'Geist', system-ui, sans-serif;
 }
 
 .dir-b .b-pill {
@@ -1264,7 +1267,7 @@
   align-items: flex-end;
   gap: 2px;
 }
-.dir-b .b-upnext-right .mono {
+.dir-b .b-upnext-right :is(.mono, .clock) {
   font-size: 11px;
 }
 
@@ -1279,7 +1282,7 @@
   align-items: center;
   gap: 8px;
 }
-.dir-b .b-tonight .mono {
+.dir-b .b-tonight :is(.mono, .clock) {
   width: 36px;
 }
 
@@ -1589,7 +1592,7 @@
 .dir-b .b-capture-exrow:hover svg {
   opacity: 1;
 }
-.dir-b .b-capture-exrow .mono {
+.dir-b .b-capture-exrow :is(.mono, .clock) {
   font-size: 12.5px;
 }
 .dir-b .b-capture-preview {
@@ -1775,7 +1778,7 @@
 .dir-b .b-signal svg {
   color: var(--muted);
 }
-.dir-b .b-signal .mono {
+.dir-b .b-signal :is(.mono, .clock) {
   font-size: 12px;
   font-weight: 600;
   color: var(--ink);
@@ -1789,11 +1792,11 @@
   background: var(--warn-tint);
 }
 .dir-b .b-signal.is-warn svg,
-.dir-b .b-signal.is-warn .mono {
+.dir-b .b-signal.is-warn :is(.mono, .clock) {
   color: var(--warn);
 }
 .dir-b .b-signal.is-late svg,
-.dir-b .b-signal.is-late .mono {
+.dir-b .b-signal.is-late :is(.mono, .clock) {
   color: var(--late);
 }
 .dir-b .b-signal.is-on {
@@ -2022,7 +2025,7 @@
   color: var(--muted);
   font-size: 12px;
 }
-.dir-b .b-dec-meta .mono {
+.dir-b .b-dec-meta :is(.mono, .clock) {
   font-size: 11.5px;
 }
 .dir-b .b-dec-state.is-good {
@@ -2875,7 +2878,7 @@
   color: var(--muted);
   font-size: 12px;
 }
-.dir-b .b-stat-sub .mono + .b-av {
+.dir-b .b-stat-sub :is(.mono, .clock) + .b-av {
   margin-left: 6px;
 }
 .dir-b .b-look-cols {
@@ -3560,7 +3563,7 @@
   font-size: 11.5px;
   line-height: 16px;
 }
-.dir-b .b-pday-note .mono {
+.dir-b .b-pday-note :is(.mono, .clock) {
   font-size: 11px;
 }
 .dir-b .b-pcell {
@@ -3578,7 +3581,7 @@
   line-height: 20px;
   min-width: 0;
 }
-.dir-b .b-pitem .mono {
+.dir-b .b-pitem :is(.mono, .clock) {
   font-size: 11px;
   min-width: 30px;
 }
@@ -3707,7 +3710,7 @@
   text-overflow: ellipsis;
   color: var(--ink-2);
 }
-.dir-b .b-phcal-ev .mono {
+.dir-b .b-phcal-ev :is(.mono, .clock) {
   font-size: 9.5px;
 }
 .dir-b .b-phlist-row {
@@ -3799,7 +3802,7 @@
     font-size: 15px;
     font-weight: 600;
   }
-  .dir-b .b-mhead-title .mono {
+  .dir-b .b-mhead-title :is(.mono, .clock) {
     font-size: 11px;
   }
 
@@ -4396,7 +4399,7 @@
     padding: 0 6px;
     font-size: 12px;
   }
-  .dir-b .b-cover-day .mono {
+  .dir-b .b-cover-day :is(.mono, .clock) {
     display: none;
   }
   .dir-b .b-cover-hint {
@@ -4584,7 +4587,7 @@
   margin-top: 1px;
   flex: none;
 }
-.dir-b .b-ahead-ev .mono {
+.dir-b .b-ahead-ev :is(.mono, .clock) {
   font-size: 11px;
 }
 .dir-b .b-ahead-free {
@@ -4683,4 +4686,143 @@
 }
 .dir-b .b-cols-wrap .b-dec-opts {
   flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------------------------------------- */
+/* Polish pass 3: rebalance Home, lighter schedule, one working surface, centered toasts        */
+
+.dir-b .b-insp {
+  width: 320px;
+}
+.dir-b .b-insp-body {
+  padding: 16px 18px 24px;
+}
+.dir-b .b-home {
+  padding: 14px 16px 32px 20px;
+}
+.dir-b .b-home-grid {
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: 16px;
+}
+.dir-b .b-due {
+  width: 88px;
+  font-size: 12.5px;
+}
+.dir-b .b-row-sub .b-due {
+  font-size: 12px;
+}
+.dir-b .b-qrow {
+  grid-template-columns: 24px minmax(0, 1fr) 92px 18px 64px;
+}
+.dir-b .b-arow-due {
+  width: 92px;
+  font-size: 12.5px;
+}
+.dir-b .b-qdue {
+  font-size: 12.5px;
+}
+
+/* Schedule rail */
+.dir-b .b-tl-hour::after {
+  left: 36px;
+}
+.dir-b .b-tl-hour span {
+  width: 30px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.dir-b .b-tl-past {
+  left: 36px;
+}
+.dir-b .b-tl-ev {
+  left: 40px;
+  background: color-mix(in srgb, var(--t) 55%, #fff);
+  border-left-width: 2px;
+  color: var(--ink-2);
+}
+.dir-b .b-tl-ev .b-tl-title {
+  font-weight: 500;
+}
+.dir-b .b-tl-now {
+  left: 32px;
+}
+.dir-b .b-tl-now span {
+  left: -32px;
+}
+
+/* Columns: one surface with hairline dividers */
+.dir-b .b-cols {
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+.dir-b .b-col {
+  background: none;
+  border-radius: 0;
+  padding: 0 6px 8px;
+  min-height: 0;
+}
+.dir-b .b-col + .b-col {
+  border-left: 1px solid var(--line);
+}
+.dir-b .b-col-head {
+  height: 36px;
+  margin: 0 -6px 4px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+.dir-b .b-col-name {
+  font-size: 13px;
+}
+.dir-b .b-row.is-dense:hover {
+  background: #f7f7f6;
+  box-shadow: none;
+}
+.dir-b .b-col .b-row.is-dense .b-row-text {
+  -webkit-line-clamp: 2;
+}
+.dir-b .b-col-sub {
+  padding: 12px 6px 4px;
+}
+
+/* Toasts live in the main pane, centered */
+.dir-b .b-main {
+  position: relative;
+}
+.dir-b .b-toasts {
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+}
+
+@container app (max-width: 760px) {
+  .dir-b .b-cols {
+    border-top: 0;
+  }
+  .dir-b .b-col + .b-col {
+    border-left: 0;
+  }
+  .dir-b .b-toasts {
+    left: 12px;
+    right: 12px;
+    bottom: 76px;
+    transform: none;
+    align-items: stretch;
+  }
+  .dir-b .b-qrow {
+    grid-template-columns: minmax(0, 1fr) 18px 60px;
+  }
+}
+@container app (max-width: 760px) {
+  .dir-b .b-due {
+    width: auto;
+    min-width: 44px;
+  }
+}
+@container app (max-width: 760px) {
+  .dir-b .b-home {
+    padding: 12px 16px 96px;
+  }
+  .dir-b .b-col {
+    padding: 0;
+  }
 }

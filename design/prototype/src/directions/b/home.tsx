@@ -254,7 +254,12 @@ function DayTimeline() {
     <div className="b-tl" style={{ height: y(END) + 8 }}>
       {hours.map((h) => (
         <div key={h} className="b-tl-hour" style={{ top: y(h * 60) }}>
-          <span className="mono">{h % 12 === 0 ? 12 : h % 12}</span>
+          {Math.abs(h * 60 - NOW_MIN) > 25 && (
+            <span>
+              {h % 12 === 0 ? 12 : h % 12}
+              {h < 12 ? 'am' : 'pm'}
+            </span>
+          )}
         </div>
       ))}
       <div className="b-tl-past" style={{ height: y(NOW_MIN) }} aria-hidden="true" />
@@ -262,7 +267,7 @@ function DayTimeline() {
         <TimelineBlock key={e.id} e={e} top={y(toMin(e.start))} h={y(toMin(e.end)) - y(toMin(e.start))} selected={b.sel?.id === e.id} />
       ))}
       <div className="b-tl-now" style={{ top: y(NOW_MIN) }}>
-        <span className="mono">7:42</span>
+        <span className="clock">7:42</span>
       </div>
     </div>
   );
@@ -288,7 +293,7 @@ function TimelineBlock({ e, top, h, selected }: { e: FamilyEvent; top: number; h
       aria-label={`${e.title}, ${range(e.start, e.end)}`}
     >
       <span className="b-tl-line">
-        <span className="mono b-tl-time">{clock(e.start)}</span>
+        <span className="clock b-tl-time">{clock(e.start)}</span>
         <span className="b-tl-title">{e.title}</span>
         {e.handoff && <ArrowRightLeft size={12} strokeWidth={1.75} className="b-tl-hand" aria-label="June handoff" />}
         {!p && <AvatarStack ids={e.who.filter((w) => w !== 'june')} size={14} />}
@@ -353,7 +358,7 @@ function WeekList({ flashDay }: { flashDay: string | null }) {
                   className={cx('b-wrow', isConflict && 'is-conflict', b.sel?.id === e.id && 'is-sel', d === TODAY && toMin(e.end) <= NOW_MIN && 'is-past')}
                   onClick={() => b.select({ kind: 'event', id: e.id })}
                 >
-                  <span className="mono b-wrow-time">{range(e.start, e.end)}</span>
+                  <span className="clock b-wrow-time">{range(e.start, e.end)}</span>
                   <span className="b-evbar" style={{ background: lead ? people[lead].color : '#A1A1AA' }} />
                   <span className="b-wrow-title">{e.title}</span>
                   {e.handoff && (

@@ -209,6 +209,7 @@ export function DirectionB({ screen, go }: DirectionProps) {
           {screen === 'tasks' && <Tasks />}
           {screen === 'reset' && <Reset />}
           {(screen === 'calendar' || screen === 'household' || screen === 'meals') && <Placeholder kind={screen} />}
+          <Toasts />
         </main>
         {showInspector && (
           <>
@@ -226,7 +227,6 @@ export function DirectionB({ screen, go }: DirectionProps) {
         )}
         {more && <MoreSheet onClose={() => setMore(false)} />}
         {capture && <Capture prefill={capture.prefill} onClose={closeCapture} />}
-        <Toasts />
         <MenuHost opts={menu} root={root.current} onClose={() => setMenu(null)} />
       </div>
     </BCtx.Provider>

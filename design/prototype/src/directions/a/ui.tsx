@@ -27,10 +27,13 @@ export function Avatar({ id, size = 24, ring = false, title }: { id: PersonId; s
 
 /** Two-tone dot meaning "either of you". */
 export function EitherMark({ size = 24 }: { size?: number }) {
+  const s = Math.round(size * 0.82);
   return (
     <span className="a-either" role="img" aria-label="Either of you" title="Either of you">
-      <Avatar id="maya" size={Math.round(size * 0.8)} ring title="" />
-      <Avatar id="theo" size={Math.round(size * 0.8)} ring title="" />
+      <Avatar id="maya" size={s} ring title="" />
+      <span className="a-either-2" style={{ marginLeft: -Math.round(s * 0.36) }}>
+        <Avatar id="theo" size={s} ring title="" />
+      </span>
     </span>
   );
 }

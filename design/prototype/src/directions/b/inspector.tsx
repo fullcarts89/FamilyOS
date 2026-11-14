@@ -274,7 +274,7 @@ export function UpNext({ limit = 3 }: { limit?: number }) {
         return (
           <li key={e.id}>
             <button type="button" className="b-upnext-row" onClick={() => b.select({ kind: 'event', id: e.id })}>
-              <span className="mono b-upnext-time">{clock(e.start)}</span>
+              <span className="clock b-upnext-time">{clock(e.start)}</span>
               <span className="b-evbar" style={{ background: lead ? people[lead].color : '#A1A1AA' }} />
               <span className="b-upnext-main">
                 <span className="b-upnext-title">{e.title}</span>
@@ -301,7 +301,7 @@ function HomeDefault() {
     <div className="b-insp-inner">
       <header className="b-insp-head">
         <span className="b-insp-crumb">Up next</span>
-        <span className="mono b-faint b-insp-now">7:42</span>
+        <span className="clock b-faint b-insp-now">7:42</span>
       </header>
       <div className="b-insp-body">
         <UpNext />
@@ -312,10 +312,10 @@ function HomeDefault() {
           <h3 className="b-h3">Tonight</h3>
           <div className="b-tonight">
             <div>
-              <span className="mono b-faint">6:15</span> Dinner · sheet-pan salmon <Avatar id="theo" size={16} />
+              <span className="clock b-faint">6:15</span> Dinner · sheet-pan salmon <Avatar id="theo" size={16} />
             </div>
             <div>
-              <span className="mono b-faint">7:15</span> Bath and bedtime <Avatar id="theo" size={16} />
+              <span className="clock b-faint">7:15</span> Bath and bedtime <Avatar id="theo" size={16} />
             </div>
           </div>
         </section>

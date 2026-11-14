@@ -373,7 +373,7 @@ export function TaskRow({ task, dense, showOwner = true, take }: { task: Task; d
       tabIndex={0}
       role="option"
       aria-selected={selected}
-      title={dense ? 'X complete · A assign · J/K move' : undefined}
+      title={dense ? task.title : undefined}
       onClick={() => b.select({ kind: 'task', id: task.id })}
       onKeyDown={(e) => {
         if (e.key === 'Enter' && e.target === e.currentTarget) b.select({ kind: 'task', id: task.id });

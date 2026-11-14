@@ -192,7 +192,7 @@ export function Capture({ prefill, onClose }: { prefill: string; onClose: () => 
             <span><Kbd>@</Kbd> who</span>
             <span><Kbd>#</Kbd> project</span>
             <span><Kbd>!</Kbd> important</span>
-            <span><span className="mono b-hint-word">fri</span> day</span>
+            <span><span className="clock b-hint-word">fri</span> day</span>
           </span>
           <button type="button" className="b-btn is-primary" disabled={!parsed.title} onClick={submit}>
             Add

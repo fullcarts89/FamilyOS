@@ -80,7 +80,7 @@ function CalPreview() {
                     borderColor: lead ? people[lead].color : '#A1A1AA',
                   }}
                 >
-                  <span className="mono">{clock(e.start)}</span> {e.title}
+                  <span className="clock">{clock(e.start)}</span> {e.title}
                 </span>
               );
             })}

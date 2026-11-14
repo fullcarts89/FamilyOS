@@ -154,12 +154,8 @@
   flex: none;
 }
 
-.a-either > .a-av + .a-av {
-  margin-left: -35%;
-}
-
-.a-either > .a-av {
-  font-size: 0.68em;
+.a-either-2 {
+  display: inline-flex;
 }
 
 /* --- Sidebar ----------------------------------------------------------------------------- */
@@ -1502,7 +1498,7 @@
   --ring: var(--bg);
   display: inline-grid;
   place-items: center;
-  min-width: 18px;
+  width: 24px;
   height: 18px;
   flex: none;
   color: var(--muted);

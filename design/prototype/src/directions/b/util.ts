@@ -57,7 +57,7 @@ export function dayNum(iso: string): string {
 export function dueShort(t: Pick<Task, 'due' | 'done'>): { text: string; tone: 'late' | 'today' | 'soon' | 'later' | 'none' } {
   if (!t.due) return { text: '', tone: 'none' };
   const diff = daysBetween(TODAY, t.due);
-  if (diff < 0 && !t.done) return { text: `${-diff}d late`, tone: 'late' };
+  if (diff < 0 && !t.done) return { text: `${-diff} ${diff === -1 ? 'day' : 'days'} late`, tone: 'late' };
   if (diff === 0) return { text: 'Today', tone: 'today' };
   if (diff === 1) return { text: 'Tomorrow', tone: 'soon' };
   if (diff > 1 && diff < 7) return { text: `${weekday(t.due)} ${dayNum(t.due)}`, tone: 'soon' };
