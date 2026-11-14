@@ -5,6 +5,7 @@ import { events, NOW, suggestions, type FamilyEvent, type Task } from '../../dat
 import { useFamily } from '../../store';
 import type { Screen } from '../types';
 import { CaptureBox } from './Capture';
+import { useSwap } from './swap';
 import {
   TODAY,
   TOMORROW,
@@ -251,6 +252,7 @@ function ComingUp() {
   const f = useFamily();
   const s1 = suggestions.find((s) => s.id === 's1')!;
   const st = f.suggestionStatus('s1');
+  const swap = useSwap();
   const days = ['2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21', '2026-11-22'];
   return (
     <ol className="a-upnext">
@@ -268,12 +270,25 @@ function ComingUp() {
               <ul className="a-up-items">
                 {evs.map((e) => {
                   const clash = e.id === 'e14';
-                  const settled = clash && st === 'approved';
+                  const settled = clash && swap !== 'none';
                   return (
-                    <li key={e.id} className={cx('a-up-item', clash && !settled && 'is-clash')}>
+                    <li key={e.id} className={cx('a-up-item', clash && !settled && 'is-clash', settled && `is-change is-${swap}`)}>
                       <span className="a-up-time">{clock(e.start)}</span>
                       <span className="a-up-title">
-                        {settled ? 'Theo picks up June (asked)' : (handoffSentence(e) ?? e.title)}
+                        {settled ? (
+                          <>
+                            <span className="a-up-change">
+                              <s className="a-was">You</s>
+                              <ArrowRight size={12} strokeWidth={2} aria-hidden="true" />
+                              Theo picks up June
+                            </span>
+                            <span className={cx('a-change-tag', `is-${swap}`)}>
+                              {swap === 'proposed' ? 'Proposed' : 'Confirmed'}
+                            </span>
+                          </>
+                        ) : (
+                          handoffSentence(e) ?? e.title
+                        )}
                         {clash && !settled && <span className="a-clash">Clash</span>}
                       </span>
                       <span className="a-up-who">
@@ -311,7 +326,11 @@ function ComingUp() {
                     </div>
                   </>
                 ) : (
-                  <p className="a-thought-detail">Asked Theo to take Thursday pickup. He’ll see it next time he opens the app.</p>
+                  <p className="a-thought-detail">
+                    {swap === 'confirmed'
+                      ? 'Theo said yes. Thursday pickup is his now, and your planning meeting can run long.'
+                      : 'Asked Theo to take Thursday pickup. Waiting for his yes…'}
+                  </p>
                 )}
               </li>
             )}

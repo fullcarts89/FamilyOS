@@ -1,6 +1,6 @@
 // Weekly Reset: "Sunday at the table". A guided ritual in chapters, ending in a set plan page.
 import { useState, type ReactNode } from 'react';
-import { ArrowLeft, ArrowRight, Check, CircleCheck, Plus, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleCheck, Plus, Sparkles } from 'lucide-react';
 import {
   events,
   lastWeek,
@@ -131,10 +131,23 @@ export function ResetScreen() {
             ) : (
               <span />
             )}
-            {step < CHAPTERS.length - 1 && (
+            <span className="a-foot-step">
+              {step + 1} of {CHAPTERS.length}
+            </span>
+            {step < CHAPTERS.length - 1 ? (
               <button type="button" className="a-btn a-btn--primary" onClick={() => goTo(step + 1)}>
-                Next: {CHAPTERS[step + 1]}
+                <span className="a-long">Next: {CHAPTERS[step + 1]}</span>
+                <span className="a-short">Next</span>
                 <ArrowRight {...icSm} aria-hidden="true" />
+              </button>
+            ) : committed ? (
+              <span className="a-foot-done">
+                <CircleCheck {...icSm} aria-hidden="true" /> Saved
+              </span>
+            ) : (
+              <button type="button" className="a-btn a-btn--primary" onClick={() => f.commitPlan()}>
+                <Check {...icSm} aria-hidden="true" />
+                Save our plan
               </button>
             )}
           </footer>
@@ -279,6 +292,13 @@ function LooseEnds() {
   const items = looseEnds(f.state.tasks);
   const carry = f.state.reset.carry;
   const left = items.filter((t) => !carry[t.id]).length;
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const groups = [
+    { id: 'late', label: 'Late', items: items.filter((t) => isLate(t) && !t.waitingOn) },
+    { id: 'week', label: 'This week', items: items.filter((t) => !isLate(t) && !t.waitingOn && t.due) },
+    { id: 'none', label: 'No date', items: items.filter((t) => t.waitingOn || !t.due) },
+  ];
+  const firstGroup = groups.findIndex((g) => g.items.length);
   return (
     <>
       <ChapterHead
@@ -308,37 +328,60 @@ function LooseEnds() {
           </button>
         )}
       </div>
-      <ul className="a-triage">
-        {items.map((t) => {
-          const c = carry[t.id];
-          return (
-            <li key={t.id} className={cx('a-triage-row', c && `is-${c}`)}>
-              <OwnerMark owner={t.owner} size={22} />
-              <span className="a-triage-text">
-                <span className="a-task-title">{t.title}</span>
-                <span className={cx('a-row-meta', isLate(t) && 'a-late')}>
-                  {t.waitingOn ? `Waiting on ${t.waitingOn.toLowerCase()}` : dueLabel(t.due)}
-                </span>
-              </span>
-              <span className="a-seg a-seg--sm" role="radiogroup" aria-label={`What to do with ${t.title}`}>
-                {CARRY.map((o) => (
-                  <button
-                    key={o.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={c === o.id}
-                    className={cx(c === o.id && 'is-on', `is-${o.id}`)}
-                    onClick={() => f.carry(t.id, o.id)}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      {groups.map((g, gi) => {
+        if (!g.items.length) return null;
+        const limit = gi === firstGroup || open[g.id] ? Infinity : 2;
+        const shown = g.items.slice(0, limit);
+        const hidden = g.items.length - shown.length;
+        return (
+          <section key={g.id} className={cx('a-triage-group', g.id === 'late' && 'is-late')}>
+            <h4 className="a-triage-head">
+              {g.label}
+              <span>{g.items.filter((t) => !carry[t.id]).length || 'All'} {g.items.filter((t) => !carry[t.id]).length ? 'to sort' : 'sorted'}</span>
+            </h4>
+            <ul className="a-triage">
+              {shown.map((t) => (
+                <TriageRow key={t.id} t={t} c={carry[t.id]} onPick={(id) => f.carry(t.id, id)} />
+              ))}
+            </ul>
+            {hidden > 0 && (
+              <button type="button" className="a-more" onClick={() => setOpen((o) => ({ ...o, [g.id]: true }))}>
+                <ChevronDown {...icSm} aria-hidden="true" />
+                Show {hidden} more
+              </button>
+            )}
+          </section>
+        );
+      })}
     </>
+  );
+}
+
+function TriageRow({ t, c, onPick }: { t: Task; c?: 'keep' | 'later' | 'drop'; onPick: (id: 'keep' | 'later' | 'drop') => void }) {
+  return (
+    <li className={cx('a-triage-row', c && `is-${c}`)}>
+      <OwnerMark owner={t.owner} size={22} />
+      <span className="a-triage-text">
+        <span className="a-task-title">{t.title}</span>
+        <span className={cx('a-row-meta', isLate(t) && 'a-late')}>
+          {t.waitingOn ? `Waiting on ${t.waitingOn.toLowerCase()}` : dueLabel(t.due)}
+        </span>
+      </span>
+      <span className="a-seg a-seg--sm" role="radiogroup" aria-label={`What to do with ${t.title}`}>
+        {CARRY.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={c === o.id}
+            className={cx(c === o.id && 'is-on', `is-${o.id}`)}
+            onClick={() => onPick(o.id)}
+          >
+            {o.label}
+          </button>
+        ))}
+      </span>
+    </li>
   );
 }
 
@@ -519,6 +562,7 @@ function Meals() {
                       <button
                         type="button"
                         className={cx('a-meal-title', !m && 'is-empty')}
+                        title={m?.title}
                         aria-expanded={isEditing}
                         onClick={() => setEditing(isEditing ? null : d.date)}
                       >

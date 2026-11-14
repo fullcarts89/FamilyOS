@@ -20,6 +20,7 @@ import { HomeScreen } from './Home';
 import { TasksScreen, type TaskView } from './Tasks';
 import { ResetScreen } from './Reset';
 import { Placeholder } from './Placeholder';
+import { SwapProvider } from './swap';
 import './a.css';
 
 const NAV: { id: Screen; label: string; Icon: typeof House; badge?: string }[] = [
@@ -64,6 +65,7 @@ export function DirectionA({ screen, go }: DirectionProps) {
   }, [screen, taskView]);
 
   return (
+    <SwapProvider>
     <div className="dir-a">
       <aside className="a-side" aria-label="Household navigation">
         <div className="a-ident">
@@ -169,5 +171,6 @@ export function DirectionA({ screen, go }: DirectionProps) {
 
       {capture && <CaptureSheet onClose={() => setCapture(false)} />}
     </div>
+    </SwapProvider>
   );
 }

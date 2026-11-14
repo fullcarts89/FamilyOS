@@ -28,9 +28,9 @@ export function Avatar({ id, size = 24, ring = false, title }: { id: PersonId; s
 /** Two-tone dot meaning "either of you". */
 export function EitherMark({ size = 24 }: { size?: number }) {
   return (
-    <span className="a-either" style={{ width: size, height: size }} role="img" aria-label="Either of you" title="Either of you">
-      <span style={{ background: people.maya.color }} />
-      <span style={{ background: people.theo.color }} />
+    <span className="a-either" role="img" aria-label="Either of you" title="Either of you">
+      <Avatar id="maya" size={Math.round(size * 0.8)} ring title="" />
+      <Avatar id="theo" size={Math.round(size * 0.8)} ring title="" />
     </span>
   );
 }
