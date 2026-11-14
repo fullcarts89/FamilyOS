@@ -295,7 +295,7 @@ export function decisionState(d: Decision) {
   const label = (id?: string) => d.options.find((o) => o.id === id)?.label;
   if (m && t && m === t) return { kind: 'agreed' as const, text: `Agreed: ${label(m)}` };
   if (m && t) return { kind: 'split' as const, text: 'You see it differently. Talk it over on Sunday.' };
-  if (t) return { kind: 'waiting' as const, text: `Theo leans ${label(t)?.toLowerCase()}` };
+  if (t) return { kind: 'waiting' as const, text: `Theo leans toward “${label(t)}”` };
   if (m) return { kind: 'waiting' as const, text: 'Waiting for Theo' };
   return { kind: 'open' as const, text: 'Nobody has weighed in yet' };
 }

@@ -13,7 +13,7 @@ import {
   type Task,
 } from '../../data';
 import { coverageSlots, dueLabel, useFamily } from '../../store';
-import { END_OF_WEEK, adultsIn, clock, cx, dayParts, isLate, plural, range, who } from './helpers';
+import { END_OF_WEEK, clock, cx, dayParts, isLate, plural, range, who } from './helpers';
 import { Avatar, AvatarStack, CheckCircle, DecisionBlock, OwnerMark, OwnerSwitch, Simulated, decisionState, ic, icSm } from './ui';
 
 const CHAPTERS = [
@@ -43,7 +43,10 @@ export function ResetScreen() {
       <header className="a-reset-top">
         <div className="a-reset-id">
           <h2 className="a-reset-name">Weekly Reset</h2>
-          <p className="a-reset-when">Sunday, November 22 · 7:30pm · Planning Nov 23–29</p>
+          <p className="a-reset-when">
+            <span className="a-long">Sunday, November 22 · 7:30pm · Planning Nov 23–29</span>
+            <span className="a-short">Sun, Nov 22 · 7:30pm</span>
+          </p>
         </div>
         <div className="a-reset-mode">
           <AvatarStack ids={['maya', 'theo']} size={26} />
@@ -527,7 +530,7 @@ function Meals() {
                       <OwnerSwitch value={m.cook} onChange={(c) => f.setMeal(d.date, m.title, c)} size="sm" label={`Who cooks ${d.day}`} />
                     )}
                   </div>
-                  {d.note && !isEditing && <span className="a-meal-note">{voice(d.note)}</span>}
+                  {d.note && !thanks && !isEditing && <span className="a-meal-note">{voice(d.note)}</span>}
                   {isEditing && (
                     <div className="a-meal-ideas">
                       {mealIdeas.map((idea) => (
@@ -831,11 +834,7 @@ function OurWeek() {
         )}
       </div>
       <p className="a-plan-foot">
-        {adultsIn(['maya', 'theo']).length === 2 && (
-          <>
-            Next Weekly Reset: Sunday, November 29 at {range('19:30', '20:15')}.
-          </>
-        )}
+        Next Weekly Reset: Sunday, November 29, {range('19:30', '20:15')}.
       </p>
     </div>
   );

@@ -1,7 +1,7 @@
 // Home · Today: signals, a compact day timeline, You · Theo · Either columns, decisions, and a
 // "This week" tab grouped by day.
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRightLeft, Clock, Plus, Repeat2, Scale, TriangleAlert, Users, Wrench } from 'lucide-react';
+import { ArrowRightLeft, Clock, Plus, Scale, TriangleAlert, Users, Wrench } from 'lucide-react';
 import { people, type FamilyEvent, type PersonId, type Routine, type Task } from '../../data';
 import { isOverdue, useFamily } from '../../store';
 import { useB } from './ctx';
@@ -189,6 +189,16 @@ function Today({ toWeek }: { toWeek: (day: string) => void }) {
             <span><Kbd>A</Kbd> assign</span>
             <span><Kbd>C</Kbd> add</span>
           </div>
+          <section className="b-home-sec" ref={decRef} aria-label="Decisions">
+            <h2 className="b-sechead">
+              Needs both of you <span className="mono b-faint">{f.state.decisions.filter((d) => decisionState(d).tone !== 'good').length}</span>
+            </h2>
+            <div className="b-declist">
+              {f.state.decisions.map((d) => (
+                <DecisionRow key={d.id} d={d} />
+              ))}
+            </div>
+          </section>
         </section>
       </div>
 
@@ -200,16 +210,6 @@ function Today({ toWeek }: { toWeek: (day: string) => void }) {
         <AgentProposal id="s1" />
       </div>
 
-      <section className="b-home-sec" ref={decRef} aria-label="Decisions">
-        <h2 className="b-sechead">
-          Needs both of you <span className="mono b-faint">{f.state.decisions.filter((d) => decisionState(d).tone !== 'good').length}</span>
-        </h2>
-        <div className="b-declist">
-          {f.state.decisions.map((d) => (
-            <DecisionRow key={d.id} d={d} />
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
@@ -226,9 +226,9 @@ function RoutineMini({ r }: { r: Routine }) {
         <span className="b-row-text">{r.title}</span>
         <span className="b-row-sub" title={`Then ${next === 'maya' ? 'you' : people[next].name}`}>
           <span className="mono">{r.nextLabel}</span>
-          <span className="b-sep" aria-hidden="true" />
-          <Repeat2 size={12} strokeWidth={1.5} />
-          <Avatar id={next} size={14} dim />
+          <span className="b-row-next">
+            then <Avatar id={next} size={14} />
+          </span>
         </span>
       </span>
       <button type="button" className="b-take" onClick={() => f.routineDone(r.id)}>
@@ -339,7 +339,8 @@ function WeekList({ flashDay }: { flashDay: string | null }) {
                 </span>
               )}
               <span className="b-wday-count mono b-faint">
-                {evs.length} events · {ts.filter((t) => !t.done).length} to-dos
+                {evs.length} {evs.length === 1 ? 'event' : 'events'} · {ts.filter((t) => !t.done).length}{' '}
+                {ts.filter((t) => !t.done).length === 1 ? 'to-do' : 'to-dos'}
               </span>
             </header>
             {evs.map((e) => {

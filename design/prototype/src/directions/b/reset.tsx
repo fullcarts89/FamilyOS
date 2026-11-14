@@ -720,10 +720,12 @@ function Meals() {
   };
 
   const fill = () => {
+    const used = new Set(Object.values(meals).map((m) => m.title));
+    const pool = mealIdeas.filter((m) => !used.has(m));
     let i = 0;
     nextWeekDays.forEach((d, n) => {
       if (meals[d.date]) return;
-      const title = d.date === '2026-11-26' ? 'Thanksgiving dinner' : mealIdeas[i++ % mealIdeas.length]!;
+      const title = d.date === '2026-11-26' ? 'Thanksgiving dinner' : pool[i++ % pool.length]!;
       const cook: PersonId = AWAY[d.date] ? 'theo' : n % 2 === 0 ? 'maya' : 'theo';
       f.setMeal(d.date, title, cook);
     });
@@ -870,14 +872,20 @@ function WeekPlan({ loose }: { loose: string[] }) {
   const solo = (p: PersonId, date: string) => {
     const evs = events
       .filter((e) => e.date === date && e.who.includes(p) && !(e.who.includes('maya') && e.who.includes('theo')))
-      .map((e) => ({ key: e.id, time: clock(e.start), text: e.title.replace('June: ', 'June’s ') }));
+      .map((e) => ({ key: e.id, time: clock(e.start), sort: e.start, text: e.title.replace('June: ', 'June’s '), warn: false }));
     const care = coverageSlots
       .filter((s) => s.date === date && coverage[s.key] === p)
-      .map((s) => ({ key: s.key, time: s.label.split(' ')[1]!, text: s.label.split(' ')[0]! }));
+      .map((s) => ({
+        key: s.key,
+        time: s.label.split(' ')[1]!,
+        sort: s.key.endsWith('drop') ? '08:15' : '17:30',
+        text: s.label.split(' ')[0]!,
+        warn: p === 'maya' && !!AWAY[date],
+      }));
     const ts = tasks
       .filter((t) => !t.done && t.owner === p && t.due === date)
-      .map((t) => ({ key: t.id, time: '', text: t.title }));
-    return [...care, ...evs, ...ts].sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
+      .map((t) => ({ key: t.id, time: '', sort: '99', text: t.title, warn: false }));
+    return [...care, ...evs, ...ts].sort((a, b) => a.sort.localeCompare(b.sort));
   };
 
   return (
@@ -939,9 +947,10 @@ function WeekPlan({ loose }: { loose: string[] }) {
                     <span className="b-pcell-label">{people[p].name}</span>
                     {list.length ? (
                       list.map((x) => (
-                        <span key={x.key} className="b-pitem">
+                        <span key={x.key} className={cx('b-pitem', x.warn && 'b-warn')}>
                           <span className="mono b-faint">{x.time}</span>
                           {x.text}
+                          {x.warn && <TriangleAlert size={12} strokeWidth={1.75} aria-label="Maya is away" />}
                         </span>
                       ))
                     ) : (

@@ -876,12 +876,31 @@
 .a-home-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
-  gap: 56px;
+  grid-template-areas: 'today side' 'next side';
+  grid-template-rows: auto 1fr;
+  column-gap: 56px;
+  row-gap: 40px;
   align-items: start;
 }
 
-.a-sec + .a-sec {
+.a-todaysec {
+  grid-area: today;
+}
+
+.a-home-side {
+  grid-area: side;
+}
+
+.a-home-next {
+  grid-area: next;
+}
+
+.a-home-side > .a-sec + .a-sec {
   margin-top: 36px;
+}
+
+.a-home-next {
+  margin-top: 0;
 }
 
 .a-sec-head {
@@ -1333,6 +1352,10 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.a-up-who .a-stack > * + * {
+  margin-left: -3px;
 }
 
 .a-up-item {
@@ -2996,6 +3019,8 @@
 @container app (max-width: 1060px) {
   .a-home-grid {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'today' 'side' 'next';
+    grid-template-rows: auto;
   }
   .a-tasks-main {
     padding: 32px 32px 64px;
@@ -3272,9 +3297,23 @@
     backdrop-filter: none;
   }
 
-  .a-reset-mode {
-    width: 100%;
-    justify-content: space-between;
+  .a-reset-top {
+    flex-wrap: nowrap;
+    align-items: flex-end;
+    padding: 0 16px 12px;
+  }
+
+  .a-reset-name {
+    font-size: 20px;
+    line-height: 26px;
+  }
+
+  .a-reset-mode .a-stack {
+    display: none;
+  }
+
+  .a-reset-mode .a-seg button {
+    padding: 0 10px;
   }
 
   .a-long {

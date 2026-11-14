@@ -4626,3 +4626,61 @@
 .dir-b .b-row-sub .b-av {
   box-shadow: none;
 }
+
+/* Round 2 polish */
+.dir-b .b-row-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--faint);
+}
+.dir-b .b-proj-body .b-plabel {
+  display: none;
+}
+.dir-b .b-wrow-time {
+  width: 124px;
+  white-space: nowrap;
+}
+.dir-b .b-wday-agent {
+  margin-left: 142px;
+}
+.dir-b .b-mday-note {
+  min-height: 32px;
+}
+.dir-b .b-agent-done {
+  flex-wrap: wrap;
+}
+.dir-b .b-load-verdict {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@container app (max-width: 760px) {
+  .dir-b .b-mday-note {
+    min-height: 0;
+  }
+  .dir-b .b-load-verdict .b-faint {
+    display: none;
+  }
+  .dir-b .b-load-top {
+    gap: 8px;
+  }
+  .dir-b .b-wday-agent {
+    margin-left: 0;
+  }
+  .dir-b .b-wrow-time {
+    width: 100%;
+  }
+}
+.dir-b .b-cols-wrap .b-home-sec {
+  margin-top: 24px;
+}
+.dir-b .b-cols-wrap .b-dec {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.dir-b .b-cols-wrap .b-dec-opts {
+  flex-wrap: wrap;
+}

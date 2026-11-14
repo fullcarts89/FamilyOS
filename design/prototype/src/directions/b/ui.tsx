@@ -207,6 +207,12 @@ export function MenuHost({ opts, root, onClose }: { opts: MenuOpts | null; root:
           e.stopPropagation();
           onClose();
           opts.anchor.focus();
+        } else {
+          const hit = items.find((i) => i.hint && i.hint.length === 1 && i.hint === e.key);
+          if (hit) {
+            e.preventDefault();
+            choose(hit);
+          }
         }
         e.nativeEvent.stopImmediatePropagation();
       }}

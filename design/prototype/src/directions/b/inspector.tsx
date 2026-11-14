@@ -63,7 +63,7 @@ function TaskDetail({ task }: { task: Task }) {
   const s2 = task.id === 't2' ? suggestions.find((s) => s.id === 's2') : undefined;
   const history = [
     ...(b.activity[task.id] ?? []).map((a) => ({ ...a, live: true })),
-    ...(task.done && task.doneBy ? [{ at: '', text: `Done by ${people[task.doneBy].name}`, live: false }] : []),
+    ...(task.done && task.doneBy && !(b.activity[task.id] ?? []).some((a) => a.text.includes('done')) ? [{ at: '', text: `Done by ${people[task.doneBy].name}`, live: false }] : []),
     ...(task.waitingOn ? [{ at: '', text: `Waiting on ${task.waitingOn.toLowerCase()}`, live: false }] : []),
     ...(task.due && task.due < TODAY && !task.done ? [{ at: monthDay(task.due), text: 'Became late', live: false }] : []),
     { at: '', text: `Added to ${task.area}`, live: false },
@@ -368,7 +368,7 @@ export function AgentProposal({ id, compact, onEdit }: { id: string; compact?: b
       {status === 'approved' && (
         <div className="b-agent-done">
           <span className="b-good">Approved</span>
-          <span className="b-faint">Simulated. Nothing was sent.</span>
+          <span className="b-faint">Simulated · nothing sent</span>
           <button type="button" className="b-link" onClick={() => f.dispatch({ type: 'suggestion', id, status: 'pending' })}>
             Undo
           </button>

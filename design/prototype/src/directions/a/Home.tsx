@@ -132,21 +132,21 @@ export function HomeScreen({ go }: { go: (s: Screen) => void }) {
               ))}
             </div>
           </section>
-
-          <section className="a-sec" aria-labelledby="a-next-h">
-            <SectionHead
-              id="a-next-h"
-              title="Coming up"
-              meta="Next 5 days"
-              action={
-                <button type="button" className="a-link" onClick={() => go('calendar')}>
-                  Calendar <ArrowRight size={14} strokeWidth={2} aria-hidden="true" />
-                </button>
-              }
-            />
-            <ComingUp />
-          </section>
         </div>
+
+        <section className="a-sec a-home-next" aria-labelledby="a-next-h">
+          <SectionHead
+            id="a-next-h"
+            title="Coming up"
+            meta="Next 5 days"
+            action={
+              <button type="button" className="a-link" onClick={() => go('calendar')}>
+                Calendar <ArrowRight size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
+            }
+          />
+          <ComingUp />
+        </section>
       </div>
     </div>
   );

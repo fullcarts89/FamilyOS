@@ -181,8 +181,16 @@ export function DirectionB({ screen, go }: DirectionProps) {
       }
       if ((k === 'x' || k === 'a') && currentId && f.state.tasks.some((t) => t.id === currentId)) {
         e.preventDefault();
-        if (k === 'x') api.complete(currentId);
-        else api.cycleOwner(currentId);
+        if (k === 'x') {
+          const idx = rows.findIndex((r) => r.dataset.rowId === currentId);
+          api.complete(currentId);
+          requestAnimationFrame(() => {
+            const after = Array.from(root.current?.querySelectorAll<HTMLElement>('.b-main [data-row-id]') ?? []).filter(
+              (r) => r.offsetParent !== null,
+            );
+            if (!after.some((r) => r.dataset.rowId === currentId) && after.length) after[Math.min(idx, after.length - 1)]?.focus();
+          });
+        } else api.cycleOwner(currentId);
       }
     };
     window.addEventListener('keydown', onKey);
