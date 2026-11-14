@@ -134,11 +134,11 @@ export function ListScreen({
   return (
     <View style={[styles.screen, { backgroundColor: t.background }]}>
       <ScrollView contentContainerStyle={styles.scroll} {...(refreshControl && { refreshControl })}>
-        {children}
+        <View style={styles.column}>{children}</View>
       </ScrollView>
       {footer ? (
         <View style={[styles.footer, { borderTopColor: t.border, backgroundColor: t.background }]}>
-          {footer}
+          <View style={[styles.column, styles.footerColumn]}>{footer}</View>
         </View>
       ) : null}
     </View>
@@ -147,8 +147,11 @@ export function ListScreen({
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  scroll: { padding: 16, paddingTop: 64, gap: 20 },
-  footer: { padding: 16, paddingBottom: 32, borderTopWidth: StyleSheet.hairlineWidth, gap: 10 },
+  scroll: { padding: 16, paddingTop: 64 },
+  // Lists stay readable on a computer: one centered column, never wider than this.
+  column: { width: '100%', maxWidth: 640, alignSelf: 'center', gap: 20 },
+  footer: { padding: 16, paddingBottom: 32, borderTopWidth: StyleSheet.hairlineWidth },
+  footerColumn: { gap: 10 },
   section: { gap: 8 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   sectionTitle: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.6 },

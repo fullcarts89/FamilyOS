@@ -10,6 +10,8 @@ const light = {
   border: '#E4DFD6',
   accent: '#2F6B5E',
   onAccent: '#FFFFFF',
+  disabled: '#D9D4CB',
+  onDisabled: '#7A7468',
   danger: '#A33A2B',
   tones: {
     neutral: { bg: '#EFECE6', fg: '#4A463F' },
@@ -30,6 +32,8 @@ const dark: typeof light = {
   border: '#3A3833',
   accent: '#7CC2B0',
   onAccent: '#10211D',
+  disabled: '#3A3833',
+  onDisabled: '#8F897F',
   danger: '#F09A8C',
   tones: {
     neutral: { bg: '#34322E', fg: '#D9D4CB' },

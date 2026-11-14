@@ -1,7 +1,7 @@
 import { PASSWORD_MIN_LENGTH, passwordProblem } from '@familyos/domain';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Body, Button, ErrorText, Field, Screen, Title } from '../components/ui';
+import { Body, Brand, Button, ErrorText, Field, Screen, Title } from '../components/ui';
 import { ApiRequestError, api, claimInvite } from '../lib/api';
 import { useSession } from '../lib/session';
 import { signInWithPassword } from '../lib/supabase';
@@ -75,8 +75,9 @@ function CreateAccount({ token }: { token: string }) {
 
   return (
     <Screen>
+      <Brand />
       <Title>You’re invited</Title>
-      <Body muted>Use the email the invite is for, and choose a password.</Body>
+      <Body muted>Use the email this invite was sent to, and choose a password.</Body>
       <Field
         label="Your name"
         value={name}
@@ -118,7 +119,11 @@ function CreateAccount({ token }: { token: string }) {
       {again.length > 0 && again !== password && <ErrorText>The passwords don’t match.</ErrorText>}
       {error && <ErrorText>{error}</ErrorText>}
       <Button title="Join" onPress={create} busy={busy} disabled={!ready} />
-      <Button title="I already have an account" onPress={() => router.push('/sign-in')} />
+      <Button
+        title="I already have an account"
+        variant="secondary"
+        onPress={() => router.push('/sign-in')}
+      />
     </Screen>
   );
 }
