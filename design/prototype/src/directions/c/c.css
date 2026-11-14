@@ -765,8 +765,10 @@
   justify-content: center;
   padding: 0;
 }
-.c-ev.care svg {
-  flex: none;
+.c-ev .c-ev-glyph {
+  display: grid;
+  place-items: center;
+  color: #fff;
 }
 .c-ask {
   display: inline-flex;
@@ -3248,6 +3250,19 @@
   }
   .c-row-act {
     opacity: 1;
+  }
+  .c-row[data-lane='shared'] {
+    flex-wrap: wrap;
+  }
+  .c-row[data-lane='shared'] .c-row-act {
+    width: 100%;
+    padding-left: 39px;
+    gap: 8px;
+  }
+  .c-row[data-lane='shared'] .c-take,
+  .c-row[data-lane='shared'] .c-ask {
+    height: 40px;
+    padding: 0 16px;
   }
   .c-hand-txt {
     display: none;
