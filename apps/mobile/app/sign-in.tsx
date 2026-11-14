@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Body, Button, ErrorText, Field, Screen, Title } from '../components/ui';
+import { Body, Brand, Button, ErrorText, Field, Screen } from '../components/ui';
 import { signInWithPassword } from '../lib/supabase';
 
 export default function SignIn() {
@@ -30,8 +30,8 @@ export default function SignIn() {
 
   return (
     <Screen>
-      <Title>Sign in</Title>
-      <Body muted>FamilyOS is invite-only. New here? Open the invite link you were sent.</Body>
+      <Brand />
+      <Body muted>Sign in to your household. New here? Open the invite link you were sent.</Body>
       <Field
         label="Email"
         value={email}

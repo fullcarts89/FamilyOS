@@ -10,9 +10,27 @@ import {
 } from 'react-native';
 import { useTheme } from '../lib/theme';
 
+/** A single centered column, never wider than a phone, on every screen size. */
 export function Screen({ children }: { children: ReactNode }) {
   const t = useTheme();
-  return <View style={[styles.screen, { backgroundColor: t.background }]}>{children}</View>;
+  return (
+    <View style={[styles.screen, { backgroundColor: t.background }]}>
+      <View style={styles.column}>{children}</View>
+    </View>
+  );
+}
+
+/** The FamilyOS name, for the screens people see before they are signed in. */
+export function Brand() {
+  const t = useTheme();
+  return (
+    <View style={styles.brand}>
+      <Text accessibilityRole="header" style={[styles.wordmark, { color: t.accent }]}>
+        FamilyOS
+      </Text>
+      <Text style={[styles.tagline, { color: t.muted }]}>Your household, shared.</Text>
+    </View>
+  );
 }
 
 export function Title({ children }: { children: ReactNode }) {
@@ -54,19 +72,26 @@ export function Field(props: TextInputProps & { label: string }) {
   );
 }
 
+/** `primary` is the screen's main action; `secondary` is a quiet text button beside it. */
 export function Button({
   title,
   onPress,
   busy,
   disabled,
+  variant = 'primary',
 }: {
   title: string;
   onPress: () => void;
   busy?: boolean;
   disabled?: boolean;
+  variant?: 'primary' | 'secondary';
 }) {
   const t = useTheme();
   const inactive = disabled || busy;
+  const primary = variant === 'primary';
+  // Disabled uses its own colors rather than opacity, which renders unevenly on the web.
+  const background = !primary ? 'transparent' : disabled && !busy ? t.disabled : t.accent;
+  const foreground = !primary ? t.accent : disabled && !busy ? t.onDisabled : t.onAccent;
   return (
     <Pressable
       accessibilityRole="button"
@@ -75,21 +100,24 @@ export function Button({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
-        { backgroundColor: t.accent, opacity: inactive ? 0.5 : pressed ? 0.85 : 1 },
+        { backgroundColor: background, opacity: pressed ? 0.85 : 1 },
       ]}
     >
       {busy ? (
-        <ActivityIndicator color={t.onAccent} />
+        <ActivityIndicator color={foreground} />
       ) : (
-        <Text style={[styles.buttonText, { color: t.onAccent }]}>{title}</Text>
+        <Text style={[styles.buttonText, { color: foreground }]}>{title}</Text>
       )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  // Content sits low on the screen so the main action is within one-handed reach.
-  screen: { flex: 1, justifyContent: 'flex-end', padding: 24, paddingBottom: 48, gap: 16 },
+  screen: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  column: { width: '100%', maxWidth: 440, gap: 16 },
+  brand: { gap: 4, marginBottom: 16 },
+  wordmark: { fontSize: 34, fontWeight: '700', letterSpacing: -0.5 },
+  tagline: { fontSize: 16 },
   title: { fontSize: 28, fontWeight: '600' },
   body: { fontSize: 16, lineHeight: 22 },
   field: { gap: 6 },

@@ -3,6 +3,7 @@
 **Status:** in progress. Steps 1–3 are done; the database is not migrated and nothing is deployed yet. Every step marked **You** needs your own account, payment details or secrets; nobody else does them.
 **Decision 3 (2026-11-08):** Railway Hobby for the API and the worker. Supabase as a new project in your existing organisation. The iPhone app goes out through TestFlight. A subdomain you own serves the app.
 **Decision 4 (2026-11-11):** sign-in is email and password, not an emailed code, so there is no email provider. The owner's password is set by the household bootstrap; the second adult chooses theirs when opening the invite link. A forgotten password is reset by the operator command in Everyday operations.
+**Decision 6 (2026-11-14):** the worker runs inside the `api` service (`deploy/start.mjs`) instead of a second Railway service, so there is one service to set up and pay for. It still connects with its own login, and never gets the API's credentials. `deploy/worker.Dockerfile` stays for running it separately again.
 **Decision 5 (2026-11-11):** first get a working web app with the least setup: the setup commands run in GitHub Actions, the app starts on Railway's own address, and the custom domain, second backup copy and iPhone app come later.
 
 ## What runs where
@@ -10,7 +11,7 @@
 | Piece | Where | Reaches |
 |---|---|---|
 | Web app and API, one service (`deploy/api.Dockerfile`) | Railway service `api`, on your subdomain | Supabase Postgres as `familyos_api_login`; Supabase Auth |
-| Worker (`deploy/worker.Dockerfile`) | Railway service `worker`, no public address | Supabase Postgres as `familyos_worker_login` |
+| Worker (started by `deploy/start.mjs`) | Inside the `api` service, no address of its own | Supabase Postgres as `familyos_worker_login` |
 | Database, sign-in and daily backups | Supabase project `familyos` | — |
 | Second backup copy (encrypted) | GitHub Actions artifacts, kept 30 days | — |
 | iPhone app | TestFlight, built by EAS | The same API and Supabase |
@@ -72,7 +73,7 @@ Do the steps in order. Every value you create goes into your password manager an
 - **Set up:** run Actions → *Production setup* on `main`, with the household name, its time zone, your email and your first name, typing `set up production`. It turns on the API's and the worker's database logins with `API_DB_PASSWORD` and `WORKER_DB_PASSWORD`, then creates the household and your account with `OWNER_PASSWORD`. Running it again changes nothing.
 
 **8. Railway (You).**
-- **Account and project:** sign up for Hobby, create a project from the GitHub repository, and add a second service from the same repository. Name them `api` and `worker`.
+- **Account and project:** sign up for Hobby and create a project from the GitHub repository. Its one service is the `api` service.
 - **Service `api`:** in Variables → Raw Editor, paste the following. Fill in only the two secrets.
 
   ```
@@ -93,18 +94,13 @@ Do the steps in order. Every value you create goes into your password manager an
   - Healthcheck path `/api/health`.
   - Restart policy "On failure".
   - Turn on "Wait for CI".
-- **Service `worker`:** paste the following.
+- **Worker, in the same service:** add these two variables to `api` as well.
 
   ```
-  RAILWAY_DOCKERFILE_PATH=deploy/worker.Dockerfile
-  DATABASE_URL=postgresql://familyos_worker_login.<ref>@<pooler host>:5432/postgres
-  DATABASE_PASSWORD=<WORKER_DB_PASSWORD>
+  WORKER_DATABASE_URL=postgresql://familyos_worker_login.<ref>@<pooler host>:5432/postgres
+  WORKER_DATABASE_PASSWORD=<WORKER_DB_PASSWORD>
   ```
 
-  Then, in the service settings:
-  - Restart policy "On failure".
-  - Turn on "Wait for CI".
-  - Give it no public domain.
 - **GitHub:** set the repository variable `APP_URL` to `https://<the generated domain>`, so *Migrate production* checks readiness again.
 
 Railway's config-file format is deprecated and stops being read on 2026-12-01, so these settings live in the dashboard, not in a file.
@@ -175,7 +171,7 @@ Store the private key and its passphrase in your password manager. Without them 
 
 - **Deploy:** merge to `main`. CI runs, and a merge that adds migrations also runs *Migrate production*, which backs up first. Railway waits for those checks, then rebuilds both services.
 - **Write migrations that keep the previous release working.** Add columns and tables; rename or drop only in a later release. A code rollback then never needs a schema rollback.
-- **Roll back:** in Railway, redeploy the previous deployment of `api`, `worker` or both. If a migration itself was wrong, restore from Supabase's daily backup (Dashboard → Database → Backups) or from the encrypted dump, then fix forward.
+- **Roll back:** in Railway, redeploy the previous deployment of `api`. If a migration itself was wrong, restore from Supabase's daily backup (Dashboard → Database → Backups) or from the encrypted dump, then fix forward.
 - **Backups:** Supabase keeps 7 daily backups. GitHub keeps 30 days of encrypted dumps, plus 90 days of pre-migration dumps. CI runs the restore drill (`scripts/ops/restore-drill.sh`) on every pull request.
 - **Rotate a database password:** run `enable-login.mjs` again for that login, then update `DATABASE_URL` on that Railway service.
 - **Rotate the Supabase secret key:** create a new key in Supabase, update `SUPABASE_SECRET_KEY` on `api`, then revoke the old key.
@@ -183,7 +179,7 @@ Store the private key and its passphrase in your password manager. Without them 
   ```bash
   DATABASE_URL="$ADMIN_DATABASE_URL" SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SECRET_KEY=<secret key> pnpm --filter @familyos/api household:set-password --email <their email>
   ```
-- **Is the worker running?** Check `/api/health/ready`: `"worker":"stale"` means no heartbeat for 30 minutes. Then look at the worker's logs in Railway.
+- **Is the worker running?** Check `/api/health/ready`: `"worker":"stale"` means no heartbeat for 30 minutes. Then look at the `api` service's logs in Railway: a stopped worker logs `process_exited` with `"name":"worker"`, and the service restarts.
 
 ## Cost
 
