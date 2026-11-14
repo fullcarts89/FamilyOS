@@ -6,7 +6,7 @@ import { Avatar, Either } from './ui';
 
 const TARGETS: { id: PersonId | null; label: string; sub: string }[] = [
   { id: 'maya', label: 'You', sub: 'On you' },
-  { id: 'theo', label: 'Theo', sub: "Theo's handling" },
+  { id: 'theo', label: 'Theo', sub: 'Theo’s handling' },
   { id: null, label: 'Either', sub: 'Up for grabs' },
 ];
 

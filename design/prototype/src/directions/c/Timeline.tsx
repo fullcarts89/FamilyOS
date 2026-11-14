@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { Bath, Car } from 'lucide-react';
 import { NOW, people, type FamilyEvent, type PersonId } from '../../data';
 import { useFamily } from '../../store';
 import {
@@ -160,6 +161,7 @@ function EventBlock({ e, lane, g }: { e: FamilyEvent; lane: 'maya' | 'theo'; g: 
       style={{ ...style, '--pc': p.color, '--pt': p.tint } as CSSProperties}
       title={`${e.title} · ${range(e.start, e.end)}${e.location ? ` · ${e.location}` : ''}`}
     >
+      {care && <CareGlyph e={e} px={px} vertical={g.vertical} />}
       {!care && (roomy || g.vertical) && (
         <>
           <b>{label}</b>
@@ -172,6 +174,17 @@ function EventBlock({ e, lane, g }: { e: FamilyEvent; lane: 'maya' | 'theo'; g: 
         </span>
       )}
     </div>
+  );
+}
+
+/** Handoffs show a car, bedtime a bath: no colored block is left unexplained. */
+function CareGlyph({ e, px, vertical }: { e: FamilyEvent; px: number; vertical: boolean }) {
+  const size = vertical ? 13 : px < 30 ? 14 : 16;
+  const label = e.handoff ? (e.handoff.to === 'daycare' ? 'Drop-off' : 'Pickup') : 'Bath';
+  return (
+    <span className="c-ev-glyph" aria-label={`${label} ${range(e.start, e.end)}`}>
+      {e.handoff ? <Car size={size} strokeWidth={2.4} /> : <Bath size={size} strokeWidth={2.4} />}
+    </span>
   );
 }
 

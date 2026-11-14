@@ -74,7 +74,7 @@ function Headline() {
 
 const COLS: { id: PersonId | null; title: string; empty: string }[] = [
   { id: 'maya', title: 'On you', empty: 'Nothing on you this week.' },
-  { id: 'theo', title: "Theo's handling", empty: 'Theo is clear.' },
+  { id: 'theo', title: 'Theo’s handling', empty: 'Theo is clear.' },
   { id: null, title: 'Up for grabs', empty: 'Nothing waiting for a taker.' },
 ];
 const GROUPS: When[] = ['late', 'today', 'week', 'later'];
@@ -113,7 +113,7 @@ function LoadColumns() {
   return (
     <section className="c-sec c-load" aria-labelledby="c-load-h" ref={ref}>
       <div className="c-sec-head">
-        <h2 id="c-load-h">Who's on what</h2>
+        <h2 id="c-load-h">Who’s on what</h2>
         <span className="c-sec-sub">Late, today and the rest of the week</span>
       </div>
       {phone && (

@@ -17,7 +17,7 @@ export function Tasks() {
   return (
     <div className="c-page c-tasks">
       <header className="c-pagehead">
-        <h1>Who's carrying what</h1>
+        <h1>Who’s carrying what</h1>
         <p>Everything open in the household, by who has it. Tap a face to hand something over.</p>
       </header>
       <Columns />

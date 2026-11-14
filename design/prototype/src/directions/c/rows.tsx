@@ -41,8 +41,9 @@ export function TaskRow({ task, compact }: { task: Task; compact?: boolean }) {
             <button type="button" className="c-take" onClick={() => assign(task.id, 'maya')}>
               I'll take it
             </button>
-            <button type="button" className="c-hand" aria-label={`Give ${task.title} to Theo`} title="Give to Theo" onClick={() => assign(task.id, 'theo')}>
-              <Avatar id="theo" size={22} />
+            <button type="button" className="c-ask" aria-label={`Ask Theo to take ${task.title}`} title="Hand this to Theo" onClick={() => assign(task.id, 'theo')}>
+              <ArrowRightLeft size={13} strokeWidth={2.2} />
+              Ask Theo
             </button>
           </>
         ) : (

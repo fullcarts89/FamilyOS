@@ -327,7 +327,7 @@
   font-family: var(--display) !important;
   font-weight: 750 !important;
   font-size: 20px !important;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   font-variation-settings: 'opsz' 32;
 }
 .c-lanes {
@@ -484,6 +484,7 @@
 }
 
 .c-main {
+  overflow-anchor: none;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -497,7 +498,7 @@
 }
 
 .c-page {
-  padding: 28px 40px 96px;
+  padding: 36px 40px 96px;
   max-width: 1600px;
   margin: 0 auto;
 }
@@ -513,7 +514,7 @@
 }
 .c-sec-head h2 {
   font: 700 24px/28px var(--display);
-  letter-spacing: -0.025em;
+  letter-spacing: -0.02em;
   font-variation-settings: 'opsz' 48;
 }
 .c-sec-sub {
@@ -535,7 +536,7 @@
 }
 .c-head-time {
   font: 750 112px/0.8 var(--display);
-  letter-spacing: -0.06em;
+  letter-spacing: -0.035em;
   font-variation-settings: 'opsz' 96;
   margin-bottom: 2px;
 }
@@ -555,7 +556,7 @@
 }
 .c-head h1 {
   font: 650 34px/38px var(--display);
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   font-variation-settings: 'opsz' 48;
 }
 .c-ink-p {
@@ -759,6 +760,32 @@
 .c-ev.care {
   background: var(--pc);
   box-shadow: none;
+  color: #fff;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.c-ev.care svg {
+  flex: none;
+}
+.c-ask {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 10px 0 8px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line-2);
+  background: transparent;
+  font-weight: 700 !important;
+  font-size: 12.5px !important;
+  color: var(--muted) !important;
+  white-space: nowrap;
+}
+.c-ask:hover {
+  border-color: var(--theo);
+  color: var(--theo) !important;
+  background: var(--surface);
 }
 .c-ev.tight {
   overflow: visible;
@@ -906,7 +933,7 @@
 }
 .c-col-n {
   font: 750 40px/1 var(--display);
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
   color: var(--pc);
   font-variation-settings: 'opsz' 72;
 }
@@ -1235,7 +1262,7 @@
 }
 .c-wk-name {
   font: 750 26px/1 var(--display);
-  letter-spacing: -0.035em;
+  letter-spacing: -0.02em;
   font-variation-settings: 'opsz' 48;
 }
 .c-wk-num {
@@ -1556,7 +1583,7 @@
   border-bottom: 2px solid var(--ink);
   padding: 6px 0 10px;
   font: 650 28px/36px var(--display);
-  letter-spacing: -0.025em;
+  letter-spacing: -0.02em;
   color: var(--ink);
   background: none;
   outline: none;
@@ -1736,7 +1763,7 @@
 
 .c-pagehead h1 {
   font: 750 52px/1 var(--display);
-  letter-spacing: -0.045em;
+  letter-spacing: -0.02em;
   font-variation-settings: 'opsz' 96;
 }
 .c-pagehead p {
@@ -1776,7 +1803,7 @@
 }
 .c-carry-who h2 {
   font: 750 24px/26px var(--display);
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 .c-carry-who span {
   font-size: 12.5px;
@@ -1785,7 +1812,7 @@
 }
 .c-carry-n {
   font: 750 56px/0.9 var(--display) !important;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.02em;
   color: var(--pc) !important;
   font-variation-settings: 'opsz' 96;
 }
@@ -2078,7 +2105,7 @@
 .c-reset-head h1 {
   margin-top: 6px;
   font: 750 52px/1 var(--display);
-  letter-spacing: -0.045em;
+  letter-spacing: -0.02em;
   font-variation-settings: 'opsz' 96;
 }
 .c-reset-head p {
@@ -2179,7 +2206,7 @@
 }
 .c-moment.on .c-moment-t {
   font: 750 22px/26px var(--display);
-  letter-spacing: -0.025em;
+  letter-spacing: -0.02em;
   color: var(--ink);
 }
 .c-moment-badge {
@@ -2476,7 +2503,7 @@
 .c-checks-n {
   width: 52px;
   font: 750 24px/1 var(--display);
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 .c-checks-n small {
   font-size: 13px;
@@ -2570,7 +2597,7 @@
 .c-bday-n {
   display: block;
   font: 750 28px/1 var(--display);
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
   font-variation-settings: 'opsz' 48;
 }
 .c-bday-d {
@@ -2871,7 +2898,7 @@
 .c-ph h1 {
   margin-top: 10px;
   font: 750 72px/1 var(--display);
-  letter-spacing: -0.05em;
+  letter-spacing: -0.02em;
   font-variation-settings: 'opsz' 96;
 }
 .c-ph p {
