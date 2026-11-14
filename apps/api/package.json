@@ -8,7 +8,8 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc -p tsconfig.json",
     "household:bootstrap": "tsx src/cli/bootstrap-household.ts",
-    "household:set-password": "tsx src/cli/set-password.ts"
+    "household:set-password": "tsx src/cli/set-password.ts",
+    "household:invite-owner": "tsx src/cli/invite-owner.ts"
   },
   "dependencies": {
     "@familyos/db": "workspace:*",

@@ -65,6 +65,10 @@ Do the steps in order. Every value you create goes into your password manager an
 
 **7. Database (in GitHub Actions, no laptop needed).**
 - **Migrate:** run Actions → *Migrate production* on `main`, typing `migrate production`. A merge that adds migrations runs it automatically.
+- **Or, without `OWNER_PASSWORD`:** create the household with a one-time link for its owner, who opens it and chooses their own password, like every other adult:
+  ```bash
+  DATABASE_URL="$ADMIN_DATABASE_URL" pnpm --filter @familyos/api household:invite-owner --name "<household>" --timezone <IANA zone> --owner-email <your email> --link-base https://<app address>/invite
+  ```
 - **Set up:** run Actions → *Production setup* on `main`, with the household name, its time zone, your email and your first name, typing `set up production`. It turns on the API's and the worker's database logins with `API_DB_PASSWORD` and `WORKER_DB_PASSWORD`, then creates the household and your account with `OWNER_PASSWORD`. Running it again changes nothing.
 
 **8. Railway (You).**
