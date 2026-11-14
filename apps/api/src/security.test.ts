@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { createDb, type Database } from '@familyos/db';
 import {
+  hashToken,
   purgeHouseholds,
   seedHousehold,
   seedInvite,
   seedRoutine,
   type SeededHousehold,
 } from '@familyos/db/testing';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HouseholdExportSchema } from './export-schema';
 import { createTestApp, LEAKED_PASSWORD } from './testing/harness';
@@ -409,6 +410,40 @@ describe.skipIf(!db)('API security (G1)', () => {
       expect(again.status).toBe(404);
       expect(accounts.get(email)?.password).toBe(PASSWORD);
       expect(logs.join('\n')).not.toContain(PASSWORD);
+    });
+
+    it("makes the claimer of a new household's owner invite its owner", async () => {
+      const email = `founder-${randomUUID()}@example.test`;
+      const token = randomUUID() + randomUUID();
+      const { rows } = await sql<{ id: string }>`
+        select app.create_household_with_owner_invite(
+          'Founder Home', 'America/Los_Angeles', ${email}, ${hashToken(token)}, now() + interval '1 hour'
+        ) as id
+      `.execute(requireDb());
+      const householdId = rows[0]?.id ?? '';
+      created.push(householdId);
+
+      const res = await claim({ token, email, password: PASSWORD, displayName: 'Founder' });
+      expect(res.status).toBe(201);
+      const founder = { userId: accounts.get(email)?.userId ?? '', email };
+      const me = await request('/me', { token: await tokenFor(founder) });
+      const { households } = (await me.json()) as { households: { id: string; role: string }[] };
+      expect(households).toEqual([expect.objectContaining({ id: householdId, role: 'owner' })]);
+
+      // As owner, they can invite the second adult.
+      const invited = await request(`/households/${householdId}/invites`, {
+        method: 'POST',
+        token: await tokenFor(founder),
+        body: { email: `partner-${randomUUID()}@example.test`, role: 'adult' },
+      });
+      expect(invited.status).toBe(201);
+      // Nobody can create another owner invite through the API.
+      const ownerInvite = await request(`/households/${householdId}/invites`, {
+        method: 'POST',
+        token: await tokenFor(founder),
+        body: { email: `second-owner-${randomUUID()}@example.test`, role: 'owner' },
+      });
+      expect(ownerInvite.status).toBe(422);
     });
 
     it('never changes an existing account, and leaves the invite usable by signing in', async () => {

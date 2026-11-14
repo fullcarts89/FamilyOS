@@ -49,9 +49,10 @@ export interface InviteTable {
   id: Generated<string>;
   household_id: string;
   email: string;
-  role: Extract<MemberRole, 'adult' | 'caregiver'>;
+  /** 'owner' only for the invite created with a new household, which has no inviter. */
+  role: Extract<MemberRole, 'owner' | 'adult' | 'caregiver'>;
   token_hash: Buffer;
-  invited_by_member_id: string;
+  invited_by_member_id: string | null;
   expires_at: Timestamp;
   accepted_at: Timestamp | null;
   accepted_member_id: string | null;

@@ -207,6 +207,47 @@ describe.skipIf(!db)('row-level security', () => {
       expect(await claimable(used, 'used@example.test')).toBe(false);
     });
 
+    it('creates a household whose owner joins from the owner invite', async () => {
+      const token = randomUUID();
+      const { rows } = await sql<{ id: string }>`
+        select app.create_household_with_owner_invite(
+          'Owner Invite Home', 'America/New_York', 'Founder@Example.test', ${hashToken(token)},
+          now() + interval '1 hour'
+        ) as id
+      `.execute(requireDb());
+      const householdId = rows[0]?.id ?? '';
+      try {
+        const joined = await accept(token, 'founder@example.test');
+        expect(joined.rows[0]?.household_id).toBe(householdId);
+        const member = await requireDb()
+          .selectFrom('app.member')
+          .select(['role'])
+          .where('id', '=', joined.rows[0]?.member_id ?? '')
+          .executeTakeFirstOrThrow();
+        expect(member.role).toBe('owner');
+      } finally {
+        await purgeHouseholds(requireDb(), [householdId]);
+      }
+    });
+
+    it('allows a missing inviter only on the owner invite, and the API role cannot create one', async () => {
+      const insert = (role: string, invitedBy: string | null) =>
+        sql`
+          insert into app.invite (household_id, email, role, token_hash, invited_by_member_id, expires_at)
+          values (${a.id}::uuid, 'x@example.test', ${role}::app.member_role, ${hashToken(randomUUID())},
+                  ${invitedBy}::uuid, now() + interval '1 hour')
+        `.execute(requireDb());
+      await expect(insert('adult', null)).rejects.toThrow(/invite_has_inviter/);
+      await expect(insert('owner', a.owner.id)).rejects.toThrow(/invite_role_check/);
+      await expect(
+        withRequestContext(requireDb(), asMember(a, a.owner), (trx) =>
+          sql`select app.create_household_with_owner_invite('X', 'UTC', 'x@example.test', ${hashToken(randomUUID())}, now())`.execute(
+            trx,
+          ),
+        ),
+      ).rejects.toThrow(/permission denied/);
+    });
+
     it('rejects expired and revoked invites with the same error', async () => {
       const expired = randomUUID();
       await seedInvite(requireDb(), a, {
