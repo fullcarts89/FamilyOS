@@ -66,7 +66,10 @@ project:
 | `resolve-childcare-conflict-*.gif` | rhythm.spec.ts: "Ask Theo to cover", "Pickup covered" |
 | `complete-project-milestone-*.gif` | tasks.spec.ts: "Halfway through Hall bathroom renovation" |
 | `return-home-after-plan-changed-*.gif` | return-home.spec.ts: "Since you last looked" |
-| Weekly Reset, full session | later: the Reset screen is still coming |
+| `weekly-reset-full-session-*.gif` | planning.spec.ts: opening to “Your week has a plan” |
+| `decision-resolved-together-*.gif` | planning.spec.ts: Theo's vote settles it |
+| `check-off-groceries-*.gif` | planning.spec.ts: check off, change your mind |
+| `add-a-contact-*.gif` | planning.spec.ts: the electrician, added |
 
 In CI, run the **E2E** workflow by hand with *Record* on; the GIFs are an artifact.
 
@@ -82,7 +85,7 @@ In CI, run the **E2E** workflow by hand with *Record* on; the GIFs are an artifa
 | `household.spec.ts` | add a pet, then its monthly care routine; invite an adult, claim with a password in a fresh browser, sign out and in; the link works once |
 | `isolation.spec.ts` | a second household's owner sees nothing of the Riveras in the app; their API calls get 404 |
 | `return-home.spec.ts` | Theo completes something on his device; Maya returns to Today and reads it in "Since you last looked" |
-| `coming-next.spec.ts` | `test.fixme` stubs with the steps for Weekly Reset, decisions, groceries, contacts and the Monarch CSV import (`fixtures/monarch-budget.csv`) |
+| `planning.spec.ts` | the full Weekly Reset (loose ends kept, June's week covered with the board updating, dinners, the commit, open decisions marked); a decision settled by Theo's vote, acknowledged once; groceries checked, unchecked, seen on Theo's phone, cleared; a contact added, searched and shown with its linked task; the Monarch CSV import (`fixtures/monarch-budget.csv`) with a transactions export refused first |
 
 The journeys hold under any time of day: they never depend on what "now" is beyond what the seed
 makes relative to today. One exception is skipped with a reason: Thursday after 5:30pm, when
@@ -90,20 +93,7 @@ that day's pickup clash has already passed.
 
 ## Hooks and findings for the app
 
-Selectors are roles, labels and visible text; there are no test IDs. Found while writing these:
-
-- **Checked/selected state isn't exposed on web.** `RoundCheckbox`, the capture sheet's
-  "Whose list" radios and `Chip` set `accessibilityState={{ checked | selected }}`, which
-  react-native-web 0.21 doesn't render: no `aria-checked` / `aria-selected` in the DOM, so screen
-  readers (and `toBeChecked()`) can't tell a done task or the chosen owner. Use `aria-checked` /
-  `aria-selected` props. Journeys check the server instead.
-- **Routine card after an early Done** (`components/tasks/Routines.tsx`): `firstOpen` takes the
-  first upcoming occurrence without skipping done ones, so after "Done: Biscuit's flea meds" the
-  card still says "Your turn · Dec 1" with Done disabled instead of the next turn; the routine
-  page also still lists Dec 1 under "Coming up". `routines.spec.ts` has a `test.fail()` for it
-  that will start failing (so remove the marker) once fixed.
-- **Captured project steps don't show on the owner's list.** Capture says "Added to Theo's list"
-  for "… @theo #reno", but steps with a project only appear under the project on Tasks, never in
-  Theo's column or on Today.
-- **Opening another household's item** (`/item/<id>`) shows "Something went wrong. Try again."
-  with a retry; a "this isn't in your household" message would be clearer (no data leaks).
+Selectors are roles, labels and visible text; there are no test IDs. The findings from the first
+run (checked/selected state not exposed on web, the routine card stuck after an early Done,
+owned project steps missing from the owner's list, the error on another household's item) are
+fixed; `routines.spec.ts` now asserts the routine card moves on to the next turn.

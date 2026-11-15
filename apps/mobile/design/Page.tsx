@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react';
+import type { ComponentRef, ReactElement, ReactNode, Ref } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -18,22 +18,29 @@ export function Page({
   refreshControl,
   maxWidth = 1360,
   style,
+  scrollRef,
+  bottomSpace,
 }: {
   children: ReactNode;
   refreshControl?: ReactElement<RefreshControlProps>;
   maxWidth?: number;
   style?: StyleProp<ViewStyle>;
+  /** To scroll back to the top (a new chapter, a new step). */
+  scrollRef?: Ref<ComponentRef<typeof ScrollView>>;
+  /** Extra room at the bottom on phones, above the floating controls. */
+  bottomSpace?: number;
 }) {
   const { kind } = useLayout();
   const pad = kind === 'desktop' ? 40 : kind === 'tablet' ? 28 : 16;
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.scroll}
       contentContainerStyle={{
         paddingHorizontal: pad,
         paddingTop: kind === 'phone' ? 18 : 36,
         // Clear the floating capture button on phones.
-        paddingBottom: kind === 'phone' ? 120 : 80,
+        paddingBottom: (kind === 'phone' ? 120 : 80) + (bottomSpace ?? 0),
       }}
       keyboardShouldPersistTaps="handled"
       {...(refreshControl && { refreshControl })}

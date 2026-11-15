@@ -16,6 +16,10 @@ export interface NavItem {
   href: Href;
   /** Path prefixes that also count as this section. */
   match: string[];
+  /** A short line under the label in the More menu. */
+  hint?: string;
+  /** Owners and adults only (caregivers don't see it). */
+  adultsOnly?: boolean;
 }
 
 export const NAV: NavItem[] = [
@@ -27,10 +31,32 @@ export const NAV: NavItem[] = [
 ];
 
 export const MORE: NavItem[] = [
-  { label: 'Contacts', href: '/contacts', match: ['/contacts'] },
-  { label: 'Meals', href: '/meals', match: ['/meals'] },
-  { label: 'Budgets', href: '/budgets', match: ['/budgets'] },
+  {
+    label: 'Meals & groceries',
+    href: '/meals',
+    match: ['/meals'],
+    hint: 'Dinners and the shared list',
+  },
+  {
+    label: 'Decisions',
+    href: '/decisions',
+    match: ['/decisions'],
+    hint: 'Vote and decide together',
+    adultsOnly: true,
+  },
+  { label: 'Contacts', href: '/contacts', match: ['/contacts'], hint: 'Who to call' },
+  {
+    label: 'Budgets',
+    href: '/budgets',
+    match: ['/budgets'],
+    hint: 'This month, from Monarch',
+    adultsOnly: true,
+  },
 ];
+
+/** The More items this person can open. */
+export const moreFor = (role: string | undefined) =>
+  MORE.filter((m) => !m.adultsOnly || role !== 'caregiver');
 
 export function isActive(item: NavItem, pathname: string): boolean {
   return item.match.some((m) => (m === '/' ? pathname === '/' : pathname.startsWith(m)));
@@ -115,7 +141,7 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
         <View ref={moreRef} collapsable={false}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="More: contacts, meals and budgets"
+            accessibilityLabel="More: meals, decisions, contacts and budgets"
             aria-expanded={!!menu}
             onPress={openMenu}
             style={(s: PressState) => [
@@ -168,7 +194,7 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
             role="menu"
             style={[styles.menu, { top: menu.y, left: Math.max(12, menu.x - 240) }]}
           >
-            {MORE.map((item) => (
+            {moreFor(household?.role).map((item) => (
               <Pressable
                 key={item.label}
                 role="menuitem"
@@ -176,12 +202,17 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
                   setMenu(null);
                   router.navigate(item.href);
                 }}
-                style={(s: PressState) => [styles.menuItem, s.hovered && styles.navHover]}
+                style={(s: PressState) => [
+                  styles.menuItem,
+                  (s.hovered || isActive(item, pathname)) && styles.menuHover,
+                ]}
               >
                 <Text variant="label">{item.label}</Text>
-                <Text variant="kicker" tone="faint">
-                  Coming next
-                </Text>
+                {item.hint ? (
+                  <Text variant="small" tone="muted">
+                    {item.hint}
+                  </Text>
+                ) : null}
               </Pressable>
             ))}
           </View>
@@ -281,12 +312,13 @@ const styles = StyleSheet.create({
     boxShadow: shadow.menu,
   },
   menuItem: {
-    minHeight: 44,
+    minHeight: 52,
     paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: 1,
     cursor: 'pointer',
   },
+  menuHover: { backgroundColor: color.lane },
 });

@@ -38,13 +38,21 @@ test.describe('Quick capture', () => {
       status: 'ready',
     });
 
-    // And it shows as Theo's step of the renovation, after a reload. (Project steps live under
-    // their project, not in Theo's column: see README, findings.)
+    // And it shows as Theo's step of the renovation, after a reload: under the project, and on
+    // Theo's own list with the project's name. "Take it" is offered only on the partner's items.
     await app.nav(maya, 'Tasks');
     await maya.reload();
-    if (app.phone) await maya.getByRole('tab', { name: 'Projects' }).click();
-    await maya.getByRole('button', { name: 'Show steps' }).click();
-    // "Take it" is offered only on the partner's items: this step is Theo's.
-    await expect(maya.getByRole('button', { name: 'Take it: Call the plumber' })).toBeVisible();
+    const takeIt = maya.getByRole('button', { name: 'Take it: Call the plumber' });
+    if (app.phone) {
+      await maya.getByRole('tab', { name: 'Theo' }).click();
+      await expect(takeIt).toBeVisible();
+      await expect(maya.getByText('Hall bathroom renovation').first()).toBeVisible();
+      await maya.getByRole('tab', { name: 'Projects' }).click();
+      await maya.getByRole('button', { name: 'Show steps' }).click();
+      await expect(takeIt).toBeVisible();
+    } else {
+      await maya.getByRole('button', { name: 'Show steps' }).click();
+      await expect(takeIt).toHaveCount(2);
+    }
   });
 });

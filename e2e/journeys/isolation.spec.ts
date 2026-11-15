@@ -33,8 +33,10 @@ test.describe('Household isolation', () => {
     // Even with a Rivera item's address, the item doesn't show.
     app.allowConsoleError(/^console\.error on \/item\/.*status of 404/);
     await robin.goto(`/item/${invoice.id}`);
-    // (The app says only "Something went wrong. Try again." here: see README, findings.)
-    await expect(robin.getByRole('alert')).toBeVisible();
+    await expect(
+      robin.getByRole('heading', { name: 'This isn’t in your household, or it was removed' }),
+    ).toBeVisible();
+    await expect(robin.getByRole('button', { name: 'Open Tasks' })).toBeVisible();
     await expect(robin.getByText(invoice.title)).toHaveCount(0);
 
     // In the API: the Riveras' household answers 404, exactly like one that doesn't exist.

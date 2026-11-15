@@ -64,12 +64,21 @@ export function headline({
           text: `Next: ${upcoming.title} ${whenFromNow(upcoming.startsAt, now, timeZone)}.`,
         });
       }
-    } else if (entries.length > 0) {
-      title.push({ text: 'That’s the day’s plans done.' });
     } else {
-      title.push({ text: 'A quiet day on the calendar.' });
+      // Never "all done" while something is late: say what's still open instead.
+      const late = rhythm.summary.overdue;
+      const lateText =
+        late > 0 ? ` ${late === 1 ? 'One thing is' : `${late} things are`} running late.` : '';
+      if (entries.length > 0) {
+        title.push({
+          text: late > 0 ? `No more plans today.${lateText}` : 'That’s the day’s plans done.',
+        });
+      } else {
+        title.push({ text: `A quiet day on the calendar.${lateText}` });
+      }
     }
   }
+  const lateInTitle = title.some((p) => p.text.includes('running late'));
 
   // The supporting line: where the children are, what's yours today, and tomorrow's first handoff.
   const facts: string[] = [];
@@ -102,7 +111,7 @@ export function headline({
     ).length;
     if (open > 0) facts.push(`you have ${open === 1 ? 'one thing' : `${open} things`} due today`);
   }
-  if (rhythm.summary.overdue > 0) {
+  if (rhythm.summary.overdue > 0 && !lateInTitle) {
     facts.push(
       `${rhythm.summary.overdue === 1 ? 'one thing is' : `${rhythm.summary.overdue} things are`} running late`,
     );

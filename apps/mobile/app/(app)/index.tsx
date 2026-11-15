@@ -8,6 +8,7 @@ import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
 import { NextUp, dayEntries } from '../../components/rhythm/NextUp';
 import { SinceLastLooked } from '../../components/rhythm/SinceLastLooked';
 import { WeekStrip } from '../../components/rhythm/WeekStrip';
+import { WeekPlanStrip } from '../../components/rhythm/WeekPlanStrip';
 import { PersonColumn } from '../../components/tasks/PersonColumn';
 import { Avatar, Either } from '../../design/Avatar';
 import type { PressState } from '../../design/Button';
@@ -55,7 +56,7 @@ export default function Today() {
   const { timeZone } = useHousehold();
   const people = usePeople();
   const { desktop, phone } = useLayout();
-  const { open } = useCapture();
+  const { open, version } = useCapture();
   const data = useTodayData();
   const { household } = useHousehold();
   // A new household's owner, alone in it, gets the guided setup first (once; skippable).
@@ -136,7 +137,9 @@ export default function Today() {
     if (!items || !today) return out;
     const sort = byDue(timeZone);
     for (const item of currentTurns(items)) {
-      if (item.parentId || item.type === 'project' || !isOpen(item)) continue;
+      if (item.type === 'project' || !isOpen(item)) continue;
+      // A project's step shows on its owner's list too; unowned steps stay with the project.
+      if (item.parentId && !item.ownerMemberId) continue;
       const when = whenOf(item, today, timeZone);
       if (!NEAR.includes(when)) continue;
       const g =
@@ -352,6 +355,7 @@ export default function Today() {
                 key={c.key ?? 'shared'}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: on }}
+                aria-selected={on}
                 onPress={() => setColumn(c.key)}
                 style={[styles.tab, on && styles.tabOn]}
               >
@@ -383,6 +387,9 @@ export default function Today() {
                 onAssign={actions.assign}
                 onReschedule={actions.reschedule}
                 onAdd={() => open(c.key)}
+                contextOf={(item) =>
+                  item.parentId ? items?.find((i) => i.id === item.parentId)?.title : undefined
+                }
                 sharedColors={partnerColors}
                 showHeader={!phone}
               />
@@ -485,6 +492,10 @@ export default function Today() {
           ) : (
             <View style={styles.timelineCard}>{timeline}</View>
           )}
+
+          <View style={styles.blockTight}>
+            <WeekPlanStrip today={today} version={version} />
+          </View>
 
           {!phone || inbox ? (
             <View style={styles.blockTight}>

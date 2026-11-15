@@ -86,7 +86,11 @@ test.describe('Tasks: complete, take, hand over', () => {
     if (app.phone) await maya.getByRole('tab', { name: 'Projects' }).click();
     await maya.getByRole('button', { name: 'Show steps' }).click();
     await app.clip('complete-project-milestone', maya, async () => {
-      await maya.getByRole('checkbox', { name: `Complete ${step}` }).click();
+      // Maya's own step is on her list and under the project: either completes it.
+      await maya
+        .getByRole('checkbox', { name: `Complete ${step}` })
+        .first()
+        .click();
       await expect(maya.getByText(`Halfway through ${project}`)).toBeVisible();
     });
     expect(DONE).toContain((await mayaApi.item(step)).status);

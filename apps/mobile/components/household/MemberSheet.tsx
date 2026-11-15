@@ -8,7 +8,7 @@ import { Chip } from '../../design/Chip';
 import { Field } from '../../design/Field';
 import { FadeIn } from '../../design/motion';
 import { ErrorNotice } from '../../design/Notice';
-import { Sheet } from '../../design/Sheet';
+import { Sheet, SheetActions } from '../../design/Sheet';
 import { Text } from '../../design/Text';
 import { useToast } from '../../design/Toast';
 import { choosablePalette, color, radius, tint } from '../../design/tokens';
@@ -279,17 +279,19 @@ function MemberForm({ target, onClose }: { target: MemberTarget; onClose: () => 
           maxLength={200}
         />
       ) : null}
-      {error ? <ErrorNotice message={error} /> : null}
-      <View style={styles.actions}>
-        <Button
-          title={editing ? 'Save' : role === 'pet' ? 'Add pet' : 'Add child'}
-          icon={editing ? Check : undefined}
-          busy={busy}
-          disabled={!name.trim()}
-          onPress={save}
-        />
-        <Button title="Cancel" variant="quiet" onPress={onClose} />
-      </View>
+      <SheetActions>
+        {error ? <ErrorNotice message={error} /> : null}
+        <View style={styles.actions}>
+          <Button
+            title={editing ? 'Save' : role === 'pet' ? 'Add pet' : 'Add child'}
+            icon={editing ? Check : undefined}
+            busy={busy}
+            disabled={!name.trim()}
+            onPress={save}
+          />
+          <Button title="Cancel" variant="quiet" onPress={onClose} />
+        </View>
+      </SheetActions>
     </View>
   );
 }

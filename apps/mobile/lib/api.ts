@@ -137,6 +137,8 @@ export interface WorkItem {
   occurrenceIndex: number | null;
   occurrenceOn: string | null;
   completedByMemberId: string | null;
+  /** The key contact it involves (the plumber for the renovation). */
+  contactId?: string | null;
   version: number;
   updatedAt: string;
 }
@@ -360,6 +362,213 @@ export interface Activity {
   memberId: string | null;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Weekly Reset, decisions, meals and groceries, contacts and budgets.
+
+export interface DecisionOption {
+  id: string;
+  label: string;
+  detail: string | null;
+  position: number;
+}
+
+export interface Decision {
+  id: string;
+  question: string;
+  context: string | null;
+  dueOn: string | null;
+  status: 'open' | 'decided' | 'dropped';
+  decidedOptionId: string | null;
+  decidedAt: string | null;
+  decidedVia: 'agreement' | 'call' | null;
+  decidedByMemberId: string | null;
+  options: DecisionOption[];
+  votes: { memberId: string; optionId: string; votedAt: string | null }[];
+  myVoteOptionId: string | null;
+  /** Adults who haven't voted yet (open decisions only). */
+  waitingOn: string[];
+  createdByMemberId: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner';
+
+export interface Meal {
+  id: string;
+  onDate: string;
+  slot: MealSlot;
+  title: string;
+  cookMemberId: string | null;
+  notes: string | null;
+  createdByMemberId: string;
+  version: number;
+}
+
+export type GroceryAisle =
+  | 'produce'
+  | 'bakery'
+  | 'dairy_eggs'
+  | 'meat_fish'
+  | 'pantry'
+  | 'frozen'
+  | 'baby'
+  | 'pet'
+  | 'household'
+  | 'other';
+
+export interface GroceryItem {
+  id: string;
+  name: string;
+  detail: string | null;
+  aisle: GroceryAisle;
+  position: number;
+  checkedAt: string | null;
+  checkedByMemberId: string | null;
+  addedByMemberId: string | null;
+  version: number;
+}
+
+export type ContactCategory =
+  'health' | 'childcare' | 'school' | 'pets' | 'home' | 'services' | 'family' | 'other';
+
+export interface Contact {
+  id: string;
+  name: string;
+  category: ContactCategory;
+  role: string | null;
+  organization: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  notes: string | null;
+  forMemberId: string | null;
+  version: number;
+}
+
+export interface BudgetMonth {
+  month: string;
+  importedAt: string | null;
+  categories: {
+    category: string;
+    group: string | null;
+    budgeted: number | null;
+    actual: number | null;
+    remaining: number | null;
+  }[];
+  groups: { group: string | null; budgeted: number; actual: number }[];
+  totals: { budgeted: number; actual: number };
+  availableMonths: string[];
+}
+
+export type LookBackEntry =
+  | {
+      kind: 'item';
+      id: string;
+      title: string;
+      type: 'task' | 'project' | 'issue';
+      reason: 'project' | 'subtask' | 'priority' | 'care';
+      completedOn: string;
+      parentId: string | null;
+      parentTitle: string | null;
+      subjectMemberId: string | null;
+    }
+  | {
+      kind: 'routine';
+      routineId: string;
+      title: string;
+      reason: 'care';
+      subjectMemberId: string | null;
+      dates: string[];
+      itemIds: string[];
+    };
+
+export type Unresolved =
+  | { type: 'decision_open'; decisionId: string; dueOn: string | null }
+  | { type: 'care_unassigned'; occurrenceKey: string; eventId: string; time: string }
+  | { type: 'handoff_conflict'; occurrenceKey: string; memberId: string; time: string }
+  | { type: 'overdue'; workItemId: string; dueOn: string };
+
+export interface WeeklyPlan {
+  id: string;
+  weekStart: string;
+  notes: string | null;
+  committedAt: string | null;
+  committedByMemberId: string | null;
+  version: number;
+}
+
+export interface RoutineTurns {
+  id: string;
+  title: string;
+  version: number;
+  subjectMemberId: string | null;
+  rotation: string[];
+  turns: {
+    index: number;
+    date: string;
+    ownerMemberId: string | null;
+    skipped: boolean;
+    itemId: string | null;
+    status: WorkItemStatus | null;
+    version: number | null;
+  }[];
+}
+
+/** GET /reset: everything one Weekly Reset session needs, in one read. */
+export interface ResetResponse {
+  today: string;
+  week: { start: string; end: string; timezone: string };
+  plan: WeeklyPlan | null;
+  members: Member[];
+  lookBack: {
+    from: string;
+    to: string;
+    byMember: { memberId: string | null; entries: LookBackEntry[] }[];
+    projects: {
+      id: string;
+      title: string;
+      completed: boolean;
+      completedAt: string | null;
+      progress: { done: number; total: number };
+    }[];
+    decisions: {
+      id: string;
+      question: string;
+      decidedOptionId: string | null;
+      decidedOption: string | null;
+      decidedVia: 'agreement' | 'call' | null;
+      decidedAt: string | null;
+    }[];
+    coverage: {
+      byCareMember: { memberId: string; allCovered: boolean }[];
+      covers: {
+        occurrenceKey: string;
+        eventId: string;
+        date: string;
+        title: string;
+        careMemberId: string | null;
+        memberId: string | null;
+      }[];
+    };
+  };
+  unfinished: WorkItem[];
+  dueThisWeek: WorkItem[];
+  events: {
+    weekStart: string;
+    days: { date: string; occurrences: Occurrence[]; handoffs: HandoffView[] }[];
+    needsOwner: Extract<HeadsUp, { type: 'care_unassigned' }>[];
+    conflicts: Extract<HeadsUp, { type: 'handoff_conflict' }>[];
+  };
+  decisions: Decision[];
+  meals: Meal[];
+  groceries: GroceryItem[];
+  routines: RoutineTurns[];
+  unresolved: Unresolved[];
+  allClear: boolean;
+}
+
 /** User-facing message for an API error code. */
 export function errorMessage(error: unknown): string {
   const code = error instanceof ApiRequestError ? error.code : '';
@@ -406,6 +615,36 @@ export function errorMessage(error: unknown): string {
       return 'Choose who the drop-off or pickup is for.';
     case 'invalid_member':
       return 'Choose someone from the household.';
+    case 'decision_closed':
+      return 'That decision was already settled. Reload to see how.';
+    case 'invalid_option':
+      return 'That option was removed. Reload to see the current ones.';
+    case 'too_many_options':
+      return 'A decision can have up to eight options.';
+    case 'meal_exists':
+      return 'There’s already a dinner planned that day. Reload to see it.';
+    case 'invalid_week':
+      return 'That isn’t the start of a week.';
+    case 'unrecognized_csv':
+      return 'That file doesn’t look like a Monarch budget export. Export the budget (not transactions) and try again.';
+    case 'transactions_csv':
+      return 'That’s a transactions export. FamilyOS only keeps budgets: export the budget instead.';
+    case 'empty_csv':
+      return 'That file is empty.';
+    case 'invalid_csv':
+    case 'invalid_amount':
+    case 'invalid_month':
+      return 'Some rows in that file couldn’t be read. Export the budget again and upload the new file.';
+    case 'month_missing':
+      return 'The file doesn’t say which month it’s for. Choose the month and upload it again.';
+    case 'too_many_rows':
+    case 'too_many_months':
+    case 'body_too_large':
+      return 'That file is too big. Export one month (or a few) at a time.';
+    case 'file_required':
+      return 'Choose the budget file to upload.';
+    case 'invalid_body':
+      return 'Some of that couldn’t be saved. Check the details and try again.';
     case 'calendars_unavailable':
       return 'Calendar connections aren’t switched on for this household yet.';
     case 'insecure_url':
