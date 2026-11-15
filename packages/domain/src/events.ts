@@ -240,8 +240,10 @@ export function expandEvents(
   }
   return out.sort(
     (a, b) =>
-      Temporal.Instant.compare(Temporal.Instant.from(a.startsAt), Temporal.Instant.from(b.startsAt)) ||
-      a.key.localeCompare(b.key),
+      Temporal.Instant.compare(
+        Temporal.Instant.from(a.startsAt),
+        Temporal.Instant.from(b.startsAt),
+      ) || a.key.localeCompare(b.key),
   );
 }
 

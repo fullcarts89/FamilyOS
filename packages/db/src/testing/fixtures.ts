@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { sql, type Kysely } from 'kysely';
-import type { RecurrenceRule } from '@familyos/domain';
+import type { CalendarRule, CareAction, EventKind, RecurrenceRule } from '@familyos/domain';
 import type { Database, MemberRole } from '../schema';
 
 /**
@@ -21,6 +21,7 @@ export interface SeededHousehold {
   adult: SeededMember;
   caregiver: SeededMember;
   child: SeededMember;
+  pet: SeededMember;
   sharedItemId: string;
   privateItemId: string;
 }
@@ -33,7 +34,7 @@ export async function seedHousehold(db: Kysely<Database>, name: string): Promise
     .executeTakeFirstOrThrow();
 
   const addMember = async (role: MemberRole, displayName: string): Promise<SeededMember> => {
-    const userId = role === 'child' ? null : randomUUID();
+    const userId = role === 'child' || role === 'pet' ? null : randomUUID();
     const row = await db
       .insertInto('app.member')
       .values({ household_id: household.id, user_id: userId, display_name: displayName, role })
@@ -46,6 +47,7 @@ export async function seedHousehold(db: Kysely<Database>, name: string): Promise
   const adult = await addMember('adult', `${name} Adult`);
   const caregiver = await addMember('caregiver', `${name} Caregiver`);
   const child = await addMember('child', `${name} Child`);
+  const pet = await addMember('pet', `${name} Pet`);
 
   const shared = await db
     .insertInto('app.work_item')
@@ -76,6 +78,7 @@ export async function seedHousehold(db: Kysely<Database>, name: string): Promise
     adult,
     caregiver,
     child,
+    pet,
     sharedItemId: shared.id,
     privateItemId: privateItem.id,
   };
@@ -154,4 +157,49 @@ export async function seedRoutine(
     .returning('id')
     .executeTakeFirstOrThrow();
   return { routineId: routine.id, ruleId: rule.id };
+}
+
+/** An event with its members, inserted directly (the API path is tested separately). */
+export async function seedEvent(
+  db: Kysely<Database>,
+  household: SeededHousehold,
+  options: {
+    title?: string;
+    startsAt: string;
+    endsAt: string;
+    kind?: EventKind;
+    allDay?: boolean;
+    recurrence?: CalendarRule | null;
+    timezone?: string;
+    memberIds?: string[];
+    careMemberId?: string | null;
+    careAction?: CareAction | null;
+    carePlace?: string | null;
+  },
+): Promise<string> {
+  const event = await db
+    .insertInto('app.event')
+    .values({
+      household_id: household.id,
+      title: options.title ?? `${household.name} event`,
+      starts_at: options.startsAt,
+      ends_at: options.endsAt,
+      kind: options.kind ?? 'other',
+      all_day: options.allDay ?? false,
+      recurrence: options.recurrence ?? null,
+      timezone: options.timezone ?? 'America/Los_Angeles',
+      care_member_id: options.careMemberId ?? null,
+      care_action: options.careAction ?? null,
+      care_place: options.carePlace ?? null,
+      created_by_member_id: household.owner.id,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  for (const memberId of options.memberIds ?? []) {
+    await db
+      .insertInto('app.event_member')
+      .values({ household_id: household.id, event_id: event.id, member_id: memberId })
+      .execute();
+  }
+  return event.id;
 }

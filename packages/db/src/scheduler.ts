@@ -34,14 +34,14 @@ export async function loadExceptions(
   return rows;
 }
 
-/** Members who can own occurrences: active adults with accounts. Anyone else leaves it unassigned. */
+/** Members who can own occurrences: active adults with accounts (never children or pets). */
 async function assignableMembers(db: Db, householdId: string): Promise<Set<string>> {
   const rows = await db
     .selectFrom('app.member')
     .select('id')
     .where('household_id', '=', householdId)
     .where('status', '=', 'active')
-    .where('role', '!=', 'child')
+    .where('role', 'not in', ['child', 'pet'])
     .execute();
   return new Set(rows.map((r) => r.id));
 }
@@ -78,6 +78,7 @@ export async function materializeRoutine(
       'w.owner_member_id',
       'w.visibility',
       'w.created_by_member_id',
+      'w.subject_member_id',
       'r.id as rule_id',
       'r.rule',
       'r.timezone',
@@ -170,6 +171,7 @@ export async function materializeRoutine(
         owner_member_id: owner && assignable.has(owner) ? owner : null,
         visibility: routine.visibility,
         created_by_member_id: routine.created_by_member_id,
+        subject_member_id: routine.subject_member_id,
         recurrence_rule_id: routine.rule_id,
         occurrence_index: occurrence.index,
         occurrence_on: occurrence.date,

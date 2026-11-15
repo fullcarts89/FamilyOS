@@ -1,9 +1,5 @@
 import { Temporal } from 'temporal-polyfill';
-import {
-  startOfLocalDay,
-  type CareAction,
-  type EventOccurrence,
-} from './events';
+import { startOfLocalDay, type CareAction, type EventOccurrence } from './events';
 import { isCaredFor, type MemberRole } from './permissions';
 import { localDueDate } from './today';
 import type { WorkItemStatus } from './work-item';
@@ -275,8 +271,18 @@ export function buildRhythm<T extends RhythmTask>(input: RhythmInput<T>): Rhythm
       close(at);
       current =
         move.action === 'drop_off'
-          ? { startsAt: at, endsAt: at, location: { kind: 'away', place: move.place }, withMemberIds: [] }
-          : { startsAt: at, endsAt: at, location: { kind: 'home' }, withMemberIds: [...move.byMemberIds] };
+          ? {
+              startsAt: at,
+              endsAt: at,
+              location: { kind: 'away', place: move.place },
+              withMemberIds: [],
+            }
+          : {
+              startsAt: at,
+              endsAt: at,
+              location: { kind: 'home' },
+              withMemberIds: [...move.byMemberIds],
+            };
     }
     close(dayEnd);
     return segments;
@@ -410,7 +416,9 @@ export function buildRhythm<T extends RhythmTask>(input: RhythmInput<T>): Rhythm
       : Temporal.PlainDate.from(h.dueOn).toZonedDateTime({ timeZone: 'UTC' }).epochMilliseconds;
   headsUps.sort(
     (a, b) =>
-      TYPE_ORDER[a.type] - TYPE_ORDER[b.type] || sortKey(a) - sortKey(b) || a.id.localeCompare(b.id),
+      TYPE_ORDER[a.type] - TYPE_ORDER[b.type] ||
+      sortKey(a) - sortKey(b) ||
+      a.id.localeCompare(b.id),
   );
 
   return { date, timezone: timeZone, lanes, handoffs, unassignedTasks, headsUps };

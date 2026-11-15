@@ -7,6 +7,7 @@ import {
   rangeDays,
   type EventSeries,
 } from './events';
+import type { CalendarRule } from './recurrence';
 
 const LA = 'America/Los_Angeles';
 const series = (overrides: Partial<EventSeries> = {}): EventSeries => ({
@@ -26,7 +27,7 @@ const series = (overrides: Partial<EventSeries> = {}): EventSeries => ({
   exceptions: [],
   ...overrides,
 });
-const weekdays = { freq: 'weekly', interval: 1, weekdays: [1, 2, 3, 4, 5] } as const;
+const weekdays: CalendarRule = { freq: 'weekly', interval: 1, weekdays: [1, 2, 3, 4, 5] };
 const caredFor = (id: string) => id === 'june' || id === 'biscuit';
 
 describe('event rules', () => {
@@ -60,9 +61,7 @@ describe('expanding events', () => {
         cover: null,
       }),
     ]);
-    expect(expandEvents([one], { from: '2026-10-27', to: '2026-10-30', timeZone: LA })).toEqual(
-      [],
-    );
+    expect(expandEvents([one], { from: '2026-10-27', to: '2026-10-30', timeZone: LA })).toEqual([]);
   });
 
   it('finds multi-day events from the days they run into, not only their first', () => {

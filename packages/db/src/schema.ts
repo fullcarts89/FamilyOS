@@ -1,5 +1,12 @@
 import type { ColumnType, Generated } from 'kysely';
-import type { MemberRole, RecurrenceRule, WorkItemStatus } from '@familyos/domain';
+import type {
+  CalendarRule,
+  CareAction,
+  EventKind,
+  MemberRole,
+  RecurrenceRule,
+  WorkItemStatus,
+} from '@familyos/domain';
 
 /** Kysely table types for schema `app` (migrations in supabase/migrations). */
 
@@ -18,7 +25,7 @@ export type Visibility = 'household' | 'private';
 export type WorkItemType = 'task' | 'project' | 'routine' | 'issue';
 export type SourceKind = 'text' | 'photo' | 'document' | 'email';
 export type AuditEntityType =
-  'household' | 'member' | 'invite' | 'work_item' | 'source' | 'comment';
+  'household' | 'member' | 'invite' | 'work_item' | 'source' | 'comment' | 'event';
 
 export interface SchemaInfoTable {
   key: string;
@@ -41,7 +48,14 @@ export interface MemberTable {
   display_name: string;
   role: MemberRole;
   status: Generated<MemberStatus>;
+  /** #RRGGBB, uppercase. Assigned from the palette on insert when not given. */
+  color: ColumnType<string, string | undefined, string>;
+  /** Pets only, e.g. 'Dog'. */
+  species: string | null;
+  note: string | null;
+  version: Generated<number>;
   created_at: Timestamp;
+  updated_at: Timestamp;
   removed_at: Timestamp | null;
 }
 
@@ -92,6 +106,8 @@ export interface WorkItemTable {
   occurrence_on: ColumnType<string | null, string | null | undefined, string | null>;
   completed_at: Timestamp | null;
   completed_by_member_id: string | null;
+  /** The child or pet the item is about ("Biscuit's flea meds"). */
+  subject_member_id: string | null;
   version: Generated<number>;
   created_at: Timestamp;
   updated_at: Timestamp;
@@ -147,6 +163,45 @@ export interface AuditEventTable {
   created_at: Timestamp;
 }
 
+export interface EventTable {
+  id: Generated<string>;
+  household_id: string;
+  title: string;
+  starts_at: Timestamp;
+  ends_at: Timestamp;
+  all_day: Generated<boolean>;
+  location: string | null;
+  notes: string | null;
+  kind: Generated<EventKind>;
+  recurrence: ColumnType<CalendarRule | null, CalendarRule | null | undefined, CalendarRule | null>;
+  recurs_until: ColumnType<string | null, string | null | undefined, string | null>;
+  timezone: string;
+  care_member_id: string | null;
+  care_action: CareAction | null;
+  care_place: string | null;
+  created_by_member_id: string;
+  version: Generated<number>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface EventMemberTable {
+  household_id: string;
+  event_id: string;
+  member_id: string;
+}
+
+export interface EventExceptionTable {
+  id: Generated<string>;
+  household_id: string;
+  event_id: string;
+  occurrence_date: LocalDate;
+  kind: 'skip' | 'cover';
+  cover_member_id: string | null;
+  created_by_member_id: string;
+  created_at: Timestamp;
+}
+
 export interface ServiceHeartbeatTable {
   service: 'worker';
   seen_at: Timestamp;
@@ -163,5 +218,8 @@ export interface Database {
   'app.occurrence_exception': OccurrenceExceptionTable;
   'app.comment': CommentTable;
   'app.audit_event': AuditEventTable;
+  'app.event': EventTable;
+  'app.event_member': EventMemberTable;
+  'app.event_exception': EventExceptionTable;
   'app.service_heartbeat': ServiceHeartbeatTable;
 }

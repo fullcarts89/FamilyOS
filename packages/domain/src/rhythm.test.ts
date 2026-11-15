@@ -1,6 +1,7 @@
 import { Temporal } from 'temporal-polyfill';
 import { describe, expect, it } from 'vitest';
 import { expandEvents, type EventSeries } from './events';
+import type { CalendarRule } from './recurrence';
 import { buildRhythm, formatClock, formatDay, type RhythmMember, type RhythmTask } from './rhythm';
 
 // Thursday 2026-11-19 in Los Angeles (PST, UTC−8).
@@ -33,7 +34,7 @@ const event = (id: string, overrides: Partial<EventSeries>): EventSeries => ({
   exceptions: [],
   ...overrides,
 });
-const weekdays = { freq: 'weekly', interval: 1, weekdays: [1, 2, 3, 4, 5] } as const;
+const weekdays: CalendarRule = { freq: 'weekly', interval: 1, weekdays: [1, 2, 3, 4, 5] };
 // The series start on Monday; Thursday is a later occurrence.
 const dropOff = event('dropoff', {
   title: 'Daycare drop-off',
@@ -79,7 +80,12 @@ const task = (id: string, overrides: Partial<RhythmTask>): RhythmTask => ({
 
 function rhythm(
   series: EventSeries[],
-  extra: { tasks?: RhythmTask[]; date?: string; today?: string; decisions?: { id: string; title: string; dueOn: string }[] } = {},
+  extra: {
+    tasks?: RhythmTask[];
+    date?: string;
+    today?: string;
+    decisions?: { id: string; title: string; dueOn: string }[];
+  } = {},
 ) {
   const date = extra.date ?? DATE;
   return buildRhythm({
@@ -194,7 +200,10 @@ describe('location segments and handoffs', () => {
     expect(view.handoffs[1]?.to).toEqual({ kind: 'member', memberId: 'theo' });
     expect(view.headsUps.filter((h) => h.type === 'handoff_conflict')).toEqual([]);
 
-    const skipped = { ...dropOff, exceptions: [{ date: DATE, kind: 'skip' as const, coverMemberId: null }] };
+    const skipped = {
+      ...dropOff,
+      exceptions: [{ date: DATE, kind: 'skip' as const, coverMemberId: null }],
+    };
     const june = rhythm([skipped, pickUp]).lanes.find((l) => l.memberId === 'june');
     expect(june?.segments.map((s) => s.location.kind)).toEqual(['away', 'home']);
   });
@@ -251,7 +260,12 @@ describe('heads-ups', () => {
 
   it('flags a care event nobody is down for, without inventing a handoff adult', () => {
     const nobody = { ...pickUp, memberIds: ['june'] };
-    const vet = event('vet', { title: 'Vet checkup', startsAt: at('11:00'), endsAt: at('11:30'), careMemberId: 'biscuit' });
+    const vet = event('vet', {
+      title: 'Vet checkup',
+      startsAt: at('11:00'),
+      endsAt: at('11:30'),
+      careMemberId: 'biscuit',
+    });
     const view = rhythm([nobody, vet]);
     expect(view.headsUps.map((h) => [h.type, h.text])).toEqual([
       ['care_unassigned', 'Nobody is down for “Vet checkup” with Biscuit at 11:00 AM.'],
