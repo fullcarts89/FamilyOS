@@ -36,7 +36,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     try {
       const me = await api<{ households: MyHousehold[] }>('/me');
       const first = me.households[0] ?? null;
-      setHousehold(first);
+      // Members first, so screens never see a household without its people.
       if (first) {
         const detail = await api<{ members: Member[]; household: { timezone: string } }>(
           `/households/${first.id}`,
@@ -44,6 +44,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         setMembers(detail.members);
         setTimeZone(detail.household.timezone);
       }
+      setHousehold(first);
     } catch {
       setError(true);
     } finally {
