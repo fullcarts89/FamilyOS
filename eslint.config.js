@@ -14,6 +14,7 @@ export default tseslint.config(
       'apps/mobile/expo-env.d.ts',
       // Throwaway design prototypes: their own tooling, not part of the app.
       'design/**',
+      '.claude/**',
     ],
   },
   js.configs.recommended,
