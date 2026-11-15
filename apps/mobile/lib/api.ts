@@ -139,6 +139,11 @@ export interface WorkItem {
   completedByMemberId: string | null;
   /** The key contact it involves (the plumber for the renovation). */
   contactId?: string | null;
+  /** That contact's essentials, sent with the item (null when none, or not sent). */
+  contact?: Pick<
+    Contact,
+    'id' | 'name' | 'category' | 'role' | 'organization' | 'phone' | 'email'
+  > | null;
   version: number;
   updatedAt: string;
 }

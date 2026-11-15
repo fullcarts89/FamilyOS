@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Lock, Repeat2, Send } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ContactLink } from '../../../components/contacts/ContactLink';
 import { TaskRow } from '../../../components/tasks/TaskRow';
 import { Avatar, Either } from '../../../design/Avatar';
 import { Button, type PressState } from '../../../design/Button';
@@ -63,6 +64,8 @@ function describe(action: string, payload: { toStatus?: WorkItemStatus; fields?:
     return 'changed who has it';
   if (action === 'work_item.updated' && payload.fields?.some((f) => f.startsWith('due')))
     return 'changed the day';
+  if (action === 'work_item.updated' && payload.fields?.includes('contact_id'))
+    return 'changed the contact';
   return HISTORY[action] ?? 'updated it';
 }
 
@@ -232,6 +235,17 @@ export default function ItemScreen() {
           () => actions.patch(item, { status }),
           `${actionLabel(status, item.status)}: ${item.title}`,
         );
+
+  const linkContact = async (c: { id: string; name: string } | null) => {
+    setError(null);
+    await actions.patch(item, { contactId: c?.id ?? null });
+    toast.show(
+      c ? `Linked ${c.name}` : `Unlinked ${item.contact?.name ?? 'the contact'}`,
+      c ? { detail: 'Call or text them from here.' } : undefined,
+    );
+    changed();
+    void load();
+  };
 
   const saveText = () => {
     const changes: Record<string, unknown> = {};
@@ -618,6 +632,13 @@ export default function ItemScreen() {
           ) : null}
         </View>
       ) : null}
+      <ContactLink
+        item={item}
+        canEdit={household.role !== 'caregiver'}
+        onLink={(c) =>
+          c ? linkContact(c) : linkContact(null).catch((e) => setError(errorMessage(e)))
+        }
+      />
       {item.type !== 'project' && !routine && subtasks.length === 0 && projects.length > 0 ? (
         <View style={styles.block}>
           <Text variant="kicker" tone="muted">

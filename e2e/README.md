@@ -70,6 +70,7 @@ project:
 | `decision-resolved-together-*.gif` | planning.spec.ts: Theo's vote settles it |
 | `check-off-groceries-*.gif` | planning.spec.ts: check off, change your mind |
 | `add-a-contact-*.gif` | planning.spec.ts: the electrician, added |
+| `link-a-contact-to-a-task-*.gif` | planning.spec.ts: the plumber, linked from the task |
 
 In CI, run the **E2E** workflow by hand with *Record* on; the GIFs are an artifact.
 
@@ -85,7 +86,7 @@ In CI, run the **E2E** workflow by hand with *Record* on; the GIFs are an artifa
 | `household.spec.ts` | add a pet, then its monthly care routine; invite an adult, claim with a password in a fresh browser, sign out and in; the link works once |
 | `isolation.spec.ts` | a second household's owner sees nothing of the Riveras in the app; their API calls get 404 |
 | `return-home.spec.ts` | Theo completes something on his device; Maya returns to Today and reads it in "Since you last looked" |
-| `planning.spec.ts` | the full Weekly Reset (loose ends kept, June's week covered with the board updating, dinners, the commit, open decisions marked); a decision settled by Theo's vote, acknowledged once; groceries checked, unchecked, seen on Theo's phone, cleared; a contact added, searched and shown with its linked task; the Monarch CSV import (`fixtures/monarch-budget.csv`) with a transactions export refused first |
+| `planning.spec.ts` | the full Weekly Reset (loose ends kept, June's week covered with the board updating, dinners, the commit, open decisions marked); a decision settled by Theo's vote, acknowledged once; groceries checked, unchecked, seen on Theo's phone, cleared; a contact added, searched and shown with its linked task; a contact linked from a task (picked, then a new one added inline), with Call and Text on the task; the Monarch CSV import (`fixtures/monarch-budget.csv`) with a transactions export refused first |
 
 The journeys hold under any time of day: they never depend on what "now" is beyond what the seed
 makes relative to today. One exception is skipped with a reason: Thursday after 5:30pm, when
