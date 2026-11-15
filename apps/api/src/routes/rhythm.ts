@@ -57,7 +57,7 @@ export function rhythmRoutes(deps: Deps) {
       return s ? [occurrenceView(o, s)] : [];
     });
 
-    // Tasks due that day, and routine occurrences still open from before today.
+    // Tasks due that day, and open ones from before today.
     const dayStart = new Date(startOfLocalDay(date, timezone).epochMilliseconds);
     const dayEnd = new Date(startOfLocalDay(addDays(date, 1), timezone).epochMilliseconds);
     const todayStart = new Date(startOfLocalDay(today, timezone).epochMilliseconds);
@@ -71,8 +71,8 @@ export function rhythmRoutes(deps: Deps) {
         eb.or([
           eb('due_on', '=', date),
           eb.and([eb('due_at', '>=', dayStart), eb('due_at', '<', dayEnd)]),
+          // Open and already late: routine occurrences become heads-ups; all count as overdue.
           eb.and([
-            eb('recurrence_rule_id', 'is not', null),
             eb('status', 'not in', CLOSED),
             eb.or([eb('due_on', '<', today), eb('due_at', '<', todayStart)]),
           ]),
@@ -91,6 +91,7 @@ export function rhythmRoutes(deps: Deps) {
     const view = buildRhythm({
       date,
       today,
+      now: now.toISOString(),
       timeZone: timezone,
       members,
       occurrences,

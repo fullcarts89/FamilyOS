@@ -266,6 +266,13 @@ describe.skipIf(!db)('API security (G1)', () => {
       ['PATCH', `/households/${a.id}/calendars/${bCalendarId}`, { expectedVersion: 1, label: 'x' }],
       ['DELETE', `/households/${a.id}/calendars/${bCalendarId}?expectedVersion=1`],
       ['POST', `/households/${a.id}/calendars/${bCalendarId}/sync`],
+      // Personal state and activity.
+      ['GET', `/households/${b.id}/me/state`],
+      ['PATCH', `/households/${b.id}/me/state`, { expectedVersion: 0, sound: true }],
+      ['POST', `/households/${b.id}/me/seen`],
+      ['GET', `/households/${b.id}/me/acknowledgments?keys=milestone:x`],
+      ['POST', `/households/${b.id}/me/acknowledgments`, { key: 'milestone:x' }],
+      ['GET', `/households/${b.id}/activity`],
     ];
 
     it('answers every foreign request with 404 and changes nothing in the other household', async () => {
@@ -330,6 +337,8 @@ describe.skipIf(!db)('API security (G1)', () => {
         `/households/${h.id}/events?from=2026-11-16&to=2026-11-16`,
         `/households/${h.id}/rhythm`,
         `/households/${h.id}/calendars`,
+        `/households/${h.id}/me/state`,
+        `/households/${h.id}/activity`,
       ]) {
         expect((await request(path, { token })).status).toBe(404);
       }

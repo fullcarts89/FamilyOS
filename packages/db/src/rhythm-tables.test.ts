@@ -489,3 +489,103 @@ describe.skipIf(!db)('calendar sources: row-level security', () => {
     expect(left).toEqual([]);
   });
 });
+
+describe.skipIf(!db)('member state and acknowledgments: own rows only', () => {
+  let h: SeededHousehold;
+  let other: SeededHousehold;
+
+  beforeAll(async () => {
+    h = await seedHousehold(requireDb(), 'State');
+    other = await seedHousehold(requireDb(), 'State Other');
+    for (const [house, member] of [
+      [h, h.owner],
+      [h, h.adult],
+      [other, other.owner],
+    ] as const) {
+      await requireDb()
+        .insertInto('app.member_state')
+        .values({
+          member_id: member.id,
+          household_id: house.id,
+          quiet_hours_start: null,
+          quiet_hours_end: null,
+          updated_at: new Date(),
+        })
+        .execute();
+      await requireDb()
+        .insertInto('app.member_acknowledgment')
+        .values({
+          member_id: member.id,
+          household_id: house.id,
+          key: 'milestone:x',
+          acknowledged_at: new Date(),
+        })
+        .execute();
+    }
+  });
+  afterAll(async () => {
+    await purgeHouseholds(requireDb(), [h.id, other.id]);
+  });
+
+  it("shows a member only their own state, never their partner's or another household's", async () => {
+    const seen = await withRequestContext(requireDb(), asMember(h, h.owner), async (trx) => ({
+      states: (await trx.selectFrom('app.member_state').select('member_id').execute()).map(
+        (r) => r.member_id,
+      ),
+      acks: (await trx.selectFrom('app.member_acknowledgment').select('member_id').execute()).map(
+        (r) => r.member_id,
+      ),
+      updated: (
+        await trx
+          .updateTable('app.member_state')
+          .set({ sound: true })
+          .where('member_id', '=', h.adult.id)
+          .executeTakeFirst()
+      ).numUpdatedRows,
+    }));
+    expect(seen).toEqual({ states: [h.owner.id], acks: [h.owner.id], updated: 0n });
+    await expect(
+      withRequestContext(requireDb(), asMember(h, h.owner), (trx) =>
+        trx
+          .insertInto('app.member_acknowledgment')
+          .values({
+            member_id: h.adult.id,
+            household_id: h.id,
+            key: 'forged',
+            acknowledged_at: new Date(),
+          })
+          .execute(),
+      ),
+    ).rejects.toThrow(/row-level security/);
+  });
+
+  it('validates notification switches and quiet hours', async () => {
+    const update = (values: Record<string, unknown>) =>
+      requireDb()
+        .updateTable('app.member_state')
+        .set(values)
+        .where('member_id', '=', h.owner.id)
+        .execute();
+    await expect(update({ notifications: { marketing: true } })).rejects.toThrow(
+      /notifications_check/,
+    );
+    await expect(update({ notifications: { morning_checkin: 'yes' } })).rejects.toThrow(
+      /notifications_check/,
+    );
+    await expect(update({ quiet_hours_start: '22:00' })).rejects.toThrow(
+      /member_state_quiet_hours/,
+    );
+    await expect(update({ notifications: { morning_checkin: false } })).resolves.toBeDefined();
+    await expect(
+      requireDb()
+        .insertInto('app.member_acknowledgment')
+        .values({
+          member_id: h.owner.id,
+          household_id: h.id,
+          key: 'free text!',
+          acknowledged_at: new Date(),
+        })
+        .execute(),
+    ).rejects.toThrow(/key_check/);
+  });
+});

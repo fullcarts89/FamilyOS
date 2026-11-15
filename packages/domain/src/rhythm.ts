@@ -46,6 +46,8 @@ export interface RhythmInput<T extends RhythmTask, O extends EventOccurrence = E
   date: string;
   /** Today's local date, for what's overdue. */
   today: string;
+  /** The current instant, for the next handoff; omit to take the day's first. */
+  now?: string;
   timeZone: string;
   /** Active members, in display order. */
   members: readonly RhythmMember[];
@@ -135,6 +137,33 @@ export type HeadsUp =
 
 export type HeadsUpType = HeadsUp['type'];
 
+/**
+ * Facts for the greeting line, counted from the data and nothing else. Per-member figures say
+ * what each person has that day; they are not a score and nothing compares them.
+ */
+export interface RhythmSummary {
+  handoffs: number;
+  nextHandoff: Pick<
+    Handoff,
+    'time' | 'occurrenceKey' | 'careMemberId' | 'action' | 'byMemberIds'
+  > | null;
+  events: number;
+  appointments: number;
+  /** Open tasks due that day (timed or all-day). */
+  dueToday: number;
+  /** Tasks due that day already done. */
+  doneToday: number;
+  /** Open tasks, routine occurrences included, due before today. */
+  overdue: number;
+  byMember: {
+    memberId: string;
+    handoffs: number;
+    events: number;
+    appointments: number;
+    dueToday: number;
+  }[];
+}
+
 export interface RhythmView<T, O extends EventOccurrence = EventOccurrence> {
   date: string;
   timezone: string;
@@ -143,6 +172,7 @@ export interface RhythmView<T, O extends EventOccurrence = EventOccurrence> {
   /** Tasks for the day that nobody owns yet. */
   unassignedTasks: T[];
   headsUps: HeadsUp[];
+  summary: RhythmSummary;
 }
 
 const OPEN_EXCLUDED: readonly WorkItemStatus[] = [
@@ -152,6 +182,7 @@ const OPEN_EXCLUDED: readonly WorkItemStatus[] = [
   'done_unverified',
 ];
 const NOT_SHOWN: readonly WorkItemStatus[] = ['new', 'cancelled'];
+const DONE_STATUSES: readonly WorkItemStatus[] = ['verified_complete', 'done_unverified'];
 const ROLE_ORDER: Readonly<Record<MemberRole, number>> = {
   owner: 0,
   adult: 0,
@@ -423,5 +454,43 @@ export function buildRhythm<T extends RhythmTask, O extends EventOccurrence = Ev
       a.id.localeCompare(b.id),
   );
 
-  return { date, timezone: timeZone, lanes, handoffs, unassignedTasks, headsUps };
+  // ------------------------------------------------------------------------------------------
+  // Summary: counts of what's there, nothing inferred
+  // ------------------------------------------------------------------------------------------
+  const isOpen = (t: T) => !OPEN_EXCLUDED.includes(t.status);
+  const dayTasks = [...timedToday, ...allDayToday];
+  const upcoming = input.now ? handoffs.filter((h) => cmp(h.time, input.now ?? '') >= 0) : handoffs;
+  const next = upcoming[0];
+  const summary: RhythmSummary = {
+    handoffs: handoffs.length,
+    nextHandoff: next
+      ? {
+          time: next.time,
+          occurrenceKey: next.occurrenceKey,
+          careMemberId: next.careMemberId,
+          action: next.action,
+          byMemberIds: next.byMemberIds,
+        }
+      : null,
+    events: occurrences.length,
+    appointments: occurrences.filter((o) => o.kind === 'appointment').length,
+    dueToday: dayTasks.filter(isOpen).length,
+    doneToday: dayTasks.filter((t) => DONE_STATUSES.includes(t.status)).length,
+    overdue: input.tasks.filter((t) => {
+      if (!isOpen(t)) return false;
+      const due = localDueDate(t, timeZone)?.toString();
+      return due !== undefined && due < today;
+    }).length,
+    byMember: lanes.map((lane) => ({
+      memberId: lane.memberId,
+      handoffs: handoffs.filter((h) =>
+        lane.caredFor ? h.careMemberId === lane.memberId : h.byMemberIds.includes(lane.memberId),
+      ).length,
+      events: lane.occurrences.length,
+      appointments: lane.occurrences.filter((o) => o.kind === 'appointment').length,
+      dueToday: [...lane.tasks.timed, ...lane.tasks.dueToday].filter(isOpen).length,
+    })),
+  };
+
+  return { date, timezone: timeZone, lanes, handoffs, unassignedTasks, headsUps, summary };
 }

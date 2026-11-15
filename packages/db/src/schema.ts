@@ -227,6 +227,34 @@ export interface EventExceptionTable {
   created_at: Timestamp;
 }
 
+export interface NotificationPrefs {
+  morning_checkin?: boolean;
+  handoff_reminders?: boolean;
+  partner_changes?: boolean;
+  weekly_reset_reminder?: boolean;
+}
+
+export interface MemberStateTable {
+  member_id: string;
+  household_id: string;
+  last_seen_at: Timestamp | null;
+  notifications: ColumnType<NotificationPrefs, NotificationPrefs | undefined, NotificationPrefs>;
+  /** HH:MM:SS local times, both or neither. */
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  haptics: Generated<boolean>;
+  sound: Generated<boolean>;
+  version: Generated<number>;
+  updated_at: Timestamp;
+}
+
+export interface MemberAcknowledgmentTable {
+  member_id: string;
+  household_id: string;
+  key: string;
+  acknowledged_at: Timestamp;
+}
+
 export interface ServiceHeartbeatTable {
   service: 'worker';
   seen_at: Timestamp;
@@ -247,5 +275,7 @@ export interface Database {
   'app.event_member': EventMemberTable;
   'app.event_exception': EventExceptionTable;
   'app.calendar_source': CalendarSourceTable;
+  'app.member_state': MemberStateTable;
+  'app.member_acknowledgment': MemberAcknowledgmentTable;
   'app.service_heartbeat': ServiceHeartbeatTable;
 }

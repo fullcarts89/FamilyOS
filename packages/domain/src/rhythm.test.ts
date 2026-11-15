@@ -81,6 +81,7 @@ const task = (id: string, overrides: Partial<RhythmTask>): RhythmTask => ({
 function rhythm(
   series: EventSeries[],
   extra: {
+    now?: string;
     tasks?: RhythmTask[];
     date?: string;
     today?: string;
@@ -95,6 +96,7 @@ function rhythm(
     members,
     occurrences: expandEvents(series, { from: date, to: date, timeZone: LA }, caredFor),
     tasks: extra.tasks ?? [],
+    ...(extra.now && { now: extra.now }),
     ...(extra.decisions && { decisions: extra.decisions }),
   });
 }
@@ -338,6 +340,54 @@ describe('tasks for the day', () => {
     expect(lane('maya')?.dueToday.map((t) => t.id)).toEqual(['finished', 'flea', 'invoice']);
     expect(lane('biscuit')?.dueToday.map((t) => t.id)).toEqual(['flea']);
     expect(view.unassignedTasks.map((t) => t.id)).toEqual(['library']);
+  });
+});
+
+describe('summary', () => {
+  it('counts what the day holds, per member, without scoring anyone', () => {
+    const dentist = event('dentist', {
+      kind: 'appointment',
+      startsAt: at('11:00'),
+      endsAt: at('11:45'),
+      memberIds: ['theo'],
+    });
+    const tasks = [
+      task('a', { ownerMemberId: 'maya', dueOn: DATE }),
+      task('b', { ownerMemberId: 'maya', dueOn: DATE, status: 'done_unverified' }),
+      task('c', { ownerMemberId: 'theo', dueAt: at('08:00') }),
+      task('late', { ownerMemberId: 'theo', dueOn: '2026-11-17' }),
+      task('late-routine', { recurrenceRuleId: 'r', dueOn: '2026-11-18' }),
+      task('late-done', { dueOn: '2026-11-18', status: 'verified_complete' }),
+    ];
+    const view = rhythm([dropOff, pickUp, planning, dentist], { tasks, now: at('09:00') });
+    expect(view.summary).toEqual({
+      handoffs: 2,
+      nextHandoff: {
+        time: at('17:30'),
+        occurrenceKey: 'pickup:2026-11-19',
+        careMemberId: 'june',
+        action: 'pick_up',
+        byMemberIds: ['maya'],
+      },
+      events: 4,
+      appointments: 1,
+      dueToday: 2,
+      doneToday: 1,
+      overdue: 2,
+      byMember: [
+        { memberId: 'maya', handoffs: 1, events: 2, appointments: 0, dueToday: 1 },
+        { memberId: 'theo', handoffs: 1, events: 2, appointments: 1, dueToday: 1 },
+        { memberId: 'june', handoffs: 2, events: 2, appointments: 0, dueToday: 0 },
+        { memberId: 'biscuit', handoffs: 0, events: 0, appointments: 0, dueToday: 0 },
+      ],
+    });
+    // No ranking, share or comparison fields.
+    expect(JSON.stringify(view.summary)).not.toMatch(/score|share|percent|more|fair|balance/i);
+  });
+
+  it('has no next handoff once the day’s handoffs are past', () => {
+    expect(rhythm([dropOff, pickUp], { now: at('18:00') }).summary.nextHandoff).toBeNull();
+    expect(rhythm([dropOff, pickUp]).summary.nextHandoff?.action).toBe('drop_off');
   });
 });
 
