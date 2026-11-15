@@ -6,6 +6,9 @@ import {
 } from '../design/motion';
 import { api, apiWithStatus } from './api';
 
+/** First-time household setup, finished or skipped. */
+export const SETUP_KEY = 'setup-done';
+
 const KEY = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,119}$/;
 
 /**

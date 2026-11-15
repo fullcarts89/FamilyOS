@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { Platform } from 'react-native';
 import { CaptureSheet } from '../design/CaptureSheet';
+import { requestWidgetRefresh } from '../native/WidgetSync';
 
 interface CaptureState {
   /** Opens quick capture, optionally aimed at someone (null: either of you). */
@@ -27,7 +28,10 @@ export function CaptureProvider({ children, enabled }: { children: ReactNode; en
   const [version, setVersion] = useState(0);
 
   const open = useCallback((owner?: string | null) => setTarget({ owner }), []);
-  const changed = useCallback(() => setVersion((v) => v + 1), []);
+  const changed = useCallback(() => {
+    setVersion((v) => v + 1);
+    requestWidgetRefresh();
+  }, []);
 
   useEffect(() => {
     if (!enabled || Platform.OS !== 'web' || typeof window === 'undefined') return;

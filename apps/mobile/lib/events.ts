@@ -6,6 +6,7 @@ import {
 } from '@familyos/domain';
 import { useCallback } from 'react';
 import { useCelebrate, useHaptics } from '../design/motion';
+import { requestWidgetRefresh } from '../native/WidgetSync';
 import { useToast } from '../design/Toast';
 import { api, errorMessage, type EventDetail, type Occurrence } from './api';
 import { relativeDay } from './dates';
@@ -76,6 +77,8 @@ export function useOccurrenceActions(onChanged: () => void) {
       try {
         await api(`${base}/${eventId}/occurrences/${date}`, { method: 'DELETE' });
         onChanged();
+        requestWidgetRefresh();
+        requestWidgetRefresh();
       } catch (caught) {
         toast.show('Couldn’t undo that.', { error: true, detail: errorMessage(caught) });
       }
@@ -118,6 +121,7 @@ export function useOccurrenceActions(onChanged: () => void) {
         undo: () => restore(o.eventId, o.date),
       });
       onChanged();
+      requestWidgetRefresh();
       celebrate({
         key: `cover:${o.eventId}:${o.date}`,
         title:
@@ -147,6 +151,7 @@ export function useOccurrenceActions(onChanged: () => void) {
       }
       toast.show(`Skipped this once: ${o.title}`, { undo: () => restore(o.eventId, o.date) });
       onChanged();
+      requestWidgetRefresh();
       return true;
     },
     [base, toast, restore, onChanged],

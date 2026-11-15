@@ -17,7 +17,8 @@ export interface AcknowledgmentStore {
 const seenThisSession = new Set<string>();
 
 export const memoryAcknowledgments: AcknowledgmentStore = {
-  known: (key) => seenThisSession.has(key),
+  // Unknown (rather than "not seen") until recorded: one-time screens wait for the real store.
+  known: (key) => (seenThisSession.has(key) ? true : undefined),
   load: async () => undefined,
   record: async (key) => {
     if (seenThisSession.has(key)) return false;

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { ArrowRight, ChevronDown, ChevronUp, Inbox, Plus } from 'lucide-react-native';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text as Span, RefreshControl, StyleSheet, View } from 'react-native';
 import { DayTimeline } from '../../components/rhythm/DayTimeline';
 import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet';
@@ -12,13 +12,20 @@ import { PersonColumn } from '../../components/tasks/PersonColumn';
 import { Avatar, Either } from '../../design/Avatar';
 import type { PressState } from '../../design/Button';
 import { useLayout } from '../../design/layout';
-import { FadeIn, Skeleton, SkeletonBlock, SkeletonRows } from '../../design/motion';
+import {
+  FadeIn,
+  Skeleton,
+  SkeletonBlock,
+  SkeletonRows,
+  useAcknowledgment,
+} from '../../design/motion';
 import { ErrorNotice } from '../../design/Notice';
 import { Page } from '../../design/Page';
 import { SectionHeader } from '../../design/Section';
 import { Text } from '../../design/Text';
 import { color, font, radius, shadow } from '../../design/tokens';
 import type { Occurrence, WorkItem } from '../../lib/api';
+import { SETUP_KEY } from '../../lib/acknowledgments';
 import { useCapture } from '../../lib/capture';
 import { greetingFor, longDate, shortDate } from '../../lib/dates';
 import { useOccurrenceActions } from '../../lib/events';
@@ -50,6 +57,13 @@ export default function Today() {
   const { desktop, phone } = useLayout();
   const { open } = useCapture();
   const data = useTodayData();
+  const { household } = useHousehold();
+  // A new household's owner, alone in it, gets the guided setup first (once; skippable).
+  const setup = useAcknowledgment(SETUP_KEY);
+  const alone = household?.role === 'owner' && people.all.length === 1;
+  useEffect(() => {
+    if (alone && setup.seen === false) router.replace('/setup');
+  }, [alone, setup.seen]);
   const { rhythm, week, items, activity, now, error, load, replace } = data;
   const [sheet, setSheet] = useState<EventTarget | null>(null);
   const [wholeDay, setWholeDay] = useState(false);
@@ -151,7 +165,8 @@ export default function Today() {
   const head = rhythm
     ? headline({ rhythm, entries, week: week?.occurrences ?? [], people, now, timeZone })
     : null;
-  const clockText = timeOf(now.toISOString(), timeZone).replace(/am|pm/, '');
+  const nowMin = localParts(now, timeZone).minutes;
+  const clockText = `${Math.floor(nowMin / 60) % 12 || 12}:${String(nowMin % 60).padStart(2, '0')}`;
   const openOccurrence = (o: Occurrence) => setSheet({ mode: 'occurrence', occurrence: o });
 
   // ---------------------------------------------------------------------------------------------

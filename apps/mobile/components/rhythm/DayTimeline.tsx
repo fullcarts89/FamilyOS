@@ -685,6 +685,11 @@ function buildModel({
 
   for (const t of together) spans.push(t);
   for (const s of segments) if (s.end - s.start < 23 * 60) spans.push(s);
+  // Late at night the window stretches so the now-line stays on it.
+  if (now) {
+    const n = localParts(now, timeZone);
+    if (n.date === date) spans.push({ start: n.minutes, end: Math.min(24 * 60, n.minutes + 30) });
+  }
   const w = dayWindow(spans);
   return {
     lanes: laneModels,

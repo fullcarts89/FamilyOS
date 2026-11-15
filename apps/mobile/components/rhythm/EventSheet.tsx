@@ -17,7 +17,7 @@ import {
   Trash2,
 } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Avatar } from '../../design/Avatar';
 import { Button, IconButton, type PressState } from '../../design/Button';
 import { Chip } from '../../design/Chip';
@@ -26,6 +26,7 @@ import { Skeleton, SkeletonBlock } from '../../design/motion';
 import { ErrorNotice } from '../../design/Notice';
 import { Sheet } from '../../design/Sheet';
 import { Text } from '../../design/Text';
+import { Toggle } from '../../design/Toggle';
 import { useToast } from '../../design/Toast';
 import { color, font, radius } from '../../design/tokens';
 import { api, errorMessage, type EventDetail, type Occurrence } from '../../lib/api';
@@ -693,8 +694,8 @@ function EventForm({
             Shows who has {cared[0]?.name ?? 'them'} and where, and flags clashes.
           </Text>
         </View>
-        <Switch
-          accessibilityLabel="This is a drop-off or pickup"
+        <Toggle
+          label="This is a drop-off or pickup"
           value={!!draft.care}
           disabled={cared.length === 0}
           onValueChange={(on) =>
@@ -705,7 +706,6 @@ function EventForm({
                   : null,
             })
           }
-          trackColor={{ true: color.ink, false: color.line2 }}
         />
       </View>
       {draft.care ? (

@@ -130,6 +130,8 @@ export interface WorkItem {
   completedAt?: string | null;
   /** The child or pet it's about. */
   subjectMemberId?: string | null;
+  /** Routine occurrences: whether this is the routine's current turn (the API decides). */
+  isCurrentTurn?: boolean | null;
   /** Set when this is one occurrence of a routine. */
   recurrenceRuleId: string | null;
   occurrenceIndex: number | null;

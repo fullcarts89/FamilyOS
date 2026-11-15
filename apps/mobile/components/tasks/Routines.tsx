@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Button, type PressState } from '../../design/Button';
 import { EmptyState } from '../../design/EmptyState';
 import { Hatch } from '../../design/Hatch';
+import { requestWidgetRefresh } from '../../native/WidgetSync';
 import { useLayout } from '../../design/layout';
 import { useHaptics } from '../../design/motion/haptics';
 import { RotationRing } from '../../design/RotationRing';
@@ -164,6 +165,7 @@ function RoutineRing({
     setBusy(key);
     try {
       await work();
+      requestWidgetRefresh();
       toast.show(success, {
         detail: options.detail,
         ...(options.undo && {
@@ -211,8 +213,9 @@ function RoutineRing({
           const { item } = await api<{ item: WorkItem }>(path);
           await api(path, {
             method: 'PATCH',
-            body: { expectedVersion: item.version, status: 'in_progress' },
+            body: { expectedVersion: item.version, undoComplete: true },
           });
+          requestWidgetRefresh();
         },
       },
     ).finally(() => setDoneNow(false));
@@ -311,6 +314,9 @@ function RoutineRing({
         <Text variant="small" tone="muted" numberOfLines={2}>
           {after ? `Then ${after.isMe ? 'you' : after.name} · ` : ''}
           {entry.summary}
+          {people.byId(entry.subjectMemberId)
+            ? ` · for ${people.byId(entry.subjectMemberId)?.name}`
+            : ''}
         </Text>
         {history.length > 0 ? (
           <View style={styles.history} accessibilityLabel="Recent turns">

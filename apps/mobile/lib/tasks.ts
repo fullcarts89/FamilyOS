@@ -1,6 +1,7 @@
 import { localDueDate, workItemMachine, type WorkItemStatus } from '@familyos/domain';
 import { useCallback } from 'react';
 import { useHaptics } from '../design/motion/haptics';
+import { requestWidgetRefresh } from '../native/WidgetSync';
 import { useToast } from '../design/Toast';
 import { api, errorMessage, type WorkItem } from './api';
 import { clock, daysBetween, relativeDay } from './dates';
@@ -176,7 +177,10 @@ export function useTaskActions(
     ): Promise<WorkItem | null> => {
       onChange({ ...item, ...preview });
       try {
-        return await patch(item, body);
+        const saved = await patch(item, body);
+        // The iPhone widget shows the same list: let it catch up now.
+        requestWidgetRefresh();
+        return saved;
       } catch (caught) {
         onChange(item);
         toast.show(failure, {
@@ -202,8 +206,8 @@ export function useTaskActions(
       );
       if (!done) return;
       toast.show(`Done: ${item.title}`, {
-        // Done can only reopen as "started"; the API has no way back to plain "to do" yet.
-        undo: () => patch(done, { status: 'in_progress' }).then(() => undefined, fail),
+        // Undo puts it back exactly as it was before (the API remembers the earlier status).
+        undo: () => patch(done, { undoComplete: true }).then(() => requestWidgetRefresh(), fail),
       });
       onConfirmed?.({ kind: 'completed', before: item, after: done });
     },
@@ -287,14 +291,14 @@ export function useTaskActions(
 export function currentTurns<
   T extends Pick<
     WorkItem,
-    'id' | 'status' | 'recurrenceRuleId' | 'occurrenceIndex' | 'occurrenceOn'
+    'id' | 'status' | 'recurrenceRuleId' | 'occurrenceIndex' | 'occurrenceOn' | 'isCurrentTurn'
   >,
 >(items: readonly T[]): T[] {
   const key = (i: T) =>
     `${i.occurrenceOn ?? ''}#${String(i.occurrenceIndex ?? 0).padStart(6, '0')}`;
   const first = new Map<string, T>();
   for (const item of items) {
-    if (!item.recurrenceRuleId || !isOpen(item)) continue;
+    if (!item.recurrenceRuleId || !isOpen(item) || item.isCurrentTurn === false) continue;
     const seen = first.get(item.recurrenceRuleId);
     if (!seen || key(item) < key(seen)) first.set(item.recurrenceRuleId, item);
   }

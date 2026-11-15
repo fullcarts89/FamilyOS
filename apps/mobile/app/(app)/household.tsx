@@ -10,7 +10,7 @@ import {
   Send,
 } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { CalendarSheet } from '../../components/household/CalendarSheet';
 import { MemberSheet, type MemberTarget } from '../../components/household/MemberSheet';
 import { parseTime } from '../../components/rhythm/EventSheet';
@@ -25,6 +25,7 @@ import { ErrorNotice } from '../../design/Notice';
 import { Page, PageHeader } from '../../design/Page';
 import { GroupLabel, SectionHeader } from '../../design/Section';
 import { Text } from '../../design/Text';
+import { Toggle } from '../../design/Toggle';
 import { useToast } from '../../design/Toast';
 import { color, font, radius } from '../../design/tokens';
 import {
@@ -41,6 +42,11 @@ import { useHousehold } from '../../lib/household';
 import { useMemberState } from '../../lib/member-state';
 import { usePeople, type Person } from '../../lib/people';
 import { supabase } from '../../lib/supabase';
+import {
+  setWidgetLockScreenVisible,
+  widgetLockScreenVisible,
+  widgetsAvailable,
+} from '../../native/widget';
 
 const ROLE_LABEL: Record<Member['role'], string> = {
   owner: 'Owner',
@@ -580,6 +586,7 @@ function Settings({ timeZone }: { timeZone: string }) {
   const haptics = useHaptics();
   const toast = useToast();
   const { state, update } = useMemberState();
+  const [lockScreen, setLockScreen] = useState(() => widgetsAvailable && widgetLockScreenVisible());
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   useEffect(() => {
@@ -616,13 +623,7 @@ function Settings({ timeZone }: { timeZone: string }) {
           {line}
         </Text>
       </View>
-      <Switch
-        value={value}
-        disabled={disabled}
-        onValueChange={onChange}
-        accessibilityLabel={title}
-        trackColor={{ true: color.ink, false: color.line2 }}
-      />
+      <Toggle value={value} disabled={disabled} onValueChange={onChange} label={title} />
     </View>
   );
 
@@ -645,6 +646,17 @@ function Settings({ timeZone }: { timeZone: string }) {
             state?.sound ?? false,
             (v) => void save({ sound: v }),
             !state,
+          )
+        : null}
+      {widgetsAvailable
+        ? row(
+            'Show on Lock Screen',
+            'The widget on your Lock Screen shows titles and names. Off shows only that something’s due.',
+            lockScreen,
+            (v) => {
+              setLockScreen(v);
+              setWidgetLockScreenVisible(v);
+            },
           )
         : null}
       <GroupLabel label="Notifications" />
