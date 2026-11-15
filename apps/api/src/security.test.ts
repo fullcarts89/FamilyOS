@@ -26,6 +26,8 @@ function requireDb() {
   return db;
 }
 
+const B_PUSH_TOKEN = `ExponentPushToken[beta${randomUUID().slice(0, 8)}]`;
+
 describe.skipIf(!db)('API security (G1)', () => {
   const harness = db ? createTestApp({ db }) : createTestApp();
   const { request, tokenFor, logs, accounts } = harness;
@@ -147,6 +149,16 @@ describe.skipIf(!db)('API security (G1)', () => {
         grocery: grocery.id,
       };
     };
+    // B's adult has an iPhone registered for notifications.
+    await requireDb()
+      .insertInto('app.device_push_token')
+      .values({
+        household_id: b.id,
+        member_id: b.adult.id,
+        expo_push_token: B_PUSH_TOKEN,
+        platform: 'ios',
+      })
+      .execute();
     const bLists = await lists(b);
     bContactId = bLists.contact;
     bDecisionId = bLists.decision;
@@ -187,7 +199,9 @@ describe.skipIf(!db)('API security (G1)', () => {
         | 'app.meal'
         | 'app.grocery_item'
         | 'app.weekly_plan'
-        | 'app.budget_snapshot',
+        | 'app.budget_snapshot'
+        | 'app.device_push_token'
+        | 'app.notification_log',
     ) =>
       Number(
         (
@@ -223,6 +237,11 @@ describe.skipIf(!db)('API security (G1)', () => {
       .select(['display_name', 'color', 'version'])
       .where('id', '=', b.pet.id)
       .executeTakeFirstOrThrow();
+    const household = await requireDb()
+      .selectFrom('app.household')
+      .select(['name', 'version'])
+      .where('id', '=', b.id)
+      .executeTakeFirstOrThrow();
     return {
       members: await count('app.member'),
       invites: await count('app.invite'),
@@ -241,6 +260,8 @@ describe.skipIf(!db)('API security (G1)', () => {
       groceries: await count('app.grocery_item'),
       weeklyPlans: await count('app.weekly_plan'),
       budgets: await count('app.budget_snapshot'),
+      pushTokens: await count('app.device_push_token'),
+      notificationLog: await count('app.notification_log'),
       lists: {
         contact: await requireDb()
           .selectFrom('app.contact')
@@ -281,12 +302,14 @@ describe.skipIf(!db)('API security (G1)', () => {
       invite,
       event,
       pet,
+      household,
     };
   };
 
   describe('cross-household matrix (T-01)', () => {
     const attacks = (): [string, string, unknown?][] => [
       ['GET', `/households/${b.id}`],
+      ['PATCH', `/households/${b.id}`, { expectedVersion: 1, name: 'Renamed' }],
       ['GET', `/households/${b.id}/invites`],
       ['POST', `/households/${b.id}/invites`, { email: 'x@example.test', role: 'adult' }],
       ['DELETE', `/households/${b.id}/invites/${bInviteId}`],
@@ -392,6 +415,15 @@ describe.skipIf(!db)('API security (G1)', () => {
       ['GET', `/households/${b.id}/me/acknowledgments?keys=milestone:x`],
       ['POST', `/households/${b.id}/me/acknowledgments`, { key: 'milestone:x' }],
       ['GET', `/households/${b.id}/activity`],
+      // Push tokens: another household's, with a valid body and with B's own token.
+      [
+        'POST',
+        `/households/${b.id}/me/push-tokens`,
+        { token: 'ExponentPushToken[intruder000000000000000]', platform: 'ios' },
+      ],
+      ['POST', `/households/${b.id}/me/push-tokens`, { token: B_PUSH_TOKEN, platform: 'ios' }],
+      ['DELETE', `/households/${b.id}/me/push-tokens`, { token: B_PUSH_TOKEN }],
+      ['POST', `/households/${b.id}/me/push-tokens`, { token: 'not-a-token' }],
       // Carry-forward and undo.
       [
         'POST',
@@ -602,6 +634,18 @@ describe.skipIf(!db)('API security (G1)', () => {
         body: { role: 'pet', displayName: 'Removed' },
       });
       expect(write.status).toBe(404);
+      const rename = await request(`/households/${h.id}`, {
+        method: 'PATCH',
+        token,
+        body: { expectedVersion: 1, name: 'Removed' },
+      });
+      expect(rename.status).toBe(404);
+      const device = await request(`/households/${h.id}/me/push-tokens`, {
+        method: 'POST',
+        token,
+        body: { token: 'ExponentPushToken[removed00000000000000]', platform: 'ios' },
+      });
+      expect(device.status).toBe(404);
     });
 
     it('has no way for a child or pet to sign in or act', async () => {
@@ -670,6 +714,7 @@ describe.skipIf(!db)('API security (G1)', () => {
         ['POST', `/households/${a.id}/members`, { role: 'pet', displayName: 'x' }],
         ['PATCH', `/households/${a.id}/members/${a.pet.id}`, { expectedVersion: 1, note: 'x' }],
         ['GET', `/households/${a.id}/calendars`, undefined],
+        ['PATCH', `/households/${a.id}`, { expectedVersion: 1, name: 'Sitter' }],
         [
           'POST',
           `/households/${a.id}/calendars`,

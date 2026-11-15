@@ -160,9 +160,32 @@ Not implemented yet; the widget already calls it and falls back to the app's sna
 - **Tests:** another household's ID gets 404; a member sees only their own items; private items follow the existing visibility rules; the response contains no other fields.
 - **Completion** needs nothing new: `PATCH /households/:id/work-items/:itemId` with `{ "expectedVersion": n, "status": "verified_complete", "confirmed": true }` → 200 `{ item }`, 409 on a stale version.
 
-## Push notifications (groundwork only)
+## Push notifications
 
-`expo-notifications` 58.1.6 is installed and configured (`aps-environment: production`); step 4 creates the APNs key. The app doesn't ask for permission and nothing sends yet. When that comes: ask at a moment that makes sense (not at first launch), register the Expo push token per member, and send from the worker only for timely, actionable things, outside each member's quiet hours (`member_state`).
+`expo-notifications` 58.1.6 is installed and configured (`aps-environment: production`); step 4 creates the APNs key. The backend is ready; the app still needs to ask for permission (at a moment that makes sense, not at first launch) and register its token.
+
+**API (the app's side):**
+
+- `POST /households/:id/me/push-tokens` `{ "token": "ExponentPushToken[…]", "platform": "ios" }` → 201 (added) or 200 (already this member's) `{ pushToken: { id, platform, createdAt, lastUsedAt } }`. The token is never echoed, logged or audited. A token is one device, so it belongs to one member at a time: registering one another member of the household had moves it; one held in another household is refused with 409 `token_in_use`. Five devices per member are kept.
+- `DELETE /households/:id/me/push-tokens` `{ "token": "…" }` (in the body, never the URL) → 204, on sign-out or when iOS permission is turned off.
+- `GET/PATCH /households/:id/me/state` carries the switches (`notifications.morningCheckin`, `handoffReminders`, `partnerChanges`, `weeklyResetReminder`), `quietHours`, `morningTime` (default `07:30`), `weeklyReset` `{ weekday: 1–7 (ISO, 7 = Sunday), time }` (default Sunday 19:00) and `hideDetails` (default off). Partner changes are off unless the member turns them on.
+
+**What is sent** (worker task `send_notifications`, every 5 minutes, household timezone; rules in `packages/domain/src/notifications.ts`). None exists to drive engagement; each is about something real for that member:
+
+| Kind | When | Text (with details) |
+| --- | --- | --- |
+| Morning check-in | the member's morning time; skipped when nothing concerns them (dinner alone doesn't, unless they cook) | "Today: drop-off 8:15 AM (you), 2 things due, dinner: salmon (Theo)" |
+| Handoff reminder | 30 minutes before a care handoff they cover (covers and skips applied) | "June's drop-off at 8:15 AM" / "In 30 minutes, at Little Oaks." |
+| Partner changes | at most hourly: took something off your plate, completed something of yours, covered your handoff, settled a decision you voted on | "From Theo" / "Took “Car registration” off your plate." |
+| Weekly Reset reminder | the chosen weekday and time, only while that week's plan isn't committed (adults) | "The week of Mon, Nov 23 doesn't have a plan yet. Ready when you are." |
+
+- **Quiet hours** are always respected. The check-in, the Weekly Reset reminder and partner changes wait until quiet hours end (the check-in only the same day). A handoff reminder is never deferred, because after the handoff it is useless: it goes only while the member is outside quiet hours and the handoff is still ahead (quiet hours ending 07:00 before a 07:15 drop-off still give a reminder at 07:00).
+- **Hide details on lock screen** sends generic text ("Your morning check-in is ready", "You have a handoff in 30 minutes", "There are changes that affect you").
+- A private item's title is never sent to someone who can't see it.
+- **Never twice:** each notification has a key in `notification_log`, written before sending. Delivery is at most once: a failed send is recorded, not retried. One due more than two hours ago (the worker was down) is dropped. Push receipts aren't checked yet; a `DeviceNotRegistered` ticket deletes the token.
+- **Least privilege:** the worker sends as `familyos_notifier`, one household per transaction, with only tokens, preferences, the log, care events (no titles, notes or other events), task fields, tonight's dinner, settled decisions and votes, whether the week is planned, and audit IDs.
+
+**Worker configuration:** nothing required. `EXPO_ACCESS_TOKEN` (optional) only if the Expo project turns on push security; it is a secret (worker environment only, never `EXPO_PUBLIC_*`).
 
 ## Risks and known gaps
 
