@@ -87,6 +87,10 @@ export default function Tasks() {
             title: `Every step of ${project.title} is done`,
             line: 'All that’s left is to call it finished.',
             colors: people.all.map((p) => p.color),
+            action: {
+              label: 'Mark the project done',
+              onPress: () => void actionsRef.current?.complete(project),
+            },
           });
         } else if (project && steps.length >= 4 && doneCount === Math.ceil(steps.length / 2)) {
           celebrate({
@@ -134,6 +138,8 @@ export default function Tasks() {
   );
 
   const actions = useTaskActions(track, onConfirmed);
+  const actionsRef = useRef<typeof actions | null>(null);
+  actionsRef.current = actions;
 
   const columns: { key: string; person: Person | null; title: string; sub: string }[] = useMemo(
     () => [

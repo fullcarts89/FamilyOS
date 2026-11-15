@@ -41,13 +41,13 @@ export function Routines({
   today: string;
   onChanged: () => void;
 }) {
-  const { kind } = useLayout();
+  const { kind, phone } = useLayout();
   const [showEnded, setShowEnded] = useState(false);
   const active = routines.filter((r) => !r.entry.ended);
   const ended = routines.filter((r) => r.entry.ended);
   const columns = kind === 'desktop' ? 3 : kind === 'tablet' ? 2 : 1;
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, phone && styles.sectionPhone]}>
       <SectionHeader
         title="Routines"
         sub="Whose turn is next"
@@ -385,6 +385,7 @@ function RoutineRing({
 
 const styles = StyleSheet.create({
   section: { marginTop: 48 },
+  sectionPhone: { marginTop: 18 },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { borderBottomWidth: 1, borderBottomColor: color.hairline },
   cellDivider: { borderLeftWidth: 1, borderLeftColor: color.hairline, paddingLeft: 22 },

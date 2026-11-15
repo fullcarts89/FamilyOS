@@ -106,11 +106,9 @@ export default function Today() {
       {today.needsYou.length ? (
         today.needsYou.map(row)
       ) : (
-        <EmptyState
-          compact
-          title="Nothing needs you right now"
-          body="Enjoy it, or get ahead on something below."
-        />
+        <Text variant="body" tone="muted" style={styles.quiet}>
+          Nothing needs you right now. Enjoy it, or get ahead on something below.
+        </Text>
       )}
     </View>
   ) : null;

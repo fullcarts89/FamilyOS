@@ -97,6 +97,8 @@ export default function ItemScreen() {
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [comment, setComment] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [moreStatus, setMoreStatus] = useState(false);
   const [subtask, setSubtask] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -258,21 +260,44 @@ export default function ItemScreen() {
             />
           </View>
         ) : null}
-        <TextInput
-          value={title}
-          onChangeText={setTitle}
-          onBlur={saveText}
-          multiline
-          accessibilityLabel="Title"
-          maxLength={500}
-          style={[styles.title, done && styles.titleDone]}
-        />
+        {editing ? (
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            onBlur={() => {
+              setEditing(false);
+              saveText();
+            }}
+            onSubmitEditing={() => {
+              setEditing(false);
+              saveText();
+            }}
+            autoFocus
+            accessibilityLabel="Title"
+            maxLength={500}
+            style={[styles.title, styles.titleInput]}
+          />
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${item.title}. Edit the title`}
+            onPress={() => setEditing(true)}
+            style={styles.titlePress}
+          >
+            {(s: PressState) => (
+              <Text
+                variant="hero"
+                style={[done && styles.titleDone, s.hovered && styles.titleHover]}
+              >
+                {item.title}
+              </Text>
+            )}
+          </Pressable>
+        )}
       </View>
       <Text variant="lead" tone="muted">
         {STATUS_SENTENCE[item.status]}
-        {due && !done
-          ? ` ${due.includes('late') ? 'It’s' : 'Due'} ${due.charAt(0).toLowerCase()}${due.slice(1)}.`
-          : ''}
+        {due && !done ? ` ${due.includes('late') ? 'It’s' : 'Due'} ${softCase(due)}.` : ''}
       </Text>
     </View>
   );
@@ -284,7 +309,7 @@ export default function ItemScreen() {
           <Hatch width={18} height={12} radius={3} />
           <Text variant="label">
             This was due{' '}
-            {relativeDay(dueDate(item, timeZone) ?? today, today, { late: false }).toLowerCase()}.
+            {softCase(relativeDay(dueDate(item, timeZone) ?? today, today, { late: false }))}.
             What’s next?
           </Text>
         </View>
@@ -312,6 +337,9 @@ export default function ItemScreen() {
       </View>
     ) : null;
 
+  const primary: WorkItemStatus[] = ['verified_complete', 'in_progress'];
+  const firstChoices = primary.filter((st) => next.includes(st));
+  const otherChoices = next.filter((st) => !primary.includes(st));
   const statusActions =
     next.length > 0 ? (
       <View style={styles.block}>
@@ -319,14 +347,37 @@ export default function ItemScreen() {
           Where it stands
         </Text>
         <View style={styles.chips}>
-          {next.map((status) => (
+          {firstChoices.map((status) =>
+            status === 'verified_complete' ? (
+              <Button
+                key={status}
+                title={actionLabel(status, item.status)}
+                size="sm"
+                onPress={() => void setStatus(status)}
+              />
+            ) : (
+              <Chip
+                key={status}
+                label={actionLabel(status, item.status)}
+                onPress={() => void setStatus(status)}
+              />
+            ),
+          )}
+          {(moreStatus ? otherChoices : []).map((status) => (
             <Chip
               key={status}
               label={actionLabel(status, item.status)}
-              selected={false}
               onPress={() => void setStatus(status)}
             />
           ))}
+          {otherChoices.length > 0 ? (
+            <Button
+              title={moreStatus ? 'Fewer' : 'Other updates'}
+              size="sm"
+              variant="quiet"
+              onPress={() => setMoreStatus((v) => !v)}
+            />
+          ) : null}
         </View>
       </View>
     ) : item.status === 'new' ? (
@@ -653,6 +704,10 @@ export default function ItemScreen() {
   );
 }
 
+/** "today", "yesterday", "Thursday", "Nov 11": only the relative words go lower case mid-sentence. */
+const softCase = (text: string) =>
+  /^(Today|Tomorrow|Yesterday)/.test(text) ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+
 function when(iso: string, timeZone: string): string {
   try {
     return new Intl.DateTimeFormat('en-US', {
@@ -677,7 +732,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
-  titleCheck: { paddingTop: 10 },
+  titleCheck: { paddingTop: 8 },
   title: {
     flex: 1,
     fontFamily: font.serif,
@@ -687,6 +742,13 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   titleDone: { color: color.muted, textDecorationLine: 'line-through' },
+  titlePress: { flex: 1, cursor: 'text' },
+  titleHover: {
+    textDecorationLine: 'underline',
+    textDecorationStyle: 'dotted',
+    textDecorationColor: color.line2,
+  },
+  titleInput: { borderBottomWidth: 2, borderBottomColor: color.ink },
   late: {
     marginTop: 20,
     gap: 10,

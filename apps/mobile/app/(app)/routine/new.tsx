@@ -527,7 +527,9 @@ export default function NewRoutine() {
                   {relativeDay(p.date, today)}
                 </Text>
                 <Text variant="meta" tone="muted" style={styles.previewDate}>
-                  {shortDate(p.date, today)}
+                  {relativeDay(p.date, today) === shortDate(p.date, today)
+                    ? ''
+                    : shortDate(p.date, today)}
                 </Text>
                 <Avatar person={who} size={20} />
                 <Text variant="meta">{who ? (who.isMe ? 'You' : who.name) : 'Anyone'}</Text>

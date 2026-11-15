@@ -17,7 +17,7 @@ import { useToast } from '../../../design/Toast';
 import { color } from '../../../design/tokens';
 import { api, errorMessage, type RoutineDetail, type UpcomingOccurrence } from '../../../lib/api';
 import { useCapture } from '../../../lib/capture';
-import { relativeDay, shortDate } from '../../../lib/dates';
+import { relativeDay, shortDate, weekdayName } from '../../../lib/dates';
 import { useHousehold } from '../../../lib/household';
 import { goBack } from '../../../lib/navigation';
 import { usePeople, type Person } from '../../../lib/people';
@@ -106,7 +106,9 @@ export default function RoutineScreen() {
             {relativeDay(o.date, today)}
           </Text>
           <Text variant="small" tone="muted">
-            {shortDate(o.date, today)}
+            {relativeDay(o.date, today) === shortDate(o.date, today)
+              ? weekdayName(o.date)
+              : shortDate(o.date, today)}
           </Text>
         </View>
         <Pressable

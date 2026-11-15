@@ -72,7 +72,7 @@ export function Projects({
   const step = Math.ceil(ticks.length / 5);
 
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, phone && styles.sectionPhone]}>
       <SectionHeader
         title="Projects"
         sub="Tracks to their target dates"
@@ -346,6 +346,7 @@ function AddStep({ projectId, onAdded }: { projectId: string; onAdded: () => voi
 const INFO = 300;
 const styles = StyleSheet.create({
   section: { marginTop: 48 },
+  sectionPhone: { marginTop: 18 },
   scaleRow: { flexDirection: 'row', gap: 28, paddingTop: 10 },
   info: { width: INFO, gap: 3 },
   infoPhone: { width: 'auto' },
