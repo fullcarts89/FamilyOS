@@ -5,6 +5,7 @@ import { authorize } from '../http/authorize';
 import type { AppEnv, Deps } from '../http/env';
 import { ApiError } from '../http/errors';
 import { caredForIn, loadSeries, memberRoles, occurrenceView } from './events';
+import { mealsBetween } from './meals';
 import { ITEM_COLUMNS } from './work-items';
 
 const LocalDate = z.iso.date();
@@ -88,6 +89,19 @@ export function rhythmRoutes(deps: Deps) {
       updatedAt: toIso(r.updatedAt),
     }));
 
+    // Open decisions due by tomorrow (or late). Adults only: row-level security shows a
+    // caregiver none.
+    const decisions = await trx
+      .selectFrom('app.decision')
+      .select(['id', 'question', 'due_on'])
+      .where('household_id', '=', householdId)
+      .where('status', '=', 'open')
+      .where('due_on', 'is not', null)
+      .where('due_on', '<=', addDays(today, 1))
+      .orderBy('due_on')
+      .limit(50)
+      .execute();
+
     const view = buildRhythm({
       date,
       today,
@@ -96,10 +110,17 @@ export function rhythmRoutes(deps: Deps) {
       members,
       occurrences,
       tasks,
-      // Decisions arrive with the Weekly Reset milestone; the heads-up rule is ready for them.
-      decisions: [],
+      decisions: decisions.map((d) => ({ id: d.id, title: d.question, dueOn: d.due_on ?? date })),
     });
-    return c.json({ ...view, today, members });
+    // What's for dinner, and who's cooking.
+    const meals = await mealsBetween(trx, householdId, date, date);
+    return c.json({
+      ...view,
+      today,
+      members,
+      meals,
+      dinner: meals.find((m) => m.slot === 'dinner') ?? null,
+    });
   });
 
   return app;

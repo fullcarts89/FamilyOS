@@ -36,6 +36,16 @@ describe.skipIf(!db)('API security (G1)', () => {
   let bEventId: string;
   let aEventId: string;
   let bCalendarId: string;
+  let bContactId: string;
+  let bDecisionId: string;
+  let bOptionId: string;
+  let bMealId: string;
+  let bGroceryId: string;
+  let aDecisionId: string;
+  let aOptionId: string;
+  let aMealId: string;
+  let aGroceryId: string;
+  let aContactId: string;
   const created: string[] = [];
 
   const tokenOf = (member: SeededHousehold['owner']) =>
@@ -85,6 +95,70 @@ describe.skipIf(!db)('API security (G1)', () => {
       memberIds: [a.adult.id, a.child.id],
       careMemberId: a.child.id,
     });
+    // Weekly Reset rows in both households.
+    const lists = async (h: SeededHousehold) => {
+      const d = requireDb();
+      const contact = await d
+        .insertInto('app.contact')
+        .values({ household_id: h.id, name: `${h.name} vet`, created_by_member_id: h.owner.id })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const decision = await d
+        .insertInto('app.decision')
+        .values({ household_id: h.id, question: 'Which?', created_by_member_id: h.owner.id })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const option = await d
+        .insertInto('app.decision_option')
+        .values({ household_id: h.id, decision_id: decision.id, label: 'This one' })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const meal = await d
+        .insertInto('app.meal')
+        .values({
+          household_id: h.id,
+          on_date: '2026-11-16',
+          title: 'Soup',
+          created_by_member_id: h.owner.id,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const grocery = await d
+        .insertInto('app.grocery_item')
+        .values({ household_id: h.id, name: 'Milk', added_by_member_id: h.owner.id })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await d
+        .insertInto('app.budget_snapshot')
+        .values({
+          household_id: h.id,
+          month: '2026-11-01',
+          category: 'Groceries',
+          budgeted: 900,
+          actual: 700,
+          imported_by_member_id: h.owner.id,
+        })
+        .execute();
+      return {
+        contact: contact.id,
+        decision: decision.id,
+        option: option.id,
+        meal: meal.id,
+        grocery: grocery.id,
+      };
+    };
+    const bLists = await lists(b);
+    bContactId = bLists.contact;
+    bDecisionId = bLists.decision;
+    bOptionId = bLists.option;
+    bMealId = bLists.meal;
+    bGroceryId = bLists.grocery;
+    const aLists = await lists(a);
+    aContactId = aLists.contact;
+    aDecisionId = aLists.decision;
+    aOptionId = aLists.option;
+    aMealId = aLists.meal;
+    aGroceryId = aLists.grocery;
   });
 
   afterAll(async () => {
@@ -105,7 +179,15 @@ describe.skipIf(!db)('API security (G1)', () => {
         | 'app.event'
         | 'app.event_member'
         | 'app.event_exception'
-        | 'app.calendar_source',
+        | 'app.calendar_source'
+        | 'app.contact'
+        | 'app.decision'
+        | 'app.decision_option'
+        | 'app.decision_vote'
+        | 'app.meal'
+        | 'app.grocery_item'
+        | 'app.weekly_plan'
+        | 'app.budget_snapshot',
     ) =>
       Number(
         (
@@ -151,6 +233,43 @@ describe.skipIf(!db)('API security (G1)', () => {
       eventMembers: await count('app.event_member'),
       eventExceptions: await count('app.event_exception'),
       calendars: await count('app.calendar_source'),
+      contacts: await count('app.contact'),
+      decisions: await count('app.decision'),
+      decisionOptions: await count('app.decision_option'),
+      decisionVotes: await count('app.decision_vote'),
+      meals: await count('app.meal'),
+      groceries: await count('app.grocery_item'),
+      weeklyPlans: await count('app.weekly_plan'),
+      budgets: await count('app.budget_snapshot'),
+      lists: {
+        contact: await requireDb()
+          .selectFrom('app.contact')
+          .select(['name', 'version'])
+          .where('id', '=', bContactId)
+          .executeTakeFirstOrThrow(),
+        decision: await requireDb()
+          .selectFrom('app.decision')
+          .select(['question', 'status', 'version'])
+          .where('id', '=', bDecisionId)
+          .executeTakeFirstOrThrow(),
+        meal: await requireDb()
+          .selectFrom('app.meal')
+          .select(['title', 'version'])
+          .where('id', '=', bMealId)
+          .executeTakeFirstOrThrow(),
+        grocery: await requireDb()
+          .selectFrom('app.grocery_item')
+          .select(['name', 'checked_at', 'version'])
+          .where('id', '=', bGroceryId)
+          .executeTakeFirstOrThrow(),
+        sharedContact: (
+          await requireDb()
+            .selectFrom('app.work_item')
+            .select('contact_id')
+            .where('id', '=', b.sharedItemId)
+            .executeTakeFirstOrThrow()
+        ).contact_id,
+      },
       calendar: await requireDb()
         .selectFrom('app.calendar_source')
         .select(['label', 'member_id', 'version', 'status', 'last_synced_at'])
@@ -273,6 +392,102 @@ describe.skipIf(!db)('API security (G1)', () => {
       ['GET', `/households/${b.id}/me/acknowledgments?keys=milestone:x`],
       ['POST', `/households/${b.id}/me/acknowledgments`, { key: 'milestone:x' }],
       ['GET', `/households/${b.id}/activity`],
+      // Carry-forward and undo.
+      [
+        'POST',
+        `/households/${b.id}/work-items/bulk`,
+        { items: [{ id: b.sharedItemId, expectedVersion: 1, action: 'cancel' }] },
+      ],
+      [
+        'POST',
+        `/households/${a.id}/work-items/bulk`,
+        { items: [{ id: b.sharedItemId, expectedVersion: 1, action: 'cancel' }] },
+      ],
+      [
+        'PATCH',
+        `/households/${a.id}/work-items/${b.sharedItemId}`,
+        { expectedVersion: 1, undoComplete: true },
+      ],
+      // Contacts.
+      ['GET', `/households/${b.id}/contacts`],
+      ['POST', `/households/${b.id}/contacts`, { name: 'intrusion' }],
+      ['GET', `/households/${b.id}/contacts/${bContactId}`],
+      ['PATCH', `/households/${b.id}/contacts/${bContactId}`, { expectedVersion: 1, name: 'x' }],
+      ['DELETE', `/households/${b.id}/contacts/${bContactId}?expectedVersion=1`],
+      ['GET', `/households/${a.id}/contacts/${bContactId}`],
+      ['PATCH', `/households/${a.id}/contacts/${bContactId}`, { expectedVersion: 1, name: 'x' }],
+      ['DELETE', `/households/${a.id}/contacts/${bContactId}?expectedVersion=1`],
+      // Decisions.
+      ['GET', `/households/${b.id}/decisions`],
+      ['POST', `/households/${b.id}/decisions`, { question: 'intrusion' }],
+      ['GET', `/households/${b.id}/decisions/${bDecisionId}`],
+      [
+        'PATCH',
+        `/households/${b.id}/decisions/${bDecisionId}`,
+        { expectedVersion: 1, question: 'x' },
+      ],
+      ['DELETE', `/households/${b.id}/decisions/${bDecisionId}?expectedVersion=1`],
+      ['POST', `/households/${b.id}/decisions/${bDecisionId}/vote`, { optionId: bOptionId }],
+      ['DELETE', `/households/${b.id}/decisions/${bDecisionId}/vote`],
+      [
+        'POST',
+        `/households/${b.id}/decisions/${bDecisionId}/decide`,
+        { expectedVersion: 1, optionId: bOptionId },
+      ],
+      ['POST', `/households/${b.id}/decisions/${bDecisionId}/drop`, { expectedVersion: 1 }],
+      ['POST', `/households/${b.id}/decisions/${bDecisionId}/reopen`, { expectedVersion: 1 }],
+      [
+        'POST',
+        `/households/${b.id}/decisions/${bDecisionId}/options`,
+        { expectedVersion: 1, label: 'x' },
+      ],
+      [
+        'PATCH',
+        `/households/${b.id}/decisions/${bDecisionId}/options/${bOptionId}`,
+        { expectedVersion: 1, label: 'x' },
+      ],
+      [
+        'DELETE',
+        `/households/${b.id}/decisions/${bDecisionId}/options/${bOptionId}?expectedVersion=1`,
+      ],
+      ['GET', `/households/${a.id}/decisions/${bDecisionId}`],
+      ['POST', `/households/${a.id}/decisions/${bDecisionId}/vote`, { optionId: bOptionId }],
+      [
+        'POST',
+        `/households/${a.id}/decisions/${bDecisionId}/decide`,
+        { expectedVersion: 1, optionId: bOptionId },
+      ],
+      ['DELETE', `/households/${a.id}/decisions/${bDecisionId}?expectedVersion=1`],
+      [
+        'DELETE',
+        `/households/${a.id}/decisions/${bDecisionId}/options/${bOptionId}?expectedVersion=1`,
+      ],
+      // Meals and groceries.
+      ['GET', `/households/${b.id}/meals?from=2026-11-16&to=2026-11-22`],
+      ['POST', `/households/${b.id}/meals`, { onDate: '2026-11-18', title: 'x' }],
+      ['PATCH', `/households/${b.id}/meals/${bMealId}`, { expectedVersion: 1, title: 'x' }],
+      ['DELETE', `/households/${b.id}/meals/${bMealId}?expectedVersion=1`],
+      ['PATCH', `/households/${a.id}/meals/${bMealId}`, { expectedVersion: 1, title: 'x' }],
+      ['DELETE', `/households/${a.id}/meals/${bMealId}?expectedVersion=1`],
+      ['GET', `/households/${b.id}/groceries`],
+      ['POST', `/households/${b.id}/groceries`, { name: 'x' }],
+      ['PATCH', `/households/${b.id}/groceries/${bGroceryId}`, { expectedVersion: 1, name: 'x' }],
+      ['POST', `/households/${b.id}/groceries/${bGroceryId}/check`],
+      ['POST', `/households/${b.id}/groceries/${bGroceryId}/uncheck`],
+      ['DELETE', `/households/${b.id}/groceries/${bGroceryId}?expectedVersion=1`],
+      ['POST', `/households/${b.id}/groceries/clear-checked`],
+      ['PATCH', `/households/${a.id}/groceries/${bGroceryId}`, { expectedVersion: 1, name: 'x' }],
+      ['POST', `/households/${a.id}/groceries/${bGroceryId}/check`],
+      ['DELETE', `/households/${a.id}/groceries/${bGroceryId}?expectedVersion=1`],
+      // Budgets and the Weekly Reset.
+      ['GET', `/households/${b.id}/budgets`],
+      [
+        'POST',
+        `/households/${b.id}/budgets/import`,
+        { csv: 'Month,Category,Budgeted\n2026-11,Intrusion,1\n' },
+      ],
+      ['GET', `/households/${b.id}/reset?week=2026-11-16`],
+      ['POST', `/households/${b.id}/reset/commit`, { week: '2026-11-16' }],
     ];
 
     it('answers every foreign request with 404 and changes nothing in the other household', async () => {
@@ -322,6 +537,36 @@ describe.skipIf(!db)('API security (G1)', () => {
       expect(await snapshotB()).toEqual(before);
     });
 
+    it("refuses to link another household's contact, option or cook", async () => {
+      const before = await snapshotB();
+      const token = await tokenOf(a.owner);
+      const attempts: [string, string, unknown][] = [
+        ['POST', `/households/${a.id}/work-items`, { title: 'x', contactId: bContactId }],
+        [
+          'PATCH',
+          `/households/${a.id}/work-items/${a.sharedItemId}`,
+          { expectedVersion: 1, contactId: bContactId },
+        ],
+        ['POST', `/households/${a.id}/contacts`, { name: 'x', forMemberId: b.pet.id }],
+        ['POST', `/households/${a.id}/decisions/${aDecisionId}/vote`, { optionId: bOptionId }],
+        [
+          'POST',
+          `/households/${a.id}/decisions/${aDecisionId}/decide`,
+          { expectedVersion: 1, optionId: bOptionId },
+        ],
+        [
+          'POST',
+          `/households/${a.id}/meals`,
+          { onDate: '2026-11-20', title: 'x', cookMemberId: b.adult.id },
+        ],
+      ];
+      for (const [method, path, body] of attempts) {
+        const res = await request(path, { method, token, body });
+        expect({ path, status: res.status }).toEqual({ path, status: 422 });
+      }
+      expect(await snapshotB()).toEqual(before);
+    });
+
     it('treats a removed member like a stranger', async () => {
       const h = await seedHousehold(requireDb(), 'Gamma');
       created.push(h.id);
@@ -339,6 +584,12 @@ describe.skipIf(!db)('API security (G1)', () => {
         `/households/${h.id}/calendars`,
         `/households/${h.id}/me/state`,
         `/households/${h.id}/activity`,
+        `/households/${h.id}/contacts`,
+        `/households/${h.id}/decisions`,
+        `/households/${h.id}/meals?from=2026-11-16&to=2026-11-16`,
+        `/households/${h.id}/groceries`,
+        `/households/${h.id}/budgets`,
+        `/households/${h.id}/reset`,
       ]) {
         expect((await request(path, { token })).status).toBe(404);
       }
@@ -425,6 +676,77 @@ describe.skipIf(!db)('API security (G1)', () => {
       for (const [method, path, body] of writes) {
         const res = await request(path, { method, token, body });
         expect({ path, status: res.status }).toEqual({ path, status: 403 });
+      }
+    });
+
+    it('lets caregivers read contacts, meals and groceries, and keeps the rest with the adults', async () => {
+      const token = await tokenOf(a.caregiver);
+      for (const path of [
+        `/households/${a.id}/contacts`,
+        `/households/${a.id}/contacts/${aContactId}`,
+        `/households/${a.id}/meals?from=2026-11-16&to=2026-11-22`,
+        `/households/${a.id}/groceries`,
+      ]) {
+        expect({ path, status: (await request(path, { token })).status }).toEqual({
+          path,
+          status: 200,
+        });
+      }
+      const refused: [string, string, unknown][] = [
+        // Decisions: not seen, not voted on.
+        ['GET', `/households/${a.id}/decisions`, undefined],
+        ['GET', `/households/${a.id}/decisions/${aDecisionId}`, undefined],
+        ['POST', `/households/${a.id}/decisions`, { question: 'x' }],
+        ['POST', `/households/${a.id}/decisions/${aDecisionId}/vote`, { optionId: aOptionId }],
+        ['DELETE', `/households/${a.id}/decisions/${aDecisionId}/vote`, undefined],
+        [
+          'POST',
+          `/households/${a.id}/decisions/${aDecisionId}/decide`,
+          { expectedVersion: 1, optionId: aOptionId },
+        ],
+        ['POST', `/households/${a.id}/decisions/${aDecisionId}/drop`, { expectedVersion: 1 }],
+        [
+          'POST',
+          `/households/${a.id}/decisions/${aDecisionId}/options`,
+          { expectedVersion: 1, label: 'x' },
+        ],
+        // Budgets and the Weekly Reset.
+        ['GET', `/households/${a.id}/budgets`, undefined],
+        [
+          'POST',
+          `/households/${a.id}/budgets/import`,
+          { csv: 'Month,Category,Budgeted\n2026-11,Gas,1\n' },
+        ],
+        ['GET', `/households/${a.id}/reset`, undefined],
+        ['POST', `/households/${a.id}/reset/commit`, { week: '2026-11-16' }],
+        // Writes to contacts, meals, groceries and tasks.
+        ['POST', `/households/${a.id}/contacts`, { name: 'x' }],
+        ['PATCH', `/households/${a.id}/contacts/${aContactId}`, { expectedVersion: 1, name: 'x' }],
+        ['DELETE', `/households/${a.id}/contacts/${aContactId}?expectedVersion=1`, undefined],
+        ['POST', `/households/${a.id}/meals`, { onDate: '2026-11-19', title: 'x' }],
+        ['PATCH', `/households/${a.id}/meals/${aMealId}`, { expectedVersion: 1, title: 'x' }],
+        ['DELETE', `/households/${a.id}/meals/${aMealId}?expectedVersion=1`, undefined],
+        ['POST', `/households/${a.id}/groceries`, { name: 'x' }],
+        ['PATCH', `/households/${a.id}/groceries/${aGroceryId}`, { expectedVersion: 1, name: 'x' }],
+        ['POST', `/households/${a.id}/groceries/${aGroceryId}/check`, undefined],
+        ['POST', `/households/${a.id}/groceries/${aGroceryId}/uncheck`, undefined],
+        ['DELETE', `/households/${a.id}/groceries/${aGroceryId}?expectedVersion=1`, undefined],
+        ['POST', `/households/${a.id}/groceries/clear-checked`, undefined],
+        [
+          'POST',
+          `/households/${a.id}/work-items/bulk`,
+          { items: [{ id: a.sharedItemId, expectedVersion: 1, action: 'clear_due' }] },
+        ],
+        [
+          'PATCH',
+          `/households/${a.id}/work-items/${a.sharedItemId}`,
+          { expectedVersion: 1, undoComplete: true },
+        ],
+        ['POST', `/households/${a.id}/calendars/${a.id}/sync`, undefined],
+      ];
+      for (const [method, path, body] of refused) {
+        const res = await request(path, { method, token, body });
+        expect({ method, path, status: res.status }).toEqual({ method, path, status: 403 });
       }
     });
 
