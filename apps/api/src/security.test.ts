@@ -3,11 +3,13 @@ import { createDb, type Database } from '@familyos/db';
 import {
   hashToken,
   purgeHouseholds,
+  seedEvent,
   seedHousehold,
   seedInvite,
   seedRoutine,
   type SeededHousehold,
 } from '@familyos/db/testing';
+import type { CalendarRule } from '@familyos/domain';
 import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HouseholdExportSchema } from './export-schema';
@@ -31,6 +33,8 @@ describe.skipIf(!db)('API security (G1)', () => {
   let b: SeededHousehold;
   let bInviteId: string;
   let bRoutineId: string;
+  let bEventId: string;
+  let aEventId: string;
   const created: string[] = [];
 
   const tokenOf = (member: SeededHousehold['owner']) =>
@@ -48,6 +52,23 @@ describe.skipIf(!db)('API security (G1)', () => {
       rule: { freq: 'weekly', interval: 1, weekdays: [7] },
       startOn: '2026-11-08',
     }));
+    const care = {
+      startsAt: '2026-11-16T16:15:00Z',
+      endsAt: '2026-11-16T16:35:00Z',
+      recurrence: { freq: 'weekly', interval: 1, weekdays: [1, 2, 3, 4, 5] } satisfies CalendarRule,
+      careAction: 'drop_off' as const,
+      carePlace: 'Little Oaks',
+    };
+    bEventId = await seedEvent(requireDb(), b, {
+      ...care,
+      memberIds: [b.adult.id, b.child.id],
+      careMemberId: b.child.id,
+    });
+    aEventId = await seedEvent(requireDb(), a, {
+      ...care,
+      memberIds: [a.adult.id, a.child.id],
+      careMemberId: a.child.id,
+    });
   });
 
   afterAll(async () => {
@@ -64,7 +85,10 @@ describe.skipIf(!db)('API security (G1)', () => {
         | 'app.work_item'
         | 'app.audit_event'
         | 'app.recurrence_rule'
-        | 'app.occurrence_exception',
+        | 'app.occurrence_exception'
+        | 'app.event'
+        | 'app.event_member'
+        | 'app.event_exception',
     ) =>
       Number(
         (
@@ -90,16 +114,31 @@ describe.skipIf(!db)('API security (G1)', () => {
       .select(['revoked_at'])
       .where('id', '=', bInviteId)
       .executeTakeFirstOrThrow();
+    const event = await requireDb()
+      .selectFrom('app.event')
+      .select(['title', 'version', 'care_member_id'])
+      .where('id', '=', bEventId)
+      .executeTakeFirstOrThrow();
+    const pet = await requireDb()
+      .selectFrom('app.member')
+      .select(['display_name', 'color', 'version'])
+      .where('id', '=', b.pet.id)
+      .executeTakeFirstOrThrow();
     return {
       members: await count('app.member'),
       invites: await count('app.invite'),
       items: await count('app.work_item'),
       rules: await count('app.recurrence_rule'),
       exceptions: await count('app.occurrence_exception'),
+      events: await count('app.event'),
+      eventMembers: await count('app.event_member'),
+      eventExceptions: await count('app.event_exception'),
       audit: await count('app.audit_event'),
       item,
       adult,
       invite,
+      event,
+      pet,
     };
   };
 
@@ -165,6 +204,32 @@ describe.skipIf(!db)('API security (G1)', () => {
       ],
       ['DELETE', `/households/${a.id}/members/${b.adult.id}`],
       ['DELETE', `/households/${a.id}/invites/${bInviteId}`],
+      // Family Rhythm: members, events, occurrences, rhythm.
+      ['POST', `/households/${b.id}/members`, { role: 'pet', displayName: 'Intruder' }],
+      ['PATCH', `/households/${b.id}/members/${b.pet.id}`, { expectedVersion: 1, note: 'x' }],
+      ['PATCH', `/households/${a.id}/members/${b.pet.id}`, { expectedVersion: 1, note: 'x' }],
+      ['GET', `/households/${b.id}/events?from=2026-11-16&to=2026-11-20`],
+      [
+        'POST',
+        `/households/${b.id}/events`,
+        { title: 'x', startsAt: '2026-11-16T10:00:00Z', endsAt: '2026-11-16T11:00:00Z' },
+      ],
+      ['GET', `/households/${b.id}/events/${bEventId}`],
+      ['PATCH', `/households/${b.id}/events/${bEventId}`, { expectedVersion: 1, title: 'x' }],
+      ['DELETE', `/households/${b.id}/events/${bEventId}?expectedVersion=1`],
+      ['POST', `/households/${b.id}/events/${bEventId}/occurrences/2026-11-16`, { action: 'skip' }],
+      ['DELETE', `/households/${b.id}/events/${bEventId}/occurrences/2026-11-16`],
+      ['GET', `/households/${b.id}/rhythm?date=2026-11-16`],
+      ['GET', `/households/${a.id}/events/${bEventId}`],
+      ['PATCH', `/households/${a.id}/events/${bEventId}`, { expectedVersion: 1, title: 'x' }],
+      ['DELETE', `/households/${a.id}/events/${bEventId}?expectedVersion=1`],
+      ['POST', `/households/${a.id}/events/${bEventId}/occurrences/2026-11-16`, { action: 'skip' }],
+      [
+        'POST',
+        `/households/${a.id}/events/${bEventId}/occurrences/2026-11-16`,
+        { action: 'cover', memberId: a.adult.id },
+      ],
+      ['DELETE', `/households/${a.id}/events/${bEventId}/occurrences/2026-11-16`],
     ];
 
     it('answers every foreign request with 404 and changes nothing in the other household', async () => {
@@ -188,6 +253,32 @@ describe.skipIf(!db)('API security (G1)', () => {
       expect(await snapshotB()).toEqual(before);
     });
 
+    it("refuses to put another household's members on an event or a task", async () => {
+      const before = await snapshotB();
+      const token = await tokenOf(a.owner);
+      const times = { startsAt: '2026-11-16T10:00:00Z', endsAt: '2026-11-16T11:00:00Z' };
+      const attempts: [string, string, unknown][] = [
+        ['POST', `/households/${a.id}/events`, { title: 'x', ...times, memberIds: [b.adult.id] }],
+        ['POST', `/households/${a.id}/events`, { title: 'x', ...times, careMemberId: b.child.id }],
+        [
+          'PATCH',
+          `/households/${a.id}/events/${aEventId}`,
+          { expectedVersion: 1, memberIds: [b.owner.id] },
+        ],
+        [
+          'POST',
+          `/households/${a.id}/events/${aEventId}/occurrences/2026-11-16`,
+          { action: 'cover', memberId: b.adult.id },
+        ],
+        ['POST', `/households/${a.id}/work-items`, { title: 'x', subjectMemberId: b.pet.id }],
+      ];
+      for (const [method, path, body] of attempts) {
+        const res = await request(path, { method, token, body });
+        expect({ path, status: res.status }).toEqual({ path, status: 422 });
+      }
+      expect(await snapshotB()).toEqual(before);
+    });
+
     it('treats a removed member like a stranger', async () => {
       const h = await seedHousehold(requireDb(), 'Gamma');
       created.push(h.id);
@@ -199,6 +290,36 @@ describe.skipIf(!db)('API security (G1)', () => {
       });
       expect(removed.status).toBe(204);
       expect((await request(`/households/${h.id}/work-items`, { token })).status).toBe(404);
+      for (const path of [
+        `/households/${h.id}/events?from=2026-11-16&to=2026-11-16`,
+        `/households/${h.id}/rhythm`,
+      ]) {
+        expect((await request(path, { token })).status).toBe(404);
+      }
+      const write = await request(`/households/${h.id}/members`, {
+        method: 'POST',
+        token,
+        body: { role: 'pet', displayName: 'Removed' },
+      });
+      expect(write.status).toBe(404);
+    });
+
+    it('has no way for a child or pet to sign in or act', async () => {
+      // They have no account: no user ID to put in a token, and no invite can make one.
+      const rows = await requireDb()
+        .selectFrom('app.member')
+        .select('user_id')
+        .where('household_id', '=', a.id)
+        .where('role', 'in', ['child', 'pet'])
+        .execute();
+      expect(rows.length).toBeGreaterThanOrEqual(2);
+      expect(rows.every((r) => r.user_id === null)).toBe(true);
+      const invite = await request(`/households/${a.id}/invites`, {
+        method: 'POST',
+        token: await tokenOf(a.owner),
+        body: { email: 'pet@example.test', role: 'pet' },
+      });
+      expect(invite.status).toBe(422);
     });
   });
 
@@ -227,6 +348,32 @@ describe.skipIf(!db)('API security (G1)', () => {
         ).status,
       ).toBe(403);
       expect((await request(`/households/${a.id}/invites`, { token })).status).toBe(403);
+      // Events: caregivers read the schedule but don't change it.
+      expect(
+        (await request(`/households/${a.id}/events?from=2026-11-16&to=2026-11-16`, { token }))
+          .status,
+      ).toBe(200);
+      expect((await request(`/households/${a.id}/rhythm`, { token })).status).toBe(200);
+      const writes: [string, string, unknown][] = [
+        [
+          'POST',
+          `/households/${a.id}/events`,
+          { title: 'x', startsAt: '2026-11-16T10:00:00Z', endsAt: '2026-11-16T11:00:00Z' },
+        ],
+        ['PATCH', `/households/${a.id}/events/${aEventId}`, { expectedVersion: 1, title: 'x' }],
+        ['DELETE', `/households/${a.id}/events/${aEventId}?expectedVersion=1`, undefined],
+        [
+          'POST',
+          `/households/${a.id}/events/${aEventId}/occurrences/2026-11-16`,
+          { action: 'skip' },
+        ],
+        ['POST', `/households/${a.id}/members`, { role: 'pet', displayName: 'x' }],
+        ['PATCH', `/households/${a.id}/members/${a.pet.id}`, { expectedVersion: 1, note: 'x' }],
+      ];
+      for (const [method, path, body] of writes) {
+        const res = await request(path, { method, token, body });
+        expect({ path, status: res.status }).toEqual({ path, status: 403 });
+      }
     });
 
     it('keeps invites and removals with the owner', async () => {
