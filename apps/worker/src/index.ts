@@ -2,6 +2,7 @@ import { parseCalendarKey } from '@familyos/calendar';
 import { createDb, databaseUrl } from '@familyos/db';
 import { run } from 'graphile-worker';
 import { z } from 'zod';
+import { expoPushSender } from './push';
 import { CRONTAB, createTaskList } from './tasks';
 
 const env = z
@@ -23,6 +24,8 @@ const env = z
           return false;
         }
       }),
+    /** Only if the Expo project requires push security; sending works without it otherwise. */
+    EXPO_ACCESS_TOKEN: z.string().min(1).optional(),
   })
   .safeParse(process.env);
 
@@ -37,12 +40,14 @@ const db = createDb({ connectionString });
 const runner = await run({
   connectionString,
   concurrency: env.data.WORKER_CONCURRENCY,
-  taskList: createTaskList(
-    db,
-    env.data.CALENDAR_ENCRYPTION_KEY
-      ? { calendarKey: parseCalendarKey(env.data.CALENDAR_ENCRYPTION_KEY) }
-      : {},
-  ),
+  taskList: createTaskList(db, {
+    ...(env.data.CALENDAR_ENCRYPTION_KEY && {
+      calendarKey: parseCalendarKey(env.data.CALENDAR_ENCRYPTION_KEY),
+    }),
+    pushSender: expoPushSender(
+      env.data.EXPO_ACCESS_TOKEN ? { accessToken: env.data.EXPO_ACCESS_TOKEN } : {},
+    ),
+  }),
   crontab: CRONTAB,
 });
 // Report in straight away, so readiness shows a fresh deploy as running without a 10-minute wait.
