@@ -13,6 +13,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e": "pnpm --filter @familyos/e2e test",
     "licenses:check": "node scripts/check-licenses.mjs",
     "stack:up": "supabase start",
     "stack:down": "supabase stop",
