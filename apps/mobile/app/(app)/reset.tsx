@@ -47,6 +47,7 @@ import { api, errorMessage, type Decision, type Occurrence, type WorkItem } from
 import { addDays, greetingFor, weekdayName } from '../../lib/dates';
 import { useDecisionActions, useSettledWatcher } from '../../lib/decisions';
 import { useGroceries } from '../../lib/groceries';
+import { useCapture } from '../../lib/capture';
 import { useHousehold } from '../../lib/household';
 import { useMealActions } from '../../lib/meals';
 import { usePeople } from '../../lib/people';
@@ -58,6 +59,8 @@ type Mode = 'together' | 'apart';
 /** -1 is the opening; the chapters are 0–5; 6 is the finished plan. */
 const OPENING = -1;
 const DONE = 6;
+/** Chapters whose work happens mostly on the board: their panel is slimmer. */
+const BOARD_HEAVY: ChapterKey[] = ['cover'];
 
 /** A copy of `record` without `keys`. */
 const without = <T,>(record: Record<string, T>, keys: string[]): Record<string, T> =>
@@ -505,6 +508,16 @@ export default function Reset() {
       void seePlan();
     }
   }, [committedAt, data]);
+
+  // On phones the chapter bar carries quick capture, so the floating button steps aside while
+  // the bar shows (it covered the bar and the chapter's last lines).
+  const capture = useCapture();
+  const { setFabHidden } = capture;
+  const barShown = phone && !!data && step >= 0 && step < DONE;
+  useEffect(() => {
+    setFabHidden(barShown);
+    return () => setFabHidden(false);
+  }, [barShown, setFabHidden]);
 
   // ---------------------------------------------------------------------------------------------
   if (household?.role === 'caregiver') {
@@ -1000,7 +1013,14 @@ export default function Reset() {
       </View>
     ) : chapter ? (
       <View style={[styles.split, desktop && styles.splitWide]}>
-        <View style={[styles.panel, desktop && styles.panelWide]}>
+        {/* The board is the centre: the chapter's panel stays a narrow column beside it, and
+            slimmer still where the work happens on the board itself (covering the handoffs). */}
+        <View
+          style={[
+            styles.panel,
+            desktop && (BOARD_HEAVY.includes(chapter.key) ? styles.panelSlim : styles.panelWide),
+          ]}
+        >
           {panelFor(chapter.key)}
           {nav}
         </View>
@@ -1029,7 +1049,7 @@ export default function Reset() {
 
   return (
     <View style={styles.fill}>
-      <Page maxWidth={1440} scrollRef={scroll} bottomSpace={phone && chapter ? 70 : 0}>
+      <Page maxWidth={1440} scrollRef={scroll} docked={barShown}>
         {step >= 0 && step < DONE ? (
           <View style={styles.head}>
             {desktop ? (
@@ -1060,6 +1080,7 @@ export default function Reset() {
           onBack={() => go(step - 1)}
           onNext={step + 1 < chapters.length ? () => go(step + 1) : null}
           nextLabel={nextTitle ? `Next: ${nextTitle}` : 'Next'}
+          onCapture={() => capture.open()}
         />
       ) : null}
 
@@ -1177,9 +1198,10 @@ const styles = StyleSheet.create({
   boardKicker: { marginBottom: 12 },
   reading: { maxWidth: 1080, gap: 36 },
   split: { gap: 32 },
-  splitWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 36 },
+  splitWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 32 },
   panel: { gap: 18 },
-  panelWide: { width: 400 },
+  panelWide: { width: 340 },
+  panelSlim: { width: 300 },
   boardCol: { gap: 0 },
   boardColWide: { flex: 1, minWidth: 0, paddingTop: 6 },
   nav: {

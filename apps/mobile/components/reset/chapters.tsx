@@ -1,7 +1,6 @@
-import { ArrowLeft, ArrowRight, Check } from 'lucide-react-native';
+import { ArrowLeft, ArrowRight, Check, Plus } from 'lucide-react-native';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconButton, type PressState } from '../../design/Button';
 import { nativeDriver, useReducedMotion } from '../../design/layout';
 import { Text } from '../../design/Text';
@@ -139,40 +138,53 @@ export function PhoneChapterBar({
   onBack,
   onNext,
   nextLabel,
+  onCapture,
 }: {
   label: string;
   sub: string;
   onBack: (() => void) | null;
   onNext: (() => void) | null;
   nextLabel: string;
+  /** Quick capture lives in the bar here, in place of the floating button. */
+  onCapture: () => void;
 }) {
-  const insets = useSafeAreaInsets();
+  // Docked under the chapter, above the tab bar: it takes its own room, so it never sits on top
+  // of the chapter's content.
   return (
-    <View style={[styles.bar, { bottom: Math.max(insets.bottom, 10) + 70 }]}>
-      <IconButton
-        icon={ArrowLeft}
-        label="Previous chapter"
-        variant="outline"
-        size={42}
-        disabled={!onBack}
-        onPress={() => onBack?.()}
-      />
-      <View style={styles.barText}>
-        <Text variant="small" tone="muted" numberOfLines={1}>
-          {sub}
-        </Text>
-        <Text variant="label" numberOfLines={1}>
-          {label}
-        </Text>
+    <View style={styles.dock}>
+      <View style={styles.bar}>
+        <IconButton
+          icon={ArrowLeft}
+          label="Previous chapter"
+          variant="outline"
+          size={42}
+          disabled={!onBack}
+          onPress={() => onBack?.()}
+        />
+        <View style={styles.barText}>
+          <Text variant="small" tone="muted" numberOfLines={1}>
+            {sub}
+          </Text>
+          <Text variant="label" numberOfLines={1}>
+            {label}
+          </Text>
+        </View>
+        <IconButton
+          icon={Plus}
+          label="Capture something"
+          variant="outline"
+          size={42}
+          onPress={onCapture}
+        />
+        <IconButton
+          icon={ArrowRight}
+          label={nextLabel}
+          variant="ink"
+          size={42}
+          disabled={!onNext}
+          onPress={() => onNext?.()}
+        />
       </View>
-      <IconButton
-        icon={ArrowRight}
-        label={nextLabel}
-        variant="ink"
-        size={42}
-        disabled={!onNext}
-        onPress={() => onNext?.()}
-      />
     </View>
   );
 }
@@ -255,19 +267,23 @@ const styles = StyleSheet.create({
   segment: { flex: 1, height: 4, borderRadius: 2, backgroundColor: color.line2 },
   segmentDone: { backgroundColor: color.muted },
   segmentOn: { backgroundColor: color.ink },
+  dock: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    backgroundColor: color.ground,
+    borderTopWidth: 1,
+    borderTopColor: color.hairline,
+  },
   bar: {
-    position: 'absolute',
-    left: 16,
-    right: 84,
     height: 58,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     paddingHorizontal: 8,
     borderRadius: 29,
     backgroundColor: color.surface,
-    boxShadow: shadow.fab,
-    zIndex: 25,
+    boxShadow: shadow.card,
   },
   barText: { flex: 1, minWidth: 0, alignItems: 'center' },
 });

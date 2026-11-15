@@ -74,7 +74,7 @@ export default function AppLayout() {
 
 function Shell() {
   const { phone } = useLayout();
-  const { open } = useCapture();
+  const { open, fabHidden } = useCapture();
   // First-time setup is a focused, full-screen flow: no navigation around it.
   const focused = usePathname() === '/setup';
   return (
@@ -94,7 +94,7 @@ function Shell() {
       {phone && !focused ? (
         <>
           <BottomBar />
-          <CaptureFab onPress={() => open()} />
+          {fabHidden ? null : <CaptureFab onPress={() => open()} />}
         </>
       ) : null}
     </View>

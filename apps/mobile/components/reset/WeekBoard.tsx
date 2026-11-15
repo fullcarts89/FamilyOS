@@ -6,6 +6,7 @@ import type { PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
 import { FadeIn } from '../../design/motion';
 import { Text } from '../../design/Text';
+import { useTip } from '../../design/Tooltip';
 import { color, font, radius, tint } from '../../design/tokens';
 import type { Meal, Occurrence, ResetResponse, WorkItem } from '../../lib/api';
 import { weekdayName } from '../../lib/dates';
@@ -56,6 +57,8 @@ export function WeekBoard({
 }) {
   const people = usePeople();
   const { timeZone } = useHousehold();
+  // Chips keep to two short lines; the full text shows on hover, or on a long press or tap.
+  const { tipProps, showTip, tipLayer } = useTip();
   const adults = people.adults.filter((p) => p.role === 'owner' || p.role === 'adult');
   const adultIds = new Set(adults.map((p) => p.id));
   const days = data.events.days.map((d) => d.date);
@@ -97,8 +100,10 @@ export function WeekBoard({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${o.title}, ${o.allDay ? 'all day' : timeOf(o.startsAt, timeZone)}${flagged ? ', clashes with a handoff' : ''}`}
-        disabled={!onEvent}
-        onPress={() => onEvent?.(o)}
+        {...tipProps(
+          `${o.title} · ${o.allDay ? 'All day' : timeOf(o.startsAt, timeZone)}${flagged ? ' · clashes with a handoff' : ''}`,
+        )}
+        onPress={(e) => (onEvent ? onEvent(o) : showTip(o.title, e))}
         style={(s: PressState) => [
           styles.event,
           o.readOnly
@@ -128,13 +133,18 @@ export function WeekBoard({
     const problem = problems.has(o.key);
     const what =
       o.careAction === 'drop_off' ? 'Drop' : o.careAction === 'pick_up' ? 'Pick' : o.title;
+    const whatInFull =
+      o.careAction === 'drop_off' ? 'Drop-off' : o.careAction === 'pick_up' ? 'Pickup' : o.title;
+    const whoText = who ? (who.isMe ? 'You' : who.name) : 'Nobody yet';
     return (
       <FadeIn key={`${o.key}:${who?.id ?? 'none'}:${problem}`}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${weekdayName(o.date)} ${o.careAction === 'drop_off' ? 'drop-off' : o.careAction === 'pick_up' ? 'pickup' : o.title} at ${timeOf(o.startsAt, timeZone)}: ${who ? (who.isMe ? 'you' : who.name) : 'nobody yet'}${problem ? ', needs sorting' : ''}. ${committed ? '' : 'Choose who.'}`}
-          disabled={!onHandoff}
-          onPress={() => onHandoff?.(o)}
+          {...tipProps(
+            `${whatInFull} · ${timeOf(o.startsAt, timeZone)} · ${whoText}${problem ? ' · needs sorting' : ''}`,
+          )}
+          onPress={(e) => (onHandoff ? onHandoff(o) : showTip(`${whatInFull} · ${whoText}`, e))}
           style={(s: PressState) => [
             styles.handoff,
             problem && styles.handoffProblem,
@@ -147,7 +157,7 @@ export function WeekBoard({
               <Hatch width={220} height={40} radius={0} outline={false} strokeOpacity={0.2} />
             </View>
           ) : null}
-          <Text variant="small" style={styles.handoffText} numberOfLines={1}>
+          <Text variant="small" style={styles.handoffText} numberOfLines={2}>
             {what}{' '}
             <Text variant="small" tone="muted">
               {timeOf(o.startsAt, timeZone)}
@@ -175,29 +185,38 @@ export function WeekBoard({
   }) => {
     const who = people.byId(t.owner);
     const done = t.status === 'verified_complete' || t.status === 'done_unverified';
+    const whose = who ? (who.isMe ? 'your turn' : `${who.name}’s turn`) : 'nobody’s turn yet';
+    const full = `${t.routine} · ${whose.charAt(0).toUpperCase()}${whose.slice(1)}${done ? ' · done' : ''}`;
     return (
       <FadeIn key={`${t.id}:${t.owner ?? ''}`}>
-        <View
+        <Pressable
           style={[styles.turn, { backgroundColor: who ? tint(who.color, 0.16) : color.lane }]}
-          accessibilityLabel={`${t.routine}, ${who ? (who.isMe ? 'your turn' : `${who.name}’s turn`) : 'nobody’s turn yet'}`}
+          accessibilityLabel={`${t.routine}, ${whose}`}
+          {...tipProps(full)}
+          onPress={(e) => showTip(full, e)}
         >
           <View style={[styles.dot, { backgroundColor: who?.color ?? color.faint }]} />
-          <Text variant="small" numberOfLines={1} style={[styles.turnText, done && styles.struck]}>
+          <Text variant="small" numberOfLines={2} style={[styles.turnText, done && styles.struck]}>
             {t.routine}
           </Text>
-        </View>
+        </Pressable>
       </FadeIn>
     );
   };
 
   const taskChip = (i: WorkItem) => (
     <FadeIn key={`${i.id}:${i.version}`}>
-      <View style={styles.task} accessibilityLabel={`To do: ${i.title}`}>
+      <Pressable
+        style={styles.task}
+        accessibilityLabel={`To do: ${i.title}`}
+        {...tipProps(`To do: ${i.title}`)}
+        onPress={(e) => showTip(`To do: ${i.title}`, e)}
+      >
         <View style={styles.taskRing} />
         <Text variant="small" tone="muted" numberOfLines={2} style={styles.taskText}>
           {i.title}
         </Text>
-      </View>
+      </Pressable>
     </FadeIn>
   );
 
@@ -209,8 +228,12 @@ export function WeekBoard({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${weekdayName(date)} dinner: ${meal ? `${meal.title}${cook ? `, ${cook.isMe ? 'you cook' : `${cook.name} cooks`}` : ''}` : 'not planned yet'}`}
-          disabled={!onDinner}
-          onPress={() => onDinner?.(date)}
+          {...(meal &&
+            tipProps(
+              `${weekdayName(date)}: ${meal.title}${cook ? ` · ${cook.isMe ? 'You cook' : `${cook.name} cooks`}` : ''}`,
+            ))}
+          disabled={!onDinner && !meal}
+          onPress={(e) => (onDinner ? onDinner(date) : meal && showTip(meal.title, e))}
           style={(s: PressState) => [
             meal ? styles.meal : styles.mealEmpty,
             s.hovered && !!onDinner && styles.hover,
@@ -255,8 +278,8 @@ export function WeekBoard({
     ...people.caredFor.map((p) => ({
       key: p.id,
       kind: 'care' as const,
-      label: p.role === 'pet' ? p.name : `${p.name}’s care`,
-      sub: p.role === 'pet' ? (p.species ?? 'Pet') : undefined,
+      label: p.name,
+      sub: p.role === 'pet' ? (p.species ?? 'Pet') : 'Care and handoffs',
       person: p,
       cell: (d: string) => [
         ...occ(d)
@@ -284,7 +307,7 @@ export function WeekBoard({
             key: 'together',
             kind: 'together' as const,
             label: 'Together',
-            sub: 'Two or more of you',
+            sub: 'Both of you',
             person: null,
             cell: (d: string) =>
               occ(d)
@@ -323,6 +346,7 @@ export function WeekBoard({
     const shown = rows.filter(lit);
     return (
       <View style={styles.dayList} accessibilityLabel="The week board">
+        {tipLayer}
         {committed ? <PlanStamp /> : null}
         {days.map((d) => {
           const filled = shown
@@ -364,6 +388,7 @@ export function WeekBoard({
 
   return (
     <View style={styles.board} accessibilityLabel="The week board">
+      {tipLayer}
       {committed ? <PlanStamp /> : null}
       <View style={styles.boardRow}>
         <View style={[styles.rowHead, narrow && styles.rowHeadNarrow]} />
@@ -389,11 +414,11 @@ export function WeekBoard({
           <View style={[styles.rowHead, narrow && styles.rowHeadNarrow]}>
             {rowIcon(r, narrow ? 22 : 24)}
             <View style={styles.flex}>
-              <Text variant="label" numberOfLines={1}>
+              <Text variant="label" numberOfLines={2}>
                 {r.label}
               </Text>
               {r.sub ? (
-                <Text variant="small" tone="muted" numberOfLines={1}>
+                <Text variant="small" tone="muted" numberOfLines={2}>
                   {r.sub}
                 </Text>
               ) : null}
@@ -442,7 +467,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingRight: 6,
   },
-  rowHeadNarrow: { width: 100, gap: 6 },
+  rowHeadNarrow: { width: 104, gap: 6 },
   cellNarrow: { padding: 4, gap: 4 },
   dayHead: {
     flex: 1,
@@ -490,7 +515,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 4,
-    height: 32,
+    minHeight: 32,
+    paddingVertical: 4,
     paddingLeft: 8,
     paddingRight: 5,
     borderRadius: radius.sm,
@@ -501,7 +527,7 @@ const styles = StyleSheet.create({
     cursor: 'pointer',
   },
   handoffProblem: { borderColor: color.ink, borderStyle: 'dashed' },
-  handoffText: { fontFamily: font.uiBold, color: color.ink },
+  handoffText: { flexShrink: 1, fontFamily: font.uiBold, color: color.ink },
   unknown: {
     width: 20,
     height: 20,
@@ -516,16 +542,24 @@ const styles = StyleSheet.create({
   unknownText: { fontFamily: font.uiBold, color: color.ink, fontSize: 11, lineHeight: 13 },
   turn: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 6,
     minHeight: 26,
     paddingHorizontal: 8,
-    borderRadius: radius.pill,
+    paddingVertical: 5,
+    borderRadius: 13,
+    cursor: 'pointer',
   },
-  dot: { width: 7, height: 7, borderRadius: 4 },
+  dot: { width: 7, height: 7, borderRadius: 4, marginTop: 4.5 },
   turnText: { flexShrink: 1, color: color.ink },
   struck: { textDecorationLine: 'line-through' },
-  task: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingHorizontal: 3 },
+  task: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 3,
+    cursor: 'pointer',
+  },
   taskRing: {
     width: 11,
     height: 11,
