@@ -24,7 +24,28 @@ describe('role permissions', () => {
 
   it('limits caregivers to reading', () => {
     const allowed = ACTIONS.filter((action) => can('caregiver', action));
-    expect(allowed).toEqual(['household.read', 'work_item.read', 'event.read']);
+    expect(allowed).toEqual([
+      'household.read',
+      'work_item.read',
+      'event.read',
+      'meal.read',
+      'contact.read',
+    ]);
+  });
+
+  it('keeps decisions, budgets and the weekly plan with the adults', () => {
+    for (const action of [
+      'decision.read',
+      'decision.manage',
+      'budget.read',
+      'budget.import',
+      'reset.run',
+      'meal.manage',
+      'contact.manage',
+    ] as const) {
+      expect(can('adult', action)).toBe(true);
+      expect(can('caregiver', action)).toBe(false);
+    }
   });
 
   it('gives children and pets no actions', () => {

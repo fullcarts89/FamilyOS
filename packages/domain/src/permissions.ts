@@ -29,6 +29,20 @@ export const ACTIONS = [
   'event.manage',
   /** Add, change, remove and sync read-only calendar subscriptions. */
   'calendar.manage',
+  /** Household decisions are between the adults: reading, voting and deciding. */
+  'decision.read',
+  'decision.manage',
+  /** Meals and the grocery list. */
+  'meal.read',
+  'meal.manage',
+  /** Key contacts (pediatrician, vet, plumber). */
+  'contact.read',
+  'contact.manage',
+  /** Monarch budget snapshots: category-level numbers only. */
+  'budget.read',
+  'budget.import',
+  /** The Weekly Reset session and committing its plan. */
+  'reset.run',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -48,9 +62,19 @@ const GRANTS: Readonly<Record<MemberRole, readonly Action[]>> = {
     'event.read',
     'event.manage',
     'calendar.manage',
+    'decision.read',
+    'decision.manage',
+    'meal.read',
+    'meal.manage',
+    'contact.read',
+    'contact.manage',
+    'budget.read',
+    'budget.import',
+    'reset.run',
   ],
-  // A sitter sees the household's schedule so they know who is where.
-  caregiver: ['household.read', 'work_item.read', 'event.read'],
+  // A sitter sees the household's schedule so they know who is where, what's for dinner and
+  // whom to call. Never the adults' own calendars, decisions, budgets or weekly plan.
+  caregiver: ['household.read', 'work_item.read', 'event.read', 'meal.read', 'contact.read'],
   // Children and pets have no account, so they never make requests.
   child: [],
   pet: [],
