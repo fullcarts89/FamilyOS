@@ -56,3 +56,21 @@ export async function withSchedulerContext<T>(
     return fn(trx);
   });
 }
+
+/**
+ * Runs `fn` in a transaction as role `familyos_notifier`, limited to one household. Used by the
+ * worker to send notifications: it reads push tokens, preferences, the notification log and
+ * the rhythm's inputs (care events, tasks, dinner, decisions, the week's plan, audit IDs) of
+ * that household only, and writes only the log and token housekeeping.
+ */
+export async function withNotifierContext<T>(
+  db: Kysely<Database>,
+  householdId: string | null,
+  fn: (trx: Transaction<Database>) => Promise<T>,
+): Promise<T> {
+  return db.transaction().execute(async (trx) => {
+    await sql`set local role familyos_notifier`.execute(trx);
+    await sql`select set_config('app.household_id', ${householdId ?? ''}, true)`.execute(trx);
+    return fn(trx);
+  });
+}

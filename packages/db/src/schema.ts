@@ -265,8 +265,39 @@ export interface MemberStateTable {
   quiet_hours_end: string | null;
   haptics: Generated<boolean>;
   sound: Generated<boolean>;
+  /** HH:MM:SS local times. */
+  morning_time: Generated<string>;
+  /** ISO weekday, 1 = Monday … 7 = Sunday. */
+  weekly_reset_day: Generated<number>;
+  weekly_reset_time: Generated<string>;
+  hide_details: Generated<boolean>;
   version: Generated<number>;
   updated_at: Timestamp;
+}
+
+export interface DevicePushTokenTable {
+  id: Generated<string>;
+  member_id: string;
+  household_id: string;
+  expo_push_token: string;
+  platform: 'ios';
+  created_at: Generated<Date>;
+  last_used_at: Timestamp;
+}
+
+export type NotificationLogKind =
+  'morning_checkin' | 'handoff_reminder' | 'partner_changes' | 'weekly_reset_reminder';
+export type NotificationLogStatus = 'pending' | 'sent' | 'failed' | 'skipped';
+
+export interface NotificationLogTable {
+  /** bigint, read as a string. */
+  id: Generated<string>;
+  member_id: string;
+  household_id: string;
+  kind: NotificationLogKind;
+  dedupe_key: string;
+  sent_at: Timestamp;
+  status: NotificationLogStatus;
 }
 
 export interface MemberAcknowledgmentTable {
@@ -428,6 +459,8 @@ export interface Database {
   'app.calendar_source': CalendarSourceTable;
   'app.member_state': MemberStateTable;
   'app.member_acknowledgment': MemberAcknowledgmentTable;
+  'app.device_push_token': DevicePushTokenTable;
+  'app.notification_log': NotificationLogTable;
   'app.contact': ContactTable;
   'app.decision': DecisionTable;
   'app.decision_option': DecisionOptionTable;
