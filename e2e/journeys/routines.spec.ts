@@ -54,10 +54,6 @@ test.describe('Routines, including pets', () => {
     maya,
     mayaApi,
   }) => {
-    // App bug (reported): after an early Done, the card on Tasks keeps showing this turn
-    // ("Your turn · Dec 1", Done disabled) because Routines.tsx takes the first upcoming
-    // occurrence without skipping done ones. Remove test.fail() once fixed.
-    test.fail();
     const title = 'Biscuit’s flea meds';
     const turn = (await mayaApi.routine(title)).upcoming.find((o) => !o.skipped && o.itemId);
     if (!turn) throw new Error('no flea-meds turn');
