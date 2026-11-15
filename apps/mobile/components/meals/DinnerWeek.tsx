@@ -36,9 +36,28 @@ export function DinnerWeek({
   compact?: boolean;
 }) {
   const [focused, setFocused] = useState<string | null>(null);
+  const { phone } = useLayout();
+  // On a phone, nights already gone fold away so the list starts with tonight.
+  const past = phone ? days.filter((d) => d < today) : [];
+  const [showPast, setShowPast] = useState(false);
+  const shown = showPast ? days : days.filter((d) => !past.includes(d));
   return (
     <View style={styles.week}>
-      {days.map((d, i) => {
+      {past.length > 0 ? (
+        <Pressable
+          accessibilityRole="button"
+          aria-expanded={showPast}
+          onPress={() => setShowPast((v) => !v)}
+          style={styles.pastToggle}
+        >
+          <Text variant="label" tone="muted">
+            {showPast
+              ? 'Hide the nights already gone'
+              : `Earlier this week (${past.length} night${past.length === 1 ? '' : 's'})`}
+          </Text>
+        </Pressable>
+      ) : null}
+      {shown.map((d, i) => {
         const meal = meals.find((m) => m.onDate === d && m.slot === 'dinner') ?? null;
         return (
           <DinnerRow
@@ -51,7 +70,7 @@ export function DinnerWeek({
             onOpen={() => setFocused(d)}
             onClose={() => setFocused((f) => (f === d ? null : f))}
             onSave={onSave}
-            last={i === days.length - 1}
+            last={i === shown.length - 1}
             readOnly={readOnly}
             compact={compact}
           />
@@ -177,15 +196,15 @@ function DinnerRow({
               style={[styles.input, open && styles.inputOpen]}
             />
           )}
-          {meal && !open ? (
+          {meal && !open && readOnly ? (
             <Text variant="small" tone="muted">
               {cook ? (cook.isMe ? 'You cook' : `${cook.name} cooks`) : 'Nobody set to cook'}
             </Text>
           ) : null}
         </View>
-        {!phone ? cooks : null}
+        {!isPhone ? cooks : null}
       </View>
-      {phone && meal ? <View style={styles.phoneCooks}>{cooks}</View> : null}
+      {isPhone && meal ? <View style={styles.phoneCooks}>{cooks}</View> : null}
       {open && ideas.length ? (
         <View style={styles.ideas} accessibilityLabel="Recent dinners">
           {ideas
@@ -212,6 +231,12 @@ function DinnerRow({
 }
 
 const styles = StyleSheet.create({
+  pastToggle: {
+    minHeight: 44,
+    justifyContent: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: color.hairline,
+  },
   week: {
     borderRadius: radius.lg,
     backgroundColor: color.surface,

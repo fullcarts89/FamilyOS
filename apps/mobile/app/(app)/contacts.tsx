@@ -176,26 +176,23 @@ export default function Contacts() {
       ) : null}
 
       {groups.length ? (
-        <FadeIn style={styles.groups}>
+        <FadeIn style={[styles.groups, !phone && styles.groupsWide]}>
           {groups.map((g) => {
             const Icon = CATEGORY[g.category].icon;
             return (
-              <View key={g.category} style={styles.group}>
+              <View
+                key={g.category}
+                style={[styles.group, !phone && (desktop ? styles.groupThird : styles.groupHalf)]}
+              >
                 <View style={styles.groupHead}>
                   <Icon size={16} color={color.muted} strokeWidth={2.2} />
                   <GroupLabel label={CATEGORY[g.category].label} style={styles.groupLabel} />
                 </View>
-                <View style={[styles.cards, !phone && styles.cardsWide]}>
+                <View style={styles.cards}>
                   {g.items.map((c) => {
                     const forWho = people.byId(c.forMemberId);
                     return (
-                      <View
-                        key={c.id}
-                        style={[
-                          styles.card,
-                          !phone && (desktop ? styles.cardThird : styles.cardHalf),
-                        ]}
-                      >
+                      <View key={c.id} style={styles.card}>
                         <Pressable
                           accessibilityRole="button"
                           accessibilityLabel={`${c.name}${roleLine(c) ? `, ${roleLine(c)}` : ''}`}
@@ -294,11 +291,13 @@ const styles = StyleSheet.create({
   gap: { marginTop: 24 },
   art: { maxWidth: 380, marginBottom: 8 },
   groups: { marginTop: 12 },
+  groupsWide: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 20, alignItems: 'flex-start' },
   group: { marginTop: 18 },
+  groupHalf: { width: '48.5%' },
+  groupThird: { width: '31.9%' },
   groupHead: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingTop: 6 },
   groupLabel: { paddingTop: 0, paddingBottom: 0 },
   cards: { gap: 10, marginTop: 10 },
-  cardsWide: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   card: {
     borderRadius: radius.lg,
     backgroundColor: color.surface,
@@ -307,8 +306,6 @@ const styles = StyleSheet.create({
     borderColor: color.hairline,
     overflow: 'hidden',
   },
-  cardHalf: { width: '48.5%' },
-  cardThird: { width: '32.4%' },
   cardMain: { padding: 14, paddingBottom: 8, gap: 3, cursor: 'pointer' },
   hover: { backgroundColor: color.ground },
   forRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },

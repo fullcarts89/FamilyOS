@@ -100,6 +100,7 @@ export default function Meals() {
                 variant="secondary"
                 size="sm"
                 onPress={() => setMonday(mondayOf(today))}
+                style={styles.center}
               />
             ) : null}
             <IconButton
@@ -147,7 +148,7 @@ export default function Meals() {
         sub={groceries.items ? (toBuy === 0 ? 'Nothing to buy' : `${toBuy} to buy`) : undefined}
       />
       <View style={styles.body}>
-        {canPlan ? <GroceryAdd onAdd={groceries.add} /> : null}
+        {canPlan ? <GroceryAdd onAdd={groceries.add} compact={phone} /> : null}
         {groceries.error && !groceries.items ? (
           <View style={styles.listGap}>
             <ErrorNotice
@@ -229,6 +230,7 @@ const styles = StyleSheet.create({
   colsWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 48 },
   col: { flex: 1, minWidth: 0 },
   nav: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  center: { alignSelf: 'center' },
   body: { marginTop: 16 },
   hint: { marginTop: 10 },
   listGap: { marginTop: 10 },

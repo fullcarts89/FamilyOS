@@ -45,7 +45,7 @@ const money = (n: number) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    maximumFractionDigits: Math.abs(n) >= 1000 || Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 0,
   }).format(n);
 
 // Budgets: this month's Monarch budget, category by category: what you planned and what's been
@@ -140,6 +140,7 @@ export default function Budgets() {
                   variant="secondary"
                   size="sm"
                   onPress={() => setMonth(current)}
+                  style={styles.center}
                 />
               ) : null}
               <IconButton
@@ -190,7 +191,7 @@ export default function Budgets() {
           <View style={[styles.total, phone && styles.totalPhone]}>
             <View style={styles.totalText}>
               <Text variant="kicker" tone="muted">
-                Spent so far
+                {month < current ? 'Spent' : 'Spent so far'}
               </Text>
               <Text style={styles.big}>
                 {money(shown.totals.actual)}
@@ -253,6 +254,7 @@ export default function Budgets() {
 
       <ImportSheet
         visible={importing}
+        month={month}
         onClose={() => setImporting(false)}
         onImported={(budget, months) => {
           setImporting(false);
@@ -303,6 +305,7 @@ function Bar({
 const styles = StyleSheet.create({
   headActions: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   nav: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  center: { alignSelf: 'center' },
   gap: { marginTop: 28, gap: 14 },
   art: { maxWidth: 380, marginBottom: 8 },
   total: {

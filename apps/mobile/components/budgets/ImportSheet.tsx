@@ -1,3 +1,4 @@
+import { BudgetCsvError, parseBudgetCsv } from '@familyos/domain';
 import { FileUp } from 'lucide-react-native';
 import { useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
@@ -10,6 +11,8 @@ import { ApiRequestError, apiWithStatus, errorMessage, type BudgetMonth } from '
 import { useHousehold } from '../../lib/household';
 
 const MAX_BYTES = 1024 * 1024;
+const UNRECOGNIZED =
+  'That file doesn’t look like a Monarch budget export. FamilyOS looks for columns such as Category, Budget and Actual. Export the budget (not transactions) and try again.';
 
 /** Web: open the browser's file picker for a CSV and read it as text. */
 function pickCsv(): Promise<{ name: string; text: string } | null> {
@@ -38,10 +41,13 @@ function pickCsv(): Promise<{ name: string; text: string } | null> {
  */
 export function ImportSheet({
   visible,
+  month,
   onClose,
   onImported,
 }: {
   visible: boolean;
+  /** The month on screen: used when the file doesn't say which month it's for. */
+  month: string;
   onClose: () => void;
   onImported: (budget: BudgetMonth, months: string[]) => void;
 }) {
@@ -61,6 +67,20 @@ export function ImportSheet({
       setError('That file is too big. Export one month (or a few) at a time.');
       return;
     }
+    // Read it here first (the same parser the API uses), so a wrong file gets a clear answer
+    // without a round trip; the API checks it again.
+    try {
+      parseBudgetCsv(picked.text, { defaultMonth: month });
+    } catch (caught) {
+      if (caught instanceof BudgetCsvError) {
+        setError(
+          caught.code === 'unrecognized_csv'
+            ? UNRECOGNIZED
+            : errorMessage(new ApiRequestError(422, caught.code)),
+        );
+        return;
+      }
+    }
     setBusy(true);
     try {
       const { body } = await apiWithStatus<{
@@ -69,16 +89,12 @@ export function ImportSheet({
         budget: BudgetMonth;
       }>(`/households/${household.id}/budgets/import`, {
         method: 'POST',
-        body: { csv: picked.text },
+        body: { csv: picked.text, month },
       });
       onImported(body.budget, body.months);
     } catch (caught) {
       const code = caught instanceof ApiRequestError ? caught.code : '';
-      setError(
-        code === 'unrecognized_csv'
-          ? 'That file doesn’t look like a Monarch budget export. FamilyOS looks for columns such as Category, Budget and Actual. Export the budget (not transactions) and try again.'
-          : errorMessage(caught),
-      );
+      setError(code === 'unrecognized_csv' ? UNRECOGNIZED : errorMessage(caught));
     } finally {
       setBusy(false);
     }

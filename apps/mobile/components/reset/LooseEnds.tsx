@@ -58,7 +58,7 @@ export function LooseEnds({
     return (
       <View style={styles.done}>
         <Check size={18} color={color.ink} strokeWidth={2.6} />
-        <Text variant="title">Nothing carried over. Every loose end from before has a place.</Text>
+        <Text variant="title">Nothing left from before: every loose end has a place.</Text>
       </View>
     );
   }
@@ -125,7 +125,7 @@ function LooseRow({
   const due = dueDate(item, timeZone);
   const late = !!due && due < today;
   const handTo = owner?.isMe || !owner ? (owner?.isMe ? people.partner : people.me) : people.me;
-  const keepWord = keepOn === today ? 'today' : weekdayName(keepOn);
+  const keepWord = keepOn === today ? 'today' : weekdayName(keepOn).slice(0, 3);
 
   if (choice) {
     return (
@@ -161,12 +161,10 @@ function LooseRow({
 
   return (
     <View style={styles.row}>
-      <View style={styles.who}>
-        {owner ? <Avatar person={owner} size={24} /> : <Either size={24} />}
-      </View>
       <View style={styles.text}>
         <Text variant="title">{item.title}</Text>
         <View style={styles.meta}>
+          {owner ? <Avatar person={owner} size={18} /> : <Either size={18} />}
           {late ? <Hatch width={14} height={9} radius={2} /> : null}
           <Text variant="small" tone={late ? 'ink' : 'muted'}>
             {[

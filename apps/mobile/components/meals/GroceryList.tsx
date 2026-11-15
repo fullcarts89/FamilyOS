@@ -51,7 +51,9 @@ export function GroceryAdd({
             if (!t) setAisle(null);
           }}
           onSubmitEditing={() => void submit()}
-          placeholder="Add to the list: milk, 2 lemons, dog food…"
+          placeholder={
+            compact ? 'Add milk, 2 lemons…' : 'Add to the list: milk, 2 lemons, dog food…'
+          }
           placeholderTextColor={color.faint}
           accessibilityLabel="Add to the grocery list"
           returnKeyType="done"
@@ -72,7 +74,13 @@ export function GroceryAdd({
             </Text>
           </Pressable>
         ) : null}
-        <Button title="Add" size="sm" disabled={!name} onPress={() => void submit()} />
+        <Button
+          title="Add"
+          size="sm"
+          disabled={!name}
+          onPress={() => void submit()}
+          style={styles.addButton}
+        />
       </View>
       {picking ? (
         <View style={styles.aislePick} accessibilityRole="radiogroup" aria-label="Aisle">
@@ -216,6 +224,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.surface,
   },
   addRowCompact: { minHeight: 48 },
+  addButton: { alignSelf: 'center' },
   addInput: {
     flex: 1,
     minWidth: 0,
