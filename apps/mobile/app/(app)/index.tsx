@@ -1,79 +1,142 @@
-import { router, useFocusEffect } from 'expo-router';
-import { ArrowRight, Inbox, Plus } from 'lucide-react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
-import { TaskRow } from '../../components/tasks/TaskRow';
-import { Avatar } from '../../design/Avatar';
+import { router } from 'expo-router';
+import { ArrowRight, ChevronDown, ChevronUp, Inbox, Plus } from 'lucide-react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Pressable, Text as Span, RefreshControl, StyleSheet, View } from 'react-native';
+import { DayTimeline } from '../../components/rhythm/DayTimeline';
+import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet';
+import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
+import { NextUp, dayEntries } from '../../components/rhythm/NextUp';
+import { SinceLastLooked } from '../../components/rhythm/SinceLastLooked';
+import { WeekStrip } from '../../components/rhythm/WeekStrip';
+import { PersonColumn } from '../../components/tasks/PersonColumn';
+import { Avatar, Either } from '../../design/Avatar';
 import type { PressState } from '../../design/Button';
-import { EmptyState } from '../../design/EmptyState';
 import { useLayout } from '../../design/layout';
 import { FadeIn, Skeleton, SkeletonBlock, SkeletonRows } from '../../design/motion';
 import { ErrorNotice } from '../../design/Notice';
 import { Page } from '../../design/Page';
 import { SectionHeader } from '../../design/Section';
 import { Text } from '../../design/Text';
-import { color, radius } from '../../design/tokens';
-import { api, type TodayResponse, type WorkItem } from '../../lib/api';
+import { color, font, radius, shadow } from '../../design/tokens';
+import type { Occurrence, WorkItem } from '../../lib/api';
 import { useCapture } from '../../lib/capture';
-import { greetingFor, hourIn, longDate } from '../../lib/dates';
+import { greetingFor, longDate, shortDate } from '../../lib/dates';
+import { useOccurrenceActions } from '../../lib/events';
+import { headline } from '../../lib/headline';
 import { useHousehold } from '../../lib/household';
-import { usePeople } from '../../lib/people';
-import { useTaskActions } from '../../lib/tasks';
+import { usePeople, type Person } from '../../lib/people';
+import { headsUpsForDays, localParts, timeOf } from '../../lib/rhythm';
+import {
+  WHEN_ORDER,
+  byDue,
+  currentTurns,
+  isOpen,
+  useTaskActions,
+  whenOf,
+  type When,
+} from '../../lib/tasks';
+import { addDays } from '../../lib/dates';
+import { useTodayData } from '../../lib/use-today';
 
-type Lists = Pick<TodayResponse, 'needsYou' | 'inProgress' | 'thisWeek' | 'handled'>;
-const LISTS: (keyof Lists)[] = ['needsYou', 'inProgress', 'thisWeek', 'handled'];
+const NEAR: When[] = ['late', 'today', 'week'];
+const PER_COLUMN = 6;
 
-// Today: a greeting and a plain sentence about the day, capture, then what needs you, what's
-// moving, what's coming this week and what got handled. The day's lanes arrive with events.
+// Today's rhythm: a greeting and a headline from the day's real data; the day as lanes (desktop)
+// or the next few things with the whole day a tap away (phone); heads-ups you can act on; what
+// changed since you last looked; who's on what; the rest of the week; and capture.
 export default function Today() {
-  const { household, timeZone } = useHousehold();
+  const { timeZone } = useHousehold();
   const people = usePeople();
   const { desktop, phone } = useLayout();
-  const { open, version } = useCapture();
-  const [today, setToday] = useState<TodayResponse | null>(null);
+  const { open } = useCapture();
+  const data = useTodayData();
+  const { rhythm, week, items, activity, now, error, load, replace } = data;
+  const [sheet, setSheet] = useState<EventTarget | null>(null);
+  const [wholeDay, setWholeDay] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(false);
-  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // undefined until chosen: phones start on your own list.
+  const [column, setColumn] = useState<string | null | undefined>(undefined);
 
-  const load = useCallback(async () => {
-    if (!household) return;
-    try {
-      setToday(await api<TodayResponse>(`/households/${household.id}/today`));
-      setError(false);
-    } catch {
-      setError(true);
-    }
-  }, [household]);
-
-  useFocusEffect(
-    useCallback(() => {
-      void load();
-    }, [load]),
-  );
-  useEffect(() => {
-    if (version > 0) void load();
-  }, [version, load]);
-  useEffect(() => () => void (reloadTimer.current && clearTimeout(reloadTimer.current)), []);
-
-  // Moves update the row in place; the lists regroup a moment later, after it settles.
+  const reloadSoon = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onChange = useCallback(
     (item: WorkItem) => {
-      setToday((t) =>
-        t
-          ? {
-              ...t,
-              ...Object.fromEntries(
-                LISTS.map((k) => [k, t[k].map((i) => (i.id === item.id ? item : i))]),
-              ),
-            }
-          : t,
-      );
-      if (reloadTimer.current) clearTimeout(reloadTimer.current);
-      reloadTimer.current = setTimeout(() => void load(), 1600);
+      replace(item);
+      if (reloadSoon.current) clearTimeout(reloadSoon.current);
+      reloadSoon.current = setTimeout(() => void load(), 1600);
     },
-    [load],
+    [replace, load],
   );
   const actions = useTaskActions(onChange);
+  const occurrenceActions = useOccurrenceActions(() => void load());
+
+  const today = rhythm?.today ?? '';
+  const entries = useMemo(
+    () => (rhythm ? dayEntries(rhythm.lanes, people, timeZone) : []),
+    [rhythm, people, timeZone],
+  );
+  const occurrences = useMemo(() => {
+    const map = new Map<string, Occurrence>();
+    for (const o of week?.occurrences ?? []) map.set(o.key, o);
+    for (const l of rhythm?.lanes ?? []) for (const o of l.occurrences) map.set(o.key, o);
+    return map;
+  }, [week, rhythm]);
+
+  const headsUps: DatedHeadsUp[] = useMemo(() => {
+    if (!rhythm) return [];
+    const todays = rhythm.headsUps.map((h) => ({ date: rhythm.date, headsUp: h }));
+    const coming = week
+      ? headsUpsForDays(
+          week.occurrences,
+          rhythm.members,
+          Array.from({ length: 6 }, (_, i) => addDays(rhythm.today, i + 1)),
+          rhythm.today,
+          timeZone,
+        )
+      : [];
+    const seen = new Set(todays.map((h) => h.headsUp.id));
+    // Today's handoffs that are already past need no action.
+    const t = now.getTime();
+    return [...todays, ...coming.filter((h) => !seen.has(h.headsUp.id))].filter(
+      ({ headsUp: h }) =>
+        !(h.type === 'handoff_conflict' || h.type === 'care_unassigned') ||
+        new Date(h.time).getTime() > t,
+    );
+  }, [rhythm, week, timeZone, now]);
+
+  const weekHeadsUps = useMemo(
+    () =>
+      rhythm && week
+        ? headsUpsForDays(
+            week.occurrences,
+            rhythm.members,
+            Array.from({ length: 7 }, (_, i) => addDays(rhythm.today, i)),
+            rhythm.today,
+            timeZone,
+          )
+        : [],
+    [rhythm, week, timeZone],
+  );
+
+  const lists = useMemo(() => {
+    const out = new Map<string | null, Record<When, WorkItem[]>>();
+    if (!items || !today) return out;
+    const sort = byDue(timeZone);
+    for (const item of currentTurns(items)) {
+      if (item.parentId || item.type === 'project' || !isOpen(item)) continue;
+      const when = whenOf(item, today, timeZone);
+      if (!NEAR.includes(when)) continue;
+      const g =
+        out.get(item.ownerMemberId) ??
+        (Object.fromEntries(WHEN_ORDER.map((w) => [w, [] as WorkItem[]])) as Record<
+          When,
+          WorkItem[]
+        >);
+      g[when].push(item);
+      out.set(item.ownerMemberId, g);
+    }
+    for (const g of out.values()) for (const w of WHEN_ORDER) g[w].sort(sort);
+    return out;
+  }, [items, today, timeZone]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -82,220 +145,448 @@ export default function Today() {
   };
 
   const me = people.me;
-  const name = me?.name.split(' ')[0] ?? '';
-  const greeting = `${greetingFor(hourIn(timeZone))}${name ? `, ${name}` : ''}`;
-  const date = today?.date ?? '';
+  const first = me?.name.split(' ')[0] ?? '';
+  const hour = Math.floor(localParts(now, timeZone).minutes / 60);
+  const greeting = `${greetingFor(hour)}${first ? `, ${first}` : ''}`;
+  const head = rhythm
+    ? headline({ rhythm, entries, week: week?.occurrences ?? [], people, now, timeZone })
+    : null;
+  const clockText = timeOf(now.toISOString(), timeZone).replace(/am|pm/, '');
+  const openOccurrence = (o: Occurrence) => setSheet({ mode: 'occurrence', occurrence: o });
 
-  const row = (item: WorkItem, i: number, list: WorkItem[]) => (
-    <TaskRow
-      key={item.id}
-      item={item}
-      today={date}
-      onComplete={actions.complete}
-      onReopen={actions.reopen}
-      onAssign={actions.assign}
-      onReschedule={actions.reschedule}
-      context={item.ownerMemberId !== me?.id ? people.label(item.ownerMemberId) : undefined}
-      last={i === list.length - 1}
-    />
+  // ---------------------------------------------------------------------------------------------
+  const header = (
+    <View style={[styles.header, desktop && styles.headerWide]}>
+      {desktop ? (
+        <Text
+          style={styles.clock}
+          accessibilityLabel={`It’s ${timeOf(now.toISOString(), timeZone)}`}
+        >
+          {clockText}
+          <Span style={[styles.clockDot, { color: me?.color ?? color.ink }]}>.</Span>
+        </Text>
+      ) : null}
+      <View style={styles.headText}>
+        <Text variant="kicker" tone="muted">
+          {today ? longDate(today) : ' '}
+        </Text>
+        <Text variant="greeting">{greeting}</Text>
+        {head ? (
+          <Text style={[styles.headline, phone && styles.headlinePhone]}>
+            {head.title.map((p, i) => (
+              <Span key={i} style={p.color ? { color: p.color } : undefined}>
+                {p.text}
+              </Span>
+            ))}
+          </Text>
+        ) : (
+          <Skeleton>
+            <SkeletonBlock width={phone ? '90%' : 460} height={22} />
+          </Skeleton>
+        )}
+        {head?.line ? (
+          <Text variant="lead" tone="muted" style={styles.line}>
+            {head.line}
+          </Text>
+        ) : null}
+      </View>
+    </View>
   );
 
-  const needs = today ? (
-    <View style={styles.block}>
-      <SectionHeader title="Needs you" sub={countLine(today.needsYou.length)} />
-      {today.needsYou.length ? (
-        today.needsYou.map(row)
-      ) : (
-        <Text variant="body" tone="muted" style={styles.quiet}>
-          Nothing needs you right now. Enjoy it, or get ahead on something below.
+  const capture = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Add something for the household"
+      onPress={() => open()}
+      style={(s: PressState) => [styles.capture, s.hovered && { borderColor: color.ink }]}
+    >
+      <Plus size={18} color={color.ink} strokeWidth={2.2} />
+      <Text variant="body" tone="muted" style={styles.captureText}>
+        Add something for the household…
+      </Text>
+      {!phone ? (
+        <View style={styles.kbd}>
+          <Text variant="small" tone="muted">
+            N
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+
+  const inbox =
+    data.inboxCount > 0 ? (
+      <Pressable
+        accessibilityRole="link"
+        onPress={() => router.push('/inbox')}
+        style={(s: PressState) => [styles.inbox, s.hovered && { borderColor: color.ink }]}
+      >
+        <Inbox size={18} color={color.ink} strokeWidth={2.2} />
+        <Text variant="label" style={styles.inboxText}>
+          {data.inboxCount === 1 ? '1 thing to sort' : `${data.inboxCount} things to sort`} in the
+          inbox
         </Text>
-      )}
-    </View>
+        <ArrowRight size={16} color={color.ink} strokeWidth={2.2} />
+      </Pressable>
+    ) : null;
+
+  const timeline = rhythm ? (
+    <DayTimeline
+      date={rhythm.date}
+      timeZone={timeZone}
+      lanes={rhythm.lanes}
+      handoffs={rhythm.handoffs}
+      headsUps={rhythm.headsUps}
+      people={people}
+      now={rhythm.date === rhythm.today ? now : null}
+      compact={phone}
+      onOpen={openOccurrence}
+    />
   ) : null;
 
-  const week = today ? (
-    <View style={styles.block}>
-      <SectionHeader title="This week" sub="The next seven days" />
-      {today.thisWeek.length ? (
-        today.thisWeek.map(row)
+  const nextUp =
+    rhythm && phone ? (
+      entries.some((e) => new Date(e.endsAt).getTime() > now.getTime()) ? (
+        <NextUp entries={entries} now={now} timeZone={timeZone} onOpen={openOccurrence} />
       ) : (
-        <EmptyState
-          compact
-          title="A clear week ahead"
-          body="Nothing is due in the next seven days."
-          action={<CaptureLink onPress={() => open()} label="Add something" />}
-        />
-      )}
-    </View>
-  ) : null;
+        <View style={styles.dayDone}>
+          <Text variant="title">
+            {entries.length
+              ? 'That’s everything on today’s calendar.'
+              : 'Nothing on the calendar today.'}
+          </Text>
+          <TomorrowLine occurrences={week?.occurrences ?? []} today={today} />
+        </View>
+      )
+    ) : null;
 
-  const moving =
-    today && today.inProgress.length > 0 ? (
+  const headsUpBlock =
+    rhythm && headsUps.length > 0 ? (
       <View style={styles.block}>
-        <SectionHeader title="On the move" sub="Started, booked or waiting" />
-        {today.inProgress.map(row)}
+        <SectionHeader title="Heads-ups" sub="Worth sorting before they bite" />
+        <View style={styles.blockBody}>
+          <HeadsUps
+            items={headsUps}
+            today={today}
+            timeZone={timeZone}
+            people={people}
+            occurrence={(k) => occurrences.get(k)}
+            workItem={(id) => items?.find((i) => i.id === id)}
+            onCover={(o, id) => occurrenceActions.cover(o, id, { today })}
+            onOpen={openOccurrence}
+            onComplete={actions.complete}
+            onAssign={actions.assign}
+          />
+        </View>
       </View>
     ) : null;
 
-  const handled =
-    today && today.handled.length > 0 ? (
+  const partnerName = people.partner?.name;
+  const sinceBlock =
+    activity && (activity.length > 0 || data.since) ? (
       <View style={styles.block}>
-        <SectionHeader title="Handled" sub="In the last week" />
-        {today.handled.slice(0, phone ? 4 : 8).map((item) => {
-          const by = people.byId(item.completedByMemberId ?? item.ownerMemberId);
-          return (
+        <SectionHeader
+          title="Since you last looked"
+          sub={data.since ? `Since ${sinceLabel(data.since, now, timeZone)}` : 'In the last day'}
+        />
+        {activity.length ? (
+          <SinceLastLooked activity={activity} people={people} now={now} limit={phone ? 4 : 6} />
+        ) : (
+          <Text variant="body" tone="muted" style={styles.quiet}>
+            Nothing new from {partnerName ?? 'the household'} since then.
+          </Text>
+        )}
+      </View>
+    ) : null;
+
+  const columns: { key: string | null; person: Person | null; title: string; sub: string }[] = [
+    ...people.adults.map((p) => ({
+      key: p.id as string | null,
+      person: p,
+      title: p.isMe ? 'On you' : `${p.name}’s handling`,
+      sub: p.isMe ? 'Late, today and this week' : `What ${p.name} has this week`,
+    })),
+    { key: null, person: null, title: 'Up for grabs', sub: 'Either of you' },
+  ];
+  const groupsFor = (key: string | null): Record<When, WorkItem[]> => {
+    const g = lists.get(key);
+    const empty = Object.fromEntries(WHEN_ORDER.map((w) => [w, [] as WorkItem[]])) as Record<
+      When,
+      WorkItem[]
+    >;
+    if (!g) return empty;
+    // Keep the column short: the first few by urgency; the rest live in Tasks.
+    let left = PER_COLUMN;
+    for (const w of WHEN_ORDER) {
+      empty[w] = g[w].slice(0, Math.max(0, left));
+      left -= empty[w].length;
+    }
+    return empty;
+  };
+  const hidden = (key: string | null) => {
+    const g = lists.get(key);
+    const total = g ? WHEN_ORDER.reduce((n, w) => n + g[w].length, 0) : 0;
+    return Math.max(0, total - PER_COLUMN);
+  };
+  const activeKey = column === undefined ? (me?.id ?? null) : column;
+  const partnerColors: [string, string] | undefined =
+    people.me && people.partner ? [people.me.color, people.partner.color] : undefined;
+
+  const whoBlock = items ? (
+    <View style={styles.block}>
+      <SectionHeader title="Who’s on what" sub="What each of you has, late through this week" />
+      {phone ? (
+        <View style={styles.tabs} accessibilityRole="tablist">
+          {columns.map((c) => {
+            const on = activeKey === c.key;
+            return (
+              <Pressable
+                key={c.key ?? 'shared'}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: on }}
+                onPress={() => setColumn(c.key)}
+                style={[styles.tab, on && styles.tabOn]}
+              >
+                {c.person ? (
+                  <Avatar person={c.person} size={20} />
+                ) : (
+                  <Either size={20} colors={partnerColors} />
+                )}
+                <Text variant="label" tone={on ? 'ink' : 'muted'}>
+                  {c.person ? (c.person.isMe ? 'You' : c.person.name) : 'Shared'}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+      <View style={[styles.cols, !phone && styles.colsWide]}>
+        {columns
+          .filter((c) => !phone || c.key === activeKey)
+          .map((c) => (
+            <View key={c.key ?? 'shared'} style={!phone ? styles.col : undefined}>
+              <PersonColumn
+                person={c.person}
+                title={c.title}
+                sub={c.sub}
+                groups={groupsFor(c.key)}
+                today={today}
+                onComplete={actions.complete}
+                onAssign={actions.assign}
+                onReschedule={actions.reschedule}
+                onAdd={() => open(c.key)}
+                sharedColors={partnerColors}
+                showHeader={!phone}
+              />
+              {hidden(c.key) > 0 ? (
+                <Pressable
+                  accessibilityRole="link"
+                  onPress={() =>
+                    router.push({ pathname: '/tasks', params: c.key ? { section: c.key } : {} })
+                  }
+                  style={styles.more}
+                >
+                  <Text variant="label">{hidden(c.key)} more in Tasks</Text>
+                  <ArrowRight size={15} color={color.ink} strokeWidth={2.2} />
+                </Pressable>
+              ) : null}
+            </View>
+          ))}
+      </View>
+    </View>
+  ) : null;
+
+  const weekBlock =
+    rhythm && week ? (
+      <View style={styles.block}>
+        <SectionHeader
+          title="The rest of the week"
+          sub={`${shortDate(today)}–${shortDate(addDays(today, 6))}`}
+          action={
             <Pressable
-              key={item.id}
               accessibilityRole="link"
-              onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
-              style={(s: PressState) => [styles.handled, s.hovered && styles.handledHover]}
+              onPress={() => router.push('/week')}
+              style={styles.link}
             >
-              <Avatar person={by} size={22} />
-              <Text variant="body" style={styles.handledText} numberOfLines={2}>
-                <Text variant="bodyStrong">{by ? (by.isMe ? 'You' : by.name) : 'Someone'}</Text>
-                {' handled '}
-                {item.title}
-              </Text>
+              <Text variant="label">Open the week</Text>
+              <ArrowRight size={15} color={color.ink} strokeWidth={2.2} />
             </Pressable>
-          );
-        })}
+          }
+        />
+        <View style={styles.blockBody}>
+          <WeekStrip
+            start={today}
+            today={today}
+            timeZone={timeZone}
+            occurrences={week.occurrences}
+            headsUps={weekHeadsUps}
+            people={people}
+          />
+        </View>
       </View>
     ) : null;
 
   return (
     <Page refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
-      <View style={styles.head}>
-        <Text variant="kicker" tone="muted">
-          {date ? longDate(date) : ' '}
-        </Text>
-        <Text variant="greeting">{greeting}</Text>
-        {today ? (
-          <Text variant="lead" tone="muted" style={styles.summary}>
-            {summary(today, people.label)}
-          </Text>
-        ) : null}
-      </View>
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Add something for the household"
-        onPress={() => open()}
-        style={(s: PressState) => [styles.capture, s.hovered && { borderColor: color.ink }]}
-      >
-        <Plus size={18} color={color.ink} strokeWidth={2.2} />
-        <Text variant="body" tone="muted" style={styles.captureText}>
-          Add something for the household…
-        </Text>
-        {!phone ? (
-          <View style={styles.kbd}>
-            <Text variant="small" tone="muted">
-              N
-            </Text>
-          </View>
-        ) : null}
-      </Pressable>
-
-      {today && today.inboxCount > 0 ? (
-        <Pressable
-          accessibilityRole="link"
-          onPress={() => router.push('/inbox')}
-          style={(s: PressState) => [styles.inbox, s.hovered && { borderColor: color.ink }]}
-        >
-          <Inbox size={18} color={color.ink} strokeWidth={2.2} />
-          <Text variant="label" style={styles.inboxText}>
-            {today.inboxCount === 1 ? '1 thing to sort' : `${today.inboxCount} things to sort`} in
-            the inbox
-          </Text>
-          <ArrowRight size={16} color={color.ink} strokeWidth={2.2} />
-        </Pressable>
-      ) : null}
+      {header}
 
       {error ? (
-        <View style={styles.block}>
+        <View style={styles.blockTight}>
           <ErrorNotice
-            message={today ? 'Couldn’t refresh. Pull down or try again.' : 'Couldn’t load today.'}
+            message={
+              rhythm
+                ? 'Couldn’t refresh. Pull down or try again.'
+                : 'Couldn’t load today. Check your connection.'
+            }
             onRetry={load}
           />
         </View>
       ) : null}
 
-      {!today && !error ? (
+      {!rhythm && !error ? (
         <Skeleton label="Loading today">
-          <View style={[styles.block, styles.skeletonHead]}>
-            <SkeletonBlock width={160} height={18} />
+          <View style={styles.blockTight}>
+            <SkeletonBlock height={phone ? 220 : 280} />
           </View>
-          <SkeletonRows count={4} />
+          <View style={styles.block}>
+            <SkeletonRows count={4} />
+          </View>
         </Skeleton>
       ) : null}
 
-      {today ? (
+      {rhythm ? (
         <FadeIn>
+          {phone ? (
+            <View style={styles.blockTight}>
+              {nextUp}
+              <Pressable
+                accessibilityRole="button"
+                aria-expanded={wholeDay}
+                onPress={() => setWholeDay((v) => !v)}
+                style={styles.toggle}
+              >
+                <Text variant="label">{wholeDay ? 'Hide the whole day' : 'See the whole day'}</Text>
+                {wholeDay ? (
+                  <ChevronUp size={16} color={color.ink} strokeWidth={2.4} />
+                ) : (
+                  <ChevronDown size={16} color={color.ink} strokeWidth={2.4} />
+                )}
+              </Pressable>
+              {wholeDay ? <View style={styles.compactDay}>{timeline}</View> : null}
+            </View>
+          ) : (
+            <View style={styles.timelineCard}>{timeline}</View>
+          )}
+
+          <View style={styles.blockTight}>
+            {capture}
+            {inbox}
+          </View>
+
           {desktop ? (
-            <View style={styles.columns}>
-              <View style={styles.main}>
-                {needs}
-                {week}
-              </View>
-              <View style={styles.side}>
-                {moving}
-                {handled}
-                {!moving && !handled ? (
-                  <View style={styles.block}>
-                    <SectionHeader title="Handled" sub="In the last week" />
-                    <Text variant="body" tone="muted" style={styles.quiet}>
-                      When either of you finishes something, it shows here.
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
+            <View style={styles.twoCols}>
+              <View style={styles.colMain}>{headsUpBlock ?? sinceBlock}</View>
+              <View style={styles.colSide}>{headsUpBlock ? sinceBlock : null}</View>
             </View>
           ) : (
             <>
-              {needs}
-              {week}
-              {moving}
-              {handled}
+              {headsUpBlock}
+              {sinceBlock}
             </>
           )}
+          {whoBlock}
+          {weekBlock}
         </FadeIn>
       ) : null}
+
+      <EventSheet
+        target={sheet}
+        today={today}
+        onClose={() => setSheet(null)}
+        onChanged={() => void load()}
+      />
     </Page>
   );
 }
 
-function CaptureLink({ onPress, label }: { onPress: () => void; label: string }) {
+function sinceLabel(iso: string, now: Date, timeZone: string): string {
+  const then = localParts(iso, timeZone);
+  const today = localParts(now, timeZone);
+  const time = timeOf(iso, timeZone);
+  if (then.date === today.date) return `${time} today`;
+  if (addDays(then.date, 1) === today.date) return `yesterday, ${time}`;
+  return shortDate(then.date);
+}
+
+function TomorrowLine({ occurrences, today }: { occurrences: Occurrence[]; today: string }) {
+  const { timeZone } = useHousehold();
+  const tomorrow = addDays(today, 1);
+  const first = occurrences
+    .filter((o) => o.date === tomorrow && !o.skipped && !o.allDay)
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
+  if (!first) return null;
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={styles.link}>
-      <Plus size={15} color={color.ink} strokeWidth={2.4} />
-      <Text variant="label">{label}</Text>
-    </Pressable>
+    <Text variant="meta" tone="muted">
+      Tomorrow starts with {first.title} at {timeOf(first.startsAt, timeZone)}.
+    </Text>
   );
 }
 
-const countLine = (n: number) => (n === 0 ? 'All clear' : n === 1 ? '1 thing' : `${n} things`);
-
-/** One plain sentence about the day, from real data only. */
-function summary(t: TodayResponse, label: (id: string | null) => string): string {
-  const parts: string[] = [];
-  if (t.needsYou.length === 0) parts.push('Nothing needs you right now');
-  else if (t.needsYou.length === 1) parts.push(`One thing needs you: ${t.needsYou[0]?.title}`);
-  else parts.push(`${t.needsYou.length} things need you`);
-  if (t.thisWeek.length > 0)
-    parts.push(
-      `${t.thisWeek.length === 1 ? 'one thing is' : `${t.thisWeek.length} things are`} due this week across the household`,
-    );
-  const latest = t.handled[0];
-  const line = `${parts.join(', and ')}.`;
-  if (!latest) return line;
-  const who = label(latest.completedByMemberId ?? latest.ownerMemberId);
-  return `${line} Most recently, ${who === 'You' ? 'you' : who} handled “${latest.title}”.`;
-}
-
 const styles = StyleSheet.create({
-  head: { gap: 6 },
-  summary: { maxWidth: 720, marginTop: 4 },
+  header: { gap: 16 },
+  headerWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 36 },
+  clock: {
+    fontFamily: font.displayHeavy,
+    fontSize: 112,
+    lineHeight: 112,
+    letterSpacing: -3.9,
+    color: color.ink,
+    marginTop: -6,
+  },
+  clockDot: { fontFamily: font.displayHeavy },
+  headText: { flex: 1, gap: 6, minWidth: 0, paddingTop: 4 },
+  headline: {
+    fontFamily: font.display,
+    fontSize: 25,
+    lineHeight: 31,
+    letterSpacing: -0.4,
+    color: color.ink,
+    marginTop: 6,
+    maxWidth: 820,
+  },
+  headlinePhone: { fontSize: 20, lineHeight: 25, marginTop: 4 },
+  line: { maxWidth: 760, marginTop: 2 },
+  timelineCard: {
+    marginTop: 34,
+    paddingTop: 22,
+    paddingBottom: 14,
+    paddingHorizontal: 20,
+    borderRadius: radius.xl,
+    backgroundColor: color.surface,
+    boxShadow: shadow.card,
+  },
+  compactDay: {
+    marginTop: 6,
+    paddingTop: 16,
+    paddingBottom: 10,
+    paddingHorizontal: 10,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+  },
+  toggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 44,
+    alignSelf: 'flex-start',
+  },
+  dayDone: {
+    gap: 4,
+    padding: 16,
+    borderRadius: radius.lg,
+    backgroundColor: color.surface,
+  },
   capture: {
-    marginTop: 22,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -329,22 +620,26 @@ const styles = StyleSheet.create({
     cursor: 'pointer',
   },
   inboxText: { flex: 1 },
-  columns: { flexDirection: 'row', gap: 56, alignItems: 'flex-start' },
-  main: { flex: 1.35, minWidth: 0 },
-  side: { flex: 1, minWidth: 0 },
-  block: { marginTop: 36 },
-  skeletonHead: { marginBottom: 8 },
+  block: { marginTop: 40 },
+  blockTight: { marginTop: 22 },
+  blockBody: { marginTop: 16 },
   quiet: { paddingVertical: 14 },
-  handled: {
+  twoCols: { flexDirection: 'row', gap: 48, alignItems: 'flex-start' },
+  colMain: { flex: 1.2, minWidth: 0 },
+  colSide: { flex: 1, minWidth: 0 },
+  cols: { marginTop: 8 },
+  colsWide: { flexDirection: 'row', gap: 28, marginTop: 20 },
+  col: { flex: 1, minWidth: 0 },
+  tabs: { flexDirection: 'row', gap: 6, marginTop: 14, marginBottom: 4, flexWrap: 'wrap' },
+  tab: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: color.hairline,
-    cursor: 'pointer',
+    gap: 7,
+    height: 38,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
   },
-  handledHover: { opacity: 0.8 },
-  handledText: { flex: 1 },
-  link: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40 },
+  tabOn: { backgroundColor: color.surface, boxShadow: shadow.raised },
+  more: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, marginTop: 4 },
+  link: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36 },
 });
