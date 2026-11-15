@@ -18,6 +18,9 @@ const ALLOWED = new Set([
   'MPL-2.0',
   // Data files only (caniuse-lite); attribution is satisfied by the package itself.
   'CC-BY-4.0',
+  // Font files (Google Fonts via @expo-google-fonts): the SIL Open Font License permits bundling
+  // in software; the fonts are not sold on their own.
+  'OFL-1.1',
 ]);
 
 function allowed(expression) {
