@@ -14,6 +14,10 @@ function requireDb() {
   return db;
 }
 
+afterAll(async () => {
+  await db?.destroy();
+});
+
 const asMember = (h: SeededHousehold, member: SeededHousehold['owner']) => ({
   userId: member.userId ?? randomUUID(),
   householdId: h.id,
@@ -137,7 +141,6 @@ describe.skipIf(!db)('events: row-level security', () => {
 
   afterAll(async () => {
     await purgeHouseholds(requireDb(), [a.id, b.id]);
-    await db?.destroy();
   });
 
   const visible = (ctx: ReturnType<typeof asMember>) =>
@@ -293,14 +296,42 @@ describe.skipIf(!db)('events: row-level security', () => {
     });
   });
 
-  it('gives the scheduler no access to events', async () => {
-    for (const table of ['app.event', 'app.event_member', 'app.event_exception'] as const) {
-      await expect(
-        withSchedulerContext(requireDb(), a.id, (trx) =>
-          trx.selectFrom(table).selectAll().execute(),
-        ),
-      ).rejects.toThrow(/permission denied/);
-    }
+  it("never shows the scheduler members' own events or their exceptions", async () => {
+    const seen = await withSchedulerContext(requireDb(), a.id, async (trx) => ({
+      events: await trx.selectFrom('app.event').select('id').execute(),
+      members: await trx.selectFrom('app.event_member').select('event_id').execute(),
+      updated: (
+        await trx
+          .updateTable('app.event')
+          .set({ title: 'x' })
+          .where('id', '=', aEvent)
+          .executeTakeFirst()
+      ).numUpdatedRows,
+      deleted: (await trx.deleteFrom('app.event').where('id', '=', aEvent).executeTakeFirst())
+        .numDeletedRows,
+    }));
+    expect(seen).toEqual({ events: [], members: [], updated: 0n, deleted: 0n });
+    await expect(
+      withSchedulerContext(requireDb(), a.id, (trx) =>
+        trx.selectFrom('app.event_exception').selectAll().execute(),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    // It can't create an event that isn't from a calendar either.
+    await expect(
+      withSchedulerContext(requireDb(), a.id, (trx) =>
+        trx
+          .insertInto('app.event')
+          .values({
+            household_id: a.id,
+            title: 'x',
+            starts_at: '2026-11-19T16:00:00Z',
+            ends_at: '2026-11-19T17:00:00Z',
+            timezone: 'UTC',
+            created_by_member_id: a.owner.id,
+          })
+          .execute(),
+      ),
+    ).rejects.toThrow(/row-level security/);
   });
 
   it('accepts audit rows about events', async () => {
@@ -316,5 +347,145 @@ describe.skipIf(!db)('events: row-level security', () => {
         })
         .execute(),
     );
+  });
+});
+
+describe.skipIf(!db)('calendar sources: row-level security', () => {
+  let a: SeededHousehold;
+  let b: SeededHousehold;
+  const sources: Record<string, string> = {};
+
+  const addSource = async (h: SeededHousehold) => {
+    const row = await requireDb()
+      .insertInto('app.calendar_source')
+      .values({
+        household_id: h.id,
+        member_id: h.adult.id,
+        label: `${h.name} work`,
+        url_ciphertext: Buffer.alloc(40, 1),
+        url_nonce: Buffer.alloc(12, 2),
+        url_hint: 'calendar.example.test/…',
+        created_by_member_id: h.adult.id,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await requireDb()
+      .insertInto('app.event')
+      .values({
+        household_id: h.id,
+        title: 'Imported',
+        starts_at: '2026-11-19T16:00:00Z',
+        ends_at: '2026-11-19T17:00:00Z',
+        timezone: 'UTC',
+        created_by_member_id: h.adult.id,
+        source_calendar_id: row.id,
+        external_uid: 'uid-1',
+        external_recurrence_id: 'single',
+      })
+      .execute();
+    return row.id;
+  };
+
+  beforeAll(async () => {
+    a = await seedHousehold(requireDb(), 'Calendars Alpha');
+    b = await seedHousehold(requireDb(), 'Calendars Beta');
+    sources.a = await addSource(a);
+    sources.b = await addSource(b);
+  });
+  afterAll(async () => {
+    await purgeHouseholds(requireDb(), [a.id, b.id]);
+  });
+
+  it("shows members only their household's calendars", async () => {
+    const ids = await withRequestContext(requireDb(), asMember(a, a.owner), async (trx) =>
+      (await trx.selectFrom('app.calendar_source').select('id').execute()).map((r) => r.id),
+    );
+    expect(ids).toEqual([sources.a]);
+    const updated = await withRequestContext(requireDb(), asMember(a, a.owner), (trx) =>
+      trx
+        .updateTable('app.calendar_source')
+        .set({ label: 'x' })
+        .where('id', '=', sources.b ?? '')
+        .executeTakeFirst(),
+    );
+    expect(updated.numUpdatedRows).toBe(0n);
+  });
+
+  it('gives the scheduler the sync columns and imported events of one household only', async () => {
+    const seen = await withSchedulerContext(requireDb(), a.id, async (trx) => ({
+      sources: (await trx.selectFrom('app.calendar_source').select('id').execute()).map(
+        (r) => r.id,
+      ),
+      events: (await trx.selectFrom('app.event').select('title').execute()).map((r) => r.title),
+    }));
+    expect(seen).toEqual({ sources: [sources.a], events: ['Imported'] });
+    // Labels and hints are not the scheduler's to read; nor can it rename or re-point a source.
+    await expect(
+      withSchedulerContext(requireDb(), a.id, (trx) =>
+        trx.selectFrom('app.calendar_source').select('label').execute(),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      withSchedulerContext(requireDb(), a.id, (trx) =>
+        trx.updateTable('app.calendar_source').set({ member_id: a.owner.id }).execute(),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    // Moving an imported event into another household fails the policy.
+    await expect(
+      withSchedulerContext(requireDb(), a.id, (trx) =>
+        trx
+          .insertInto('app.event')
+          .values({
+            household_id: b.id,
+            title: 'x',
+            starts_at: '2026-11-19T16:00:00Z',
+            ends_at: '2026-11-19T17:00:00Z',
+            timezone: 'UTC',
+            created_by_member_id: b.adult.id,
+            source_calendar_id: sources.b ?? '',
+            external_uid: 'intrusion',
+            external_recurrence_id: 'single',
+          })
+          .execute(),
+      ),
+    ).rejects.toThrow(/row-level security/);
+  });
+
+  it('belongs to an adult, and keeps imported events simple', async () => {
+    await expect(
+      requireDb()
+        .updateTable('app.calendar_source')
+        .set({ member_id: a.child.id })
+        .where('id', '=', sources.a ?? '')
+        .execute(),
+    ).rejects.toThrow(/a calendar belongs to an adult/);
+    await expect(
+      requireDb()
+        .updateTable('app.event')
+        .set({ external_uid: null })
+        .where('source_calendar_id', '=', sources.a ?? '')
+        .execute(),
+    ).rejects.toThrow(/event_imported_keys/);
+    await expect(
+      requireDb()
+        .updateTable('app.event')
+        .set({ recurrence: { freq: 'daily', interval: 1 } })
+        .where('source_calendar_id', '=', sources.a ?? '')
+        .execute(),
+    ).rejects.toThrow(/event_imported_shape/);
+  });
+
+  it('removes imported events with their calendar', async () => {
+    await requireDb()
+      .deleteFrom('app.calendar_source')
+      .where('id', '=', sources.b ?? '')
+      .execute();
+    const left = await requireDb()
+      .selectFrom('app.event')
+      .select('id')
+      .where('household_id', '=', b.id)
+      .where('source_calendar_id', 'is not', null)
+      .execute();
+    expect(left).toEqual([]);
   });
 });

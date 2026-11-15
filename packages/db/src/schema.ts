@@ -25,7 +25,7 @@ export type Visibility = 'household' | 'private';
 export type WorkItemType = 'task' | 'project' | 'routine' | 'issue';
 export type SourceKind = 'text' | 'photo' | 'document' | 'email';
 export type AuditEntityType =
-  'household' | 'member' | 'invite' | 'work_item' | 'source' | 'comment' | 'event';
+  'household' | 'member' | 'invite' | 'work_item' | 'source' | 'comment' | 'event' | 'calendar';
 
 export interface SchemaInfoTable {
   key: string;
@@ -179,6 +179,31 @@ export interface EventTable {
   care_member_id: string | null;
   care_action: CareAction | null;
   care_place: string | null;
+  /** Imported occurrences: the calendar, the event's UID and its RECURRENCE-ID (or 'single'). */
+  source_calendar_id: ColumnType<string | null, string | null | undefined, string | null>;
+  external_uid: ColumnType<string | null, string | null | undefined, string | null>;
+  external_recurrence_id: ColumnType<string | null, string | null | undefined, string | null>;
+  created_by_member_id: string;
+  version: Generated<number>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type CalendarStatus = 'pending' | 'ok' | 'error';
+
+export interface CalendarSourceTable {
+  id: Generated<string>;
+  household_id: string;
+  member_id: string;
+  label: string;
+  /** AES-256-GCM ciphertext (with tag) of the ICS address; the key never reaches the database. */
+  url_ciphertext: Buffer;
+  url_nonce: Buffer;
+  url_hint: string;
+  color: string | null;
+  status: Generated<CalendarStatus>;
+  last_synced_at: Timestamp | null;
+  last_error_code: string | null;
   created_by_member_id: string;
   version: Generated<number>;
   created_at: Timestamp;
@@ -221,5 +246,6 @@ export interface Database {
   'app.event': EventTable;
   'app.event_member': EventMemberTable;
   'app.event_exception': EventExceptionTable;
+  'app.calendar_source': CalendarSourceTable;
   'app.service_heartbeat': ServiceHeartbeatTable;
 }

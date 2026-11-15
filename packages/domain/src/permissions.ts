@@ -27,6 +27,8 @@ export const ACTIONS = [
   'household.export',
   'event.read',
   'event.manage',
+  /** Add, change, remove and sync read-only calendar subscriptions. */
+  'calendar.manage',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -45,6 +47,7 @@ const GRANTS: Readonly<Record<MemberRole, readonly Action[]>> = {
     'household.export',
     'event.read',
     'event.manage',
+    'calendar.manage',
   ],
   // A sitter sees the household's schedule so they know who is where.
   caregiver: ['household.read', 'work_item.read', 'event.read'],

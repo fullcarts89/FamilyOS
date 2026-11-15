@@ -18,6 +18,8 @@ describe('role permissions', () => {
     expect(can('adult', 'event.manage')).toBe(true);
     expect(can('caregiver', 'event.read')).toBe(true);
     expect(can('caregiver', 'event.manage')).toBe(false);
+    expect(can('adult', 'calendar.manage')).toBe(true);
+    expect(can('caregiver', 'calendar.manage')).toBe(false);
   });
 
   it('limits caregivers to reading', () => {
