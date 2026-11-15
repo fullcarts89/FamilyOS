@@ -300,6 +300,7 @@ async function loadForUpdate(
       'type',
       'status',
       'version',
+      'owner_member_id',
       'due_on',
       'due_at',
       'recurrence_rule_id',
@@ -402,7 +403,11 @@ async function applyUpdate(
         toStatus: changes.status,
       }),
       ...(body.confirmed && changes.status === 'verified_complete' && { evidence: 'E3' }),
-      ...(changes.owner_member_id !== undefined && { ownerMemberId: changes.owner_member_id }),
+      // Who had it before, so "took it off your plate" can be told (notifications).
+      ...(changes.owner_member_id !== undefined && {
+        ownerMemberId: changes.owner_member_id,
+        fromOwnerMemberId: current.owner_member_id,
+      }),
       ...(changes.subject_member_id !== undefined && {
         subjectMemberId: changes.subject_member_id,
       }),
