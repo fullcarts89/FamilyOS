@@ -6,7 +6,7 @@ import { Button } from '../../design/Button';
 import { Chip } from '../../design/Chip';
 import { Field } from '../../design/Field';
 import { ErrorNotice } from '../../design/Notice';
-import { Sheet } from '../../design/Sheet';
+import { Sheet, SheetActions } from '../../design/Sheet';
 import { Text } from '../../design/Text';
 import { useToast } from '../../design/Toast';
 import { color, radius } from '../../design/tokens';
@@ -198,16 +198,18 @@ function CalendarForm({
           ))}
         </View>
       </View>
-      {error ? <ErrorNotice message={error} /> : null}
-      <View style={styles.actions}>
-        <Button
-          title={busy ? 'Checking the calendar…' : 'Connect'}
-          busy={busy}
-          disabled={!address || !label.trim() || !memberId}
-          onPress={save}
-        />
-        <Button title="Cancel" variant="quiet" onPress={onClose} />
-      </View>
+      <SheetActions>
+        {error ? <ErrorNotice message={error} /> : null}
+        <View style={styles.actions}>
+          <Button
+            title={busy ? 'Checking the calendar…' : 'Connect'}
+            busy={busy}
+            disabled={!address || !label.trim() || !memberId}
+            onPress={save}
+          />
+          <Button title="Cancel" variant="quiet" onPress={onClose} />
+        </View>
+      </SheetActions>
     </View>
   );
 }

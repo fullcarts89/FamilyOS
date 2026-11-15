@@ -1,5 +1,6 @@
 import { router, usePathname } from 'expo-router';
-import { Plus } from 'lucide-react-native';
+import { ChevronRight, Plus } from 'lucide-react-native';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHousehold } from '../lib/household';
@@ -8,7 +9,8 @@ import { AvatarStack } from './Avatar';
 import type { PressState } from './Button';
 import { Mark } from './Mark';
 import { Text } from './Text';
-import { NAV, isActive } from './TopBar';
+import { Sheet } from './Sheet';
+import { NAV, isActive, moreFor, type NavItem } from './TopBar';
 import { color, radius, shadow } from './tokens';
 
 /** Phone header: the household, and its people (which open Household). */
@@ -41,10 +43,17 @@ export function PhoneHeader() {
   );
 }
 
-/** Phone: Today, Week, Tasks and Reset at thumb's reach. */
+/** Phone: Today, Week, Tasks and Reset at thumb's reach; everything else under More. */
 export function BottomBar() {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
+  const { household } = useHousehold();
+  const [more, setMore] = useState(false);
+  const extra: NavItem[] = [
+    { label: 'Household', href: '/household', match: ['/household'], hint: 'People, pets, calendars' },
+    ...moreFor(household?.role),
+  ];
+  const moreOn = extra.some((m) => isActive(m, pathname));
   return (
     <View
       accessibilityRole="tablist"
@@ -67,6 +76,45 @@ export function BottomBar() {
           </Pressable>
         );
       })}
+      <Pressable
+        accessibilityRole="tab"
+        accessibilityState={{ selected: moreOn }}
+        accessibilityLabel="More: household, meals, decisions, contacts and budgets"
+        onPress={() => setMore(true)}
+        style={[styles.tab, moreOn && styles.tabOn]}
+      >
+        <Text variant="label" color={moreOn ? color.onInk : color.muted} style={styles.tabText}>
+          More
+        </Text>
+      </Pressable>
+      <Sheet visible={more} onClose={() => setMore(false)} label="More" title="More">
+        <View style={styles.menu}>
+          {extra.map((item) => {
+            const on = isActive(item, pathname);
+            return (
+              <Pressable
+                key={item.label}
+                accessibilityRole="link"
+                onPress={() => {
+                  setMore(false);
+                  router.navigate(item.href);
+                }}
+                style={(s: PressState) => [styles.menuItem, (on || s.pressed) && styles.menuOn]}
+              >
+                <View style={styles.menuText}>
+                  <Text variant="title">{item.label}</Text>
+                  {item.hint ? (
+                    <Text variant="small" tone="muted">
+                      {item.hint}
+                    </Text>
+                  ) : null}
+                </View>
+                <ChevronRight size={18} color={color.muted} strokeWidth={2.2} />
+              </Pressable>
+            );
+          })}
+        </View>
+      </Sheet>
     </View>
   );
 }
@@ -121,7 +169,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabOn: { backgroundColor: color.ink },
-  tabText: { fontSize: 14.5 },
+  tabText: { fontSize: 14 },
+  menu: { gap: 2, paddingBottom: 8 },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 58,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+  },
+  menuOn: { backgroundColor: color.lane },
+  menuText: { flex: 1, gap: 1 },
   fab: {
     position: 'absolute',
     right: 16,

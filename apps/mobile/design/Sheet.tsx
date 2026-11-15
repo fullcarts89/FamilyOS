@@ -1,5 +1,14 @@
 import { X } from 'lucide-react-native';
-import { useEffect, useRef, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import {
   Animated,
   KeyboardAvoidingView,
@@ -15,6 +24,51 @@ import { IconButton } from './Button';
 import { nativeDriver, useLayout, useReducedMotion } from './layout';
 import { Text } from './Text';
 import { color, radius, shadow } from './tokens';
+
+/**
+ * The sheet's footer slot. A form inside the sheet renders its main action with `SheetActions`;
+ * the action shows in the sheet's footer, outside the scrolling body, so it stays in reach on a
+ * phone however long the form is. Only the footer re-renders when the actions change.
+ */
+interface FooterSlot {
+  set: (node: ReactNode) => void;
+  get: () => ReactNode;
+  subscribe: (listener: () => void) => () => void;
+}
+
+function createFooterSlot(): FooterSlot {
+  let node: ReactNode = null;
+  const listeners = new Set<() => void>();
+  return {
+    set: (next) => {
+      node = next;
+      listeners.forEach((l) => l());
+    },
+    get: () => node,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+  };
+}
+
+const FooterContext = createContext<FooterSlot | null>(null);
+
+/** The sheet's primary actions, pinned in its footer (sticky on phones). Outside a sheet, inline. */
+export function SheetActions({ children }: { children: ReactNode }) {
+  const slot = useContext(FooterContext);
+  useLayoutEffect(() => {
+    slot?.set(children);
+  });
+  useEffect(() => () => slot?.set(null), [slot]);
+  return slot ? null : <>{children}</>;
+}
+
+function FooterHost({ slot, fallback }: { slot: FooterSlot; fallback: ReactNode }) {
+  const node = useSyncExternalStore(slot.subscribe, slot.get, slot.get);
+  const content = node ?? fallback;
+  return content ? <View style={styles.footer}>{content}</View> : null;
+}
 
 /**
  * A modal sheet: slides up from the bottom on phones, a centered card on larger screens
@@ -46,6 +100,7 @@ export function Sheet({
   const reduced = useReducedMotion();
   const insets = useSafeAreaInsets();
   const progress = useRef(new Animated.Value(0)).current;
+  const [slot] = useState(createFooterSlot);
 
   useEffect(() => {
     if (!visible) return;
@@ -119,14 +174,16 @@ export function Sheet({
             )}
             <IconButton icon={X} label="Close" onPress={onClose} size={36} />
           </View>
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={styles.body}
-            keyboardShouldPersistTaps="handled"
-          >
-            {children}
-          </ScrollView>
-          {footer ? <View style={styles.footer}>{footer}</View> : null}
+          <FooterContext.Provider value={slot}>
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.body}
+              keyboardShouldPersistTaps="handled"
+            >
+              {children}
+            </ScrollView>
+          </FooterContext.Provider>
+          <FooterHost slot={slot} fallback={footer} />
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
@@ -159,5 +216,12 @@ const styles = StyleSheet.create({
   },
   scroll: { flexGrow: 0 },
   body: { paddingHorizontal: 22, paddingBottom: 8, gap: 14 },
-  footer: { paddingHorizontal: 22, paddingTop: 10, gap: 10 },
+  footer: {
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: color.hairline,
+    backgroundColor: color.surface,
+  },
 });

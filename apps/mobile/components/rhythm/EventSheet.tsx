@@ -24,7 +24,7 @@ import { Chip } from '../../design/Chip';
 import { Field } from '../../design/Field';
 import { Skeleton, SkeletonBlock } from '../../design/motion';
 import { ErrorNotice } from '../../design/Notice';
-import { Sheet } from '../../design/Sheet';
+import { Sheet, SheetActions } from '../../design/Sheet';
 import { Text } from '../../design/Text';
 import { Toggle } from '../../design/Toggle';
 import { useToast } from '../../design/Toast';
@@ -790,34 +790,35 @@ function EventForm({
         </Pressable>
       )}
 
-      {error ? <ErrorNotice message={error} /> : null}
-
-      <View style={styles.actions}>
-        <Button
-          title={series ? 'Save changes' : 'Add to the week'}
-          onPress={save}
-          busy={busy}
-          disabled={!valid || !careOk}
-        />
-        <Button title="Cancel" variant="quiet" onPress={onClose} />
-        <View style={styles.spacer} />
-        {series ? (
-          confirmDelete ? (
-            <Button
-              title={series.recurrence ? 'Remove every one' : 'Yes, remove it'}
-              variant="secondary"
-              size="sm"
-              onPress={remove}
-            />
-          ) : (
-            <IconButton
-              icon={Trash2}
-              label="Remove this event"
-              onPress={() => setConfirmDelete(true)}
-            />
-          )
-        ) : null}
-      </View>
+      <SheetActions>
+        {error ? <ErrorNotice message={error} /> : null}
+        <View style={styles.actions}>
+          <Button
+            title={series ? 'Save changes' : 'Add to the week'}
+            onPress={save}
+            busy={busy}
+            disabled={!valid || !careOk}
+          />
+          <Button title="Cancel" variant="quiet" onPress={onClose} />
+          <View style={styles.spacer} />
+          {series ? (
+            confirmDelete ? (
+              <Button
+                title={series.recurrence ? 'Remove every one' : 'Yes, remove it'}
+                variant="secondary"
+                size="sm"
+                onPress={remove}
+              />
+            ) : (
+              <IconButton
+                icon={Trash2}
+                label="Remove this event"
+                onPress={() => setConfirmDelete(true)}
+              />
+            )
+          ) : null}
+        </View>
+      </SheetActions>
     </View>
   );
 }
