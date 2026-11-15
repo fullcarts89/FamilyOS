@@ -86,12 +86,14 @@ export default function Setup() {
               key={s}
               style={[
                 styles.dot,
+                phone && styles.dotPhone,
                 i <= step && { backgroundColor: me?.color ?? color.ink },
                 i === step && styles.dotOn,
+                phone && i === step && styles.dotPhoneOn,
               ]}
             />
           ))}
-          <Text variant="small" tone="muted" style={styles.stepName}>
+          <Text variant="small" tone="muted" style={styles.stepName} numberOfLines={1}>
             {STEPS[step]}
           </Text>
           {step > 0 ? (
@@ -558,6 +560,8 @@ const styles = StyleSheet.create({
   progress: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44 },
   dot: { width: 22, height: 6, borderRadius: 3, backgroundColor: color.lane },
   dotOn: { width: 36 },
+  dotPhone: { width: 12 },
+  dotPhoneOn: { width: 22 },
   stepName: { marginLeft: 8, flex: 1 },
   skipAll: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 6 },
   body: { marginTop: 26 },

@@ -192,6 +192,7 @@ export default function Week() {
                 variant="secondary"
                 size="sm"
                 onPress={() => setMonday(mondayOf(today))}
+                style={styles.center}
               />
             ) : null}
             <IconButton
@@ -429,10 +430,13 @@ function Card({
       </Pressable>
     );
   }
+  // Together: the household's ink; a person's row: their color; a child or pet: whoever's with them.
   const c =
-    row.person && !row.person.caredFor
-      ? row.person.color
-      : (adults[0]?.color ?? row.person?.color ?? color.ink);
+    row.key === 'together'
+      ? color.ink
+      : row.person && !row.person.caredFor
+        ? row.person.color
+        : (adults[0]?.color ?? row.person?.color ?? color.ink);
   return (
     <Pressable
       accessibilityRole="button"
@@ -566,6 +570,7 @@ function DayList({
 const styles = StyleSheet.create({
   gap: { marginTop: 28 },
   headActions: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  center: { alignSelf: 'center' },
   nav: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   board: {
     borderTopWidth: 2,
