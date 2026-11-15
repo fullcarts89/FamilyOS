@@ -87,6 +87,7 @@ export function exportRoutes() {
         'completed_at as completedAt',
         'completed_by_member_id as completedByMemberId',
         'subject_member_id as subjectMemberId',
+        'contact_id as contactId',
         'version',
         'created_at as createdAt',
         'updated_at as updatedAt',
@@ -199,6 +200,122 @@ export function exportRoutes() {
       .where('household_id', '=', householdId)
       .orderBy('created_at')
       .execute();
+    const contacts = await trx
+      .selectFrom('app.contact')
+      .select([
+        'id',
+        'name',
+        'category',
+        'role',
+        'organization',
+        'phone',
+        'email',
+        'address',
+        'notes',
+        'for_member_id as forMemberId',
+        'created_by_member_id as createdByMemberId',
+        'version',
+        'created_at as createdAt',
+        'updated_at as updatedAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    const decisions = await trx
+      .selectFrom('app.decision')
+      .select([
+        'id',
+        'question',
+        'context',
+        'due_on as dueOn',
+        'status',
+        'decided_option_id as decidedOptionId',
+        'decided_at as decidedAt',
+        'decided_via as decidedVia',
+        'decided_by_member_id as decidedByMemberId',
+        'created_by_member_id as createdByMemberId',
+        'version',
+        'created_at as createdAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    const decisionOptions = await trx
+      .selectFrom('app.decision_option')
+      .select(['id', 'decision_id as decisionId', 'label', 'detail', 'position'])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    const decisionVotes = await trx
+      .selectFrom('app.decision_vote')
+      .select([
+        'decision_id as decisionId',
+        'member_id as memberId',
+        'option_id as optionId',
+        'voted_at as votedAt',
+      ])
+      .where('household_id', '=', householdId)
+      .execute();
+    const meals = await trx
+      .selectFrom('app.meal')
+      .select([
+        'id',
+        'on_date as onDate',
+        'slot',
+        'title',
+        'cook_member_id as cookMemberId',
+        'notes',
+        'created_by_member_id as createdByMemberId',
+        'version',
+        'created_at as createdAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('on_date')
+      .execute();
+    const groceryItems = await trx
+      .selectFrom('app.grocery_item')
+      .select([
+        'id',
+        'name',
+        'detail',
+        'aisle',
+        'position',
+        'checked_at as checkedAt',
+        'checked_by_member_id as checkedByMemberId',
+        'added_by_member_id as addedByMemberId',
+        'created_at as createdAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    const weeklyPlans = await trx
+      .selectFrom('app.weekly_plan')
+      .select([
+        'id',
+        'week_start as weekStart',
+        'notes',
+        'committed_at as committedAt',
+        'committed_by_member_id as committedByMemberId',
+        'version',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('week_start')
+      .execute();
+    const budgetSnapshots = await trx
+      .selectFrom('app.budget_snapshot')
+      .select([
+        'month',
+        'category',
+        'category_group as group',
+        'budgeted',
+        'actual',
+        'imported_at as importedAt',
+        'imported_by_member_id as importedByMemberId',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('month')
+      .orderBy('category')
+      .execute();
     const auditEvents = await trx
       .selectFrom('app.audit_event')
       .select([
@@ -230,6 +347,14 @@ export function exportRoutes() {
       events,
       eventMembers,
       eventExceptions,
+      contacts,
+      decisions,
+      decisionOptions,
+      decisionVotes,
+      meals,
+      groceryItems,
+      weeklyPlans,
+      budgetSnapshots,
       auditEvents: auditEvents.map((e) => ({ ...e, id: String(e.id) })),
       files: sources.flatMap((s) =>
         s.storageRef ? [{ sourceId: s.id, storageRef: s.storageRef }] : [],

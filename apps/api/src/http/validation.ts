@@ -24,3 +24,22 @@ export async function parseBody<T extends z.ZodType>(
   if (!parsed.success) throw new ApiError(422, 'invalid_body');
   return parsed.data;
 }
+
+/** Like parseBody, but an empty body counts as `{}` (for actions whose fields are all optional). */
+export async function parseOptionalBody<T extends z.ZodType>(
+  request: Request,
+  schema: T,
+): Promise<z.infer<T>> {
+  const text = await request.text();
+  let raw: unknown = {};
+  if (text.trim() !== '') {
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      throw new ApiError(400, 'invalid_json');
+    }
+  }
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) throw new ApiError(422, 'invalid_body');
+  return parsed.data;
+}

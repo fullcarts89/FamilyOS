@@ -79,3 +79,27 @@ export function assertWorkItemTransition(
     throw new MissingEvidenceError();
   }
 }
+
+export const DONE_STATUSES = ['verified_complete', 'done_unverified'] as const;
+export const isDone = (status: WorkItemStatus): boolean =>
+  (DONE_STATUSES as readonly WorkItemStatus[]).includes(status);
+
+/**
+ * Undoing a completion puts the item back exactly where it was before it was finished (an undo,
+ * not a reopen), so it isn't checked against the transition table. Rows finished before the
+ * prior status was recorded go back to `ready`. Returns null when the item isn't done.
+ */
+export function undoCompletionTarget(
+  status: WorkItemStatus,
+  completedFromStatus: WorkItemStatus | null,
+): WorkItemStatus | null {
+  if (!isDone(status)) return null;
+  if (
+    completedFromStatus === null ||
+    isDone(completedFromStatus) ||
+    completedFromStatus === 'cancelled'
+  ) {
+    return 'ready';
+  }
+  return completedFromStatus;
+}

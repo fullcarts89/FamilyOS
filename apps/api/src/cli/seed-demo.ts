@@ -9,10 +9,16 @@
  *
  * Sign in as maya@familyos.test (owner) or theo@familyos.test (adult), password familyos-demo-1.
  * Refuses to run unless both the database and Supabase are on this machine.
+ *
+ * Besides today's rhythm it seeds what the Weekly Reset needs: decisions (one due tomorrow),
+ * meals for this week and the next, a grocery list, key contacts, this month's budget snapshot,
+ * and a history for the week the Reset looks back on (things that mattered, a project finished,
+ * a decision made together, a pickup covered).
  */
 import { createDb, materializeHousehold, type Database } from '@familyos/db';
 import {
   addDays,
+  defaultResetWeek,
   localDateOf,
   occurrenceDue,
   type CalendarRule,
@@ -98,6 +104,15 @@ async function seed(db: Kysely<Database>) {
   const now = new Date();
   const today = localDateOf(now, TZ);
   const monday = addDays(today, 1 - weekday(today));
+  // The Reset plans `resetWeek` and looks back on the seven days before it.
+  const resetWeek = defaultResetWeek(today);
+  const lookFrom = addDays(resetWeek, -7);
+  /** An instant on day `k` of the looked-back week, never later than now. */
+  const doneAt = (k: number, time: string): Date => {
+    const date = addDays(lookFrom, k) > today ? today : addDays(lookFrom, k);
+    const instant = new Date(at(date, time));
+    return instant > now ? new Date(now.getTime() - 30 * 60 * 1000) : instant;
+  };
 
   const householdId = await db.transaction().execute(async (trx) => {
     const household = await trx
@@ -162,9 +177,24 @@ async function seed(db: Kysely<Database>) {
       })
       .execute();
 
-    await seedEvents(trx, { hid, today, monday, maya, theo, june, biscuit });
+    const events = await seedEvents(trx, { hid, today, monday, maya, theo, june, biscuit });
     await seedRoutines(trx, { hid, today, maya, theo, june, biscuit });
-    await seedTasks(trx, { hid, today, now, maya, theo, june });
+    const tasks = await seedTasks(trx, { hid, today, now, doneAt, maya, theo, june });
+    await seedPlanning(trx, {
+      hid,
+      today,
+      now,
+      monday,
+      resetWeek,
+      lookFrom,
+      doneAt,
+      maya,
+      theo,
+      june,
+      biscuit,
+      ...events,
+      ...tasks,
+    });
     return hid;
   });
 
@@ -238,7 +268,7 @@ async function seedEvents(trx: Transaction<Database>, p: People & { monday: stri
     recurrence: weekdays,
     care: { member: june, action: 'drop_off', place: 'Little Oaks' },
   });
-  await event({
+  const pickup = await event({
     title: 'Daycare pickup',
     kind: 'childcare',
     date: seriesStart,
@@ -342,6 +372,7 @@ async function seedEvents(trx: Transaction<Database>, p: People & { monday: stri
     end: '20:15',
     members: [maya, theo],
   });
+  return { pickup };
 }
 
 async function seedRoutines(trx: Transaction<Database>, p: People) {
@@ -420,8 +451,11 @@ async function seedRoutines(trx: Transaction<Database>, p: People) {
   });
 }
 
-async function seedTasks(trx: Transaction<Database>, p: Omit<People, 'biscuit'> & { now: Date }) {
-  const { hid, today, now, maya, theo, june } = p;
+async function seedTasks(
+  trx: Transaction<Database>,
+  p: Omit<People, 'biscuit'> & { now: Date; doneAt: (k: number, time: string) => Date },
+) {
+  const { hid, today, now, doneAt, maya, theo, june } = p;
   const task = async (t: {
     title: string;
     owner?: string | null;
@@ -433,6 +467,7 @@ async function seedTasks(trx: Transaction<Database>, p: Omit<People, 'biscuit'> 
     parent?: string;
     type?: 'task' | 'project';
     done?: string;
+    doneAt?: Date;
   }) =>
     (
       await trx
@@ -450,7 +485,11 @@ async function seedTasks(trx: Transaction<Database>, p: Omit<People, 'biscuit'> 
           subject_member_id: t.subject ?? null,
           parent_id: t.parent ?? null,
           created_by_member_id: maya,
-          ...(t.done && { completed_at: now, completed_by_member_id: t.done }),
+          ...(t.done && {
+            completed_at: t.doneAt ?? now,
+            completed_by_member_id: t.done,
+            completed_from_status: 'ready' as const,
+          }),
         })
         .returning('id')
         .executeTakeFirstOrThrow()
@@ -488,7 +527,49 @@ async function seedTasks(trx: Transaction<Database>, p: Omit<People, 'biscuit'> 
   await task({ title: 'Return library books', dueOn: addDays(today, 2) });
   await task({ title: 'Order more diapers (size 5)', owner: maya, dueOn: addDays(today, 2) });
   await task({ title: 'Fix sticking back door' });
-  await task({ title: 'Book June’s 2-year checkup', owner: theo, done: theo, subject: june });
+  await task({
+    title: 'Book June’s 2-year checkup',
+    owner: theo,
+    done: theo,
+    doneAt: doneAt(1, '12:30'),
+    subject: june,
+  });
+  // Last week, things that mattered.
+  await task({
+    title: 'Sort out the dentist bill with the insurer',
+    owner: theo,
+    priority: 1,
+    done: theo,
+    doneAt: doneAt(2, '10:15'),
+  });
+  await task({
+    title: 'Send Little Oaks the vaccination record',
+    owner: maya,
+    subject: june,
+    done: maya,
+    doneAt: doneAt(3, '08:40'),
+  });
+  const toddlerBed = await task({
+    title: 'Switch June to a toddler bed',
+    type: 'project',
+    subject: june,
+    done: maya,
+    doneAt: doneAt(5, '19:45'),
+  });
+  await task({
+    title: 'Order the toddler bed',
+    owner: theo,
+    parent: toddlerBed,
+    done: theo,
+    doneAt: doneAt(0, '21:00'),
+  });
+  await task({
+    title: 'Assemble the bed and move the crib out',
+    owner: maya,
+    parent: toddlerBed,
+    done: maya,
+    doneAt: doneAt(5, '19:30'),
+  });
 
   const reno = await task({
     title: 'Hall bathroom renovation',
@@ -496,8 +577,14 @@ async function seedTasks(trx: Transaction<Database>, p: Omit<People, 'biscuit'> 
     dueOn: addDays(today, 30),
     description: 'Gut and redo the hall bath before the holidays.',
   });
-  await task({ title: 'Get three contractor quotes', owner: maya, parent: reno, done: maya });
   await task({
+    title: 'Get three contractor quotes',
+    owner: maya,
+    parent: reno,
+    done: maya,
+    doneAt: doneAt(1, '16:00'),
+  });
+  const plumberVisit = await task({
     title: 'Be home for plumber rough-in (1–3pm)',
     owner: maya,
     parent: reno,
@@ -506,7 +593,321 @@ async function seedTasks(trx: Transaction<Database>, p: Omit<People, 'biscuit'> 
   await task({ title: 'Choose floor tile', parent: reno, dueOn: addDays(today, 3) });
   await task({ title: 'Order vanity', owner: theo, parent: reno, dueOn: addDays(today, 4) });
   await task({ title: 'Pick paint color', owner: maya, parent: reno });
-  await task({ title: 'Move bath things to the main bathroom', parent: reno, done: theo });
+  await task({
+    title: 'Move bath things to the main bathroom',
+    parent: reno,
+    done: theo,
+    doneAt: doneAt(4, '20:30'),
+  });
+  return { reno, plumberVisit };
+}
+
+/**
+ * The Weekly Reset's material: contacts, decisions, meals for this week and the next, the
+ * grocery list, this month's budget snapshot, last week's committed plan and a covered pickup.
+ */
+async function seedPlanning(
+  trx: Transaction<Database>,
+  p: People & {
+    now: Date;
+    monday: string;
+    resetWeek: string;
+    lookFrom: string;
+    doneAt: (k: number, time: string) => Date;
+    pickup: string;
+    reno: string;
+    plumberVisit: string;
+  },
+) {
+  const { hid, today, maya, theo, june, biscuit, doneAt } = p;
+
+  // Contacts.
+  const contact = async (c: {
+    name: string;
+    category: 'health' | 'childcare' | 'home' | 'services' | 'pets';
+    role: string;
+    organization?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    notes?: string;
+    forMemberId?: string;
+  }) =>
+    (
+      await trx
+        .insertInto('app.contact')
+        .values({
+          household_id: hid,
+          name: c.name,
+          category: c.category,
+          role: c.role,
+          organization: c.organization ?? null,
+          phone: c.phone ?? null,
+          email: c.email ?? null,
+          address: c.address ?? null,
+          notes: c.notes ?? null,
+          for_member_id: c.forMemberId ?? null,
+          created_by_member_id: maya,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+    ).id;
+  await contact({
+    name: 'Dr. Priya Raman',
+    category: 'health',
+    role: 'Pediatrician',
+    organization: 'Hawthorne Pediatrics',
+    phone: '(503) 555-0114',
+    address: '1820 SE Hawthorne Blvd',
+    notes: 'Nurse line is open until 9pm.',
+    forMemberId: june,
+  });
+  await contact({
+    name: 'Dr. Lena Ortiz',
+    category: 'pets',
+    role: 'Vet',
+    organization: 'Sellwood Vet',
+    phone: '(503) 555-0187',
+    notes: 'Biscuit’s records are under “Rivera”.',
+    forMemberId: biscuit,
+  });
+  const plumber = await contact({
+    name: 'Dee Okafor',
+    category: 'home',
+    role: 'Plumber',
+    organization: 'Riverside Plumbing',
+    phone: '(503) 555-0152',
+    email: 'office@riverside-plumbing.example',
+  });
+  await contact({
+    name: 'Rosa Medina',
+    category: 'services',
+    role: 'House cleaner',
+    phone: '(503) 555-0163',
+    notes: 'Every other Friday. Key is in the lockbox.',
+  });
+  await contact({
+    name: 'Little Oaks',
+    category: 'childcare',
+    role: 'Daycare',
+    organization: 'Little Oaks Early Learning',
+    phone: '(503) 555-0120',
+    email: 'frontdesk@littleoaks.example',
+    address: '4410 SE Division St',
+    notes: 'Sunflower room. Pickup by 6pm.',
+    forMemberId: june,
+  });
+  await trx
+    .updateTable('app.work_item')
+    .set({ contact_id: plumber })
+    .where('household_id', '=', hid)
+    .where('id', 'in', [p.reno, p.plumberVisit])
+    .execute();
+
+  // Decisions: one due tomorrow (a heads-up), one later, one open-ended, one settled last week.
+  const decision = async (d: {
+    question: string;
+    context?: string;
+    dueOn?: string;
+    options: string[];
+    votes?: [string, number][];
+    decided?: { option: number; at: Date };
+  }) => {
+    const row = await trx
+      .insertInto('app.decision')
+      .values({
+        household_id: hid,
+        question: d.question,
+        context: d.context ?? null,
+        due_on: d.dueOn ?? null,
+        created_by_member_id: maya,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const options = await trx
+      .insertInto('app.decision_option')
+      .values(
+        d.options.map((label, position) => ({
+          household_id: hid,
+          decision_id: row.id,
+          label,
+          position,
+        })),
+      )
+      .returning('id')
+      .execute();
+    for (const [member, option] of d.votes ?? []) {
+      await trx
+        .insertInto('app.decision_vote')
+        .values({
+          household_id: hid,
+          decision_id: row.id,
+          member_id: member,
+          option_id: options[option]?.id ?? '',
+          voted_at: d.decided?.at ?? p.now,
+        })
+        .execute();
+    }
+    if (d.decided) {
+      await trx
+        .updateTable('app.decision')
+        .set({
+          status: 'decided',
+          decided_option_id: options[d.decided.option]?.id ?? null,
+          decided_at: d.decided.at,
+          decided_via: 'agreement',
+          decided_by_member_id: theo,
+          version: 2,
+        })
+        .where('id', '=', row.id)
+        .execute();
+    }
+  };
+  await decision({
+    question: 'Which preschool for June next fall?',
+    context: 'Applications close Friday. Both toured.',
+    dueOn: addDays(today, 1),
+    options: ['Little Oaks Pre-K', 'Juniper House'],
+    votes: [[maya, 0]],
+  });
+  await decision({
+    question: 'Thanksgiving: host here or go to Theo’s parents?',
+    dueOn: addDays(today, 5),
+    options: ['Host here', 'Drive to Sacramento'],
+  });
+  await decision({
+    question: 'Replace the car this year?',
+    options: ['This spring', 'Wait a year'],
+  });
+  await decision({
+    question: 'Hall bath tile: matte or glossy?',
+    options: ['Matte', 'Glossy'],
+    votes: [
+      [maya, 0],
+      [theo, 0],
+    ],
+    decided: { option: 0, at: doneAt(2, '21:10') },
+  });
+
+  // Meals: this week and the next, with a couple of nights left open in the Reset's week.
+  const dinners = [
+    'Chicken tacos',
+    'Lentil soup and bread',
+    'Pasta with pesto',
+    'Leftovers',
+    'Pizza night',
+    'Roast chicken and potatoes',
+    'Fried rice',
+  ];
+  const first = p.monday < p.resetWeek ? p.monday : p.resetWeek;
+  for (let i = 0; i < 14; i++) {
+    const date = addDays(first, i);
+    if (date >= p.resetWeek && (i % 7 === 3 || i % 7 === 5)) continue;
+    await trx
+      .insertInto('app.meal')
+      .values({
+        household_id: hid,
+        on_date: date,
+        title: date === today ? 'Sheet-pan salmon' : (dinners[i % 7] ?? 'Leftovers'),
+        cook_member_id: date === today ? theo : i % 2 === 0 ? maya : theo,
+        notes: date === today ? 'Lemon and dill; rice for June.' : null,
+        created_by_member_id: maya,
+      })
+      .execute();
+  }
+  await trx
+    .insertInto('app.meal')
+    .values({
+      household_id: hid,
+      on_date: addDays(today, 1),
+      slot: 'lunch',
+      title: 'Leftover salmon bowls',
+      created_by_member_id: maya,
+    })
+    .execute();
+
+  // Groceries, a couple already in the cart.
+  const groceries: [string, string | null, string, boolean][] = [
+    ['Bananas', null, 'produce', false],
+    ['Spinach', '1 bag', 'produce', false],
+    ['Lemons', '3', 'produce', true],
+    ['Sourdough', null, 'bakery', false],
+    ['Whole milk', '1 gal', 'dairy_eggs', false],
+    ['Eggs', 'dozen', 'dairy_eggs', true],
+    ['Salmon fillets', '1.5 lb', 'meat_fish', false],
+    ['Rice', null, 'pantry', false],
+    ['Diapers', 'size 5', 'baby', false],
+    ['Dog food', 'small bag', 'pet', false],
+    ['Dish soap', null, 'household', false],
+  ];
+  for (const [i, [name, detail, aisle, checked]] of groceries.entries()) {
+    await trx
+      .insertInto('app.grocery_item')
+      .values({
+        household_id: hid,
+        name,
+        detail,
+        aisle: aisle as 'produce',
+        position: i,
+        added_by_member_id: i % 2 === 0 ? maya : theo,
+        ...(checked && { checked_at: p.now, checked_by_member_id: theo }),
+      })
+      .execute();
+  }
+
+  // This month's Monarch budget, as if imported from a CSV.
+  const month = `${today.slice(0, 7)}-01`;
+  const budget: [string, string, number, number][] = [
+    ['Food & Dining', 'Groceries', 1100, 842.17],
+    ['Food & Dining', 'Restaurants', 250, 186.4],
+    ['Childcare', 'Daycare', 1850, 1850],
+    ['Home', 'Home Improvement', 600, 412.0],
+    ['Home', 'Utilities', 320, 241.55],
+    ['Transportation', 'Gas', 180, 96.5],
+    ['Pets', 'Pet Care', 120, 64.99],
+    ['Shopping', 'Kids Clothing', 100, 128.3],
+  ];
+  await trx
+    .insertInto('app.budget_snapshot')
+    .values(
+      budget.map(([group, category, budgeted, actual]) => ({
+        household_id: hid,
+        month,
+        category,
+        category_group: group,
+        budgeted,
+        actual,
+        imported_at: p.now,
+        imported_by_member_id: maya,
+      })),
+    )
+    .execute();
+
+  // Last week's plan was committed; Theo covered one of Maya's pickups.
+  await trx
+    .insertInto('app.weekly_plan')
+    .values({
+      household_id: hid,
+      week_start: p.lookFrom,
+      notes: 'Theo takes Wednesday pickup. Tile decision by midweek.',
+      committed_at: new Date(at(addDays(p.lookFrom, -1), '20:10')),
+      committed_by_member_id: maya,
+    })
+    .execute();
+  const coverDate = addDays(p.lookFrom, 2);
+  if (coverDate <= today) {
+    await trx
+      .insertInto('app.event_exception')
+      .values({
+        household_id: hid,
+        event_id: p.pickup,
+        occurrence_date: coverDate,
+        kind: 'cover',
+        cover_member_id: theo,
+        created_by_member_id: maya,
+      })
+      .execute();
+  }
 }
 
 /**

@@ -6,7 +6,12 @@
     "production": {
       "environment": "production",
       "autoIncrement": true,
-      "distribution": "store"
+      "distribution": "store",
+      "node": "24.11.1",
+      "pnpm": "12.18.0",
+      "ios": {
+        "image": "latest"
+      }
     }
   },
   "submit": {

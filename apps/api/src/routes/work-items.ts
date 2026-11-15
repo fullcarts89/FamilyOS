@@ -3,6 +3,7 @@ import {
   MissingEvidenceError,
   WORK_ITEM_STATUSES,
   assertWorkItemTransition,
+  undoCompletionTarget,
   type WorkItemStatus,
 } from '@familyos/domain';
 import { materializeRoutine, type Database } from '@familyos/db';
@@ -34,6 +35,7 @@ export const ITEM_COLUMNS = [
   'completed_at as completedAt',
   'completed_by_member_id as completedByMemberId',
   'subject_member_id as subjectMemberId',
+  'contact_id as contactId',
   'version',
   'created_at as createdAt',
   'updated_at as updatedAt',
@@ -58,6 +60,7 @@ const CreateWorkItem = z
     dueOn: LocalDate.nullish(),
     dueAt: DueAt.nullish(),
     priority: z.number().int().min(1).max(3).nullish(),
+    contactId: Uuid.nullish(),
     visibility: z.enum(['household', 'private']).default('household'),
     /** Quick capture lands in the inbox; set false to add a ready-to-do item directly. */
     inbox: z.boolean().default(true),
@@ -75,11 +78,50 @@ const UpdateWorkItem = z
     dueOn: LocalDate.nullable().optional(),
     dueAt: DueAt.nullable().optional(),
     priority: z.number().int().min(1).max(3).nullable().optional(),
+    contactId: Uuid.nullable().optional(),
     status: z.enum(WORK_ITEM_STATUSES).optional(),
     /** The caller confirms the work is done (evidence E3). Required for verified_complete. */
     confirmed: z.boolean().optional(),
+    /** Undo a completion: back to the status it had before it was finished. */
+    undoComplete: z.literal(true).optional(),
   })
-  .strict();
+  .strict()
+  .refine((b) => !(b.undoComplete && b.status !== undefined), { message: 'undo or status' });
+export type WorkItemUpdate = z.infer<typeof UpdateWorkItem>;
+
+const BULK_MAX = 100;
+const BulkItem = z.discriminatedUnion('action', [
+  z
+    .object({
+      id: Uuid,
+      expectedVersion: z.number().int().min(1),
+      action: z.literal('due'),
+      /** A date (all day) or an instant with an offset. */
+      value: z.union([LocalDate, DueAt]),
+    })
+    .strict(),
+  z
+    .object({ id: Uuid, expectedVersion: z.number().int().min(1), action: z.literal('clear_due') })
+    .strict(),
+  z
+    .object({ id: Uuid, expectedVersion: z.number().int().min(1), action: z.literal('cancel') })
+    .strict(),
+  z
+    .object({
+      id: Uuid,
+      expectedVersion: z.number().int().min(1),
+      action: z.literal('assign'),
+      /** The new owner, or null to leave it for whoever takes it. */
+      value: Uuid.nullable(),
+    })
+    .strict(),
+]);
+const Bulk = z
+  .object({ items: z.array(BulkItem).min(1).max(BULK_MAX) })
+  .strict()
+  .refine((b) => new Set(b.items.map((i) => i.id)).size === b.items.length, {
+    message: 'each item once',
+  });
 
 const AcceptFromInbox = z
   .object({
@@ -125,6 +167,79 @@ export async function assertSubject(
     .where('role', 'in', ['child', 'pet'])
     .executeTakeFirst();
   if (!subject) throw new ApiError(422, 'invalid_subject');
+}
+
+/** A contact of the same household. */
+async function assertContact(trx: Transaction<Database>, householdId: string, contactId: string) {
+  const contact = await trx
+    .selectFrom('app.contact')
+    .select('id')
+    .where('id', '=', contactId)
+    .where('household_id', '=', householdId)
+    .executeTakeFirst();
+  if (!contact) throw new ApiError(422, 'invalid_contact');
+}
+
+type ItemRow = {
+  id: string;
+  status: WorkItemStatus;
+  recurrenceRuleId: string | null;
+  occurrenceIndex: number | null;
+  contactId: string | null;
+};
+
+/**
+ * What the app needs alongside each item without more requests: the contact it involves, and,
+ * for routine occurrences, the routine and whether this is its current turn (the earliest
+ * occurrence still open), so a list can show one turn per routine.
+ */
+export async function decorateItems<T extends ItemRow>(
+  trx: Transaction<Database>,
+  householdId: string,
+  items: readonly T[],
+) {
+  const ruleIds = [
+    ...new Set(items.flatMap((i) => (i.recurrenceRuleId ? [i.recurrenceRuleId] : []))),
+  ];
+  const contactIds = [...new Set(items.flatMap((i) => (i.contactId ? [i.contactId] : [])))];
+  const rules = ruleIds.length
+    ? await trx
+        .selectFrom('app.recurrence_rule')
+        .select(['id', 'routine_id'])
+        .where('household_id', '=', householdId)
+        .where('id', 'in', ruleIds)
+        .execute()
+    : [];
+  const current = ruleIds.length
+    ? await trx
+        .selectFrom('app.work_item')
+        .select(['recurrence_rule_id', (eb) => eb.fn.min('occurrence_index').as('index')])
+        .where('household_id', '=', householdId)
+        .where('recurrence_rule_id', 'in', ruleIds)
+        .where('status', 'not in', CLOSED_STATUSES)
+        .groupBy('recurrence_rule_id')
+        .execute()
+    : [];
+  const contacts = contactIds.length
+    ? await trx
+        .selectFrom('app.contact')
+        .select(['id', 'name', 'category', 'role', 'organization', 'phone', 'email'])
+        .where('household_id', '=', householdId)
+        .where('id', 'in', contactIds)
+        .execute()
+    : [];
+  return items.map((item) => {
+    const rule = rules.find((r) => r.id === item.recurrenceRuleId);
+    const turn = current.find((r) => r.recurrence_rule_id === item.recurrenceRuleId);
+    return {
+      ...item,
+      routineId: rule?.routine_id ?? null,
+      isCurrentTurn: item.recurrenceRuleId
+        ? turn !== undefined && Number(turn.index) === item.occurrenceIndex
+        : null,
+      contact: contacts.find((c) => c.id === item.contactId) ?? null,
+    };
+  });
 }
 
 /** Subtasks go one level deep, under a visible project in the same household. */
@@ -180,7 +295,17 @@ async function loadForUpdate(
 ) {
   const current = await trx
     .selectFrom('app.work_item')
-    .select(['id', 'type', 'status', 'version', 'due_on', 'due_at', 'recurrence_rule_id'])
+    .select([
+      'id',
+      'type',
+      'status',
+      'version',
+      'due_on',
+      'due_at',
+      'recurrence_rule_id',
+      'occurrence_index',
+      'completed_from_status',
+    ])
     .where('id', '=', itemId)
     .where('household_id', '=', member.householdId)
     .forUpdate()
@@ -190,6 +315,151 @@ async function loadForUpdate(
   // A routine's own row changes through /routines, which keeps its schedule consistent.
   if (current.type === 'routine') throw new ApiError(422, 'use_routine');
   return current;
+}
+
+/**
+ * One versioned change to a task, project or routine occurrence: fields, a status transition
+ * (with its evidence rule), or undoing a completion. Shared by PATCH and the bulk endpoint.
+ */
+async function applyUpdate(
+  trx: Transaction<Database>,
+  member: CurrentMember,
+  itemId: string,
+  body: WorkItemUpdate,
+  requestId: string,
+  clock: () => Date,
+) {
+  const current = await loadForUpdate(trx, member, itemId, body.expectedVersion);
+
+  let status = body.status;
+  if (body.undoComplete) {
+    const target = undoCompletionTarget(current.status, current.completed_from_status);
+    if (!target) throw new ApiError(422, 'not_completed');
+    status = target;
+  } else if (body.status && body.status !== current.status) {
+    checkTransition(current.status, body.status, body.confirmed === true);
+    if (current.type === 'project' && DONE_STATUSES.includes(body.status)) {
+      await assertNoOpenSubtasks(trx, member.householdId, itemId);
+    }
+  }
+  if (body.ownerMemberId) await assertAssignable(trx, member.householdId, body.ownerMemberId);
+  if (body.subjectMemberId) await assertSubject(trx, member.householdId, body.subjectMemberId);
+  if (body.parentId) await assertValidParent(trx, member.householdId, body.parentId, current);
+  if (body.contactId) await assertContact(trx, member.householdId, body.contactId);
+
+  // Setting one kind of due date clears the other.
+  const dueOn = body.dueOn !== undefined ? body.dueOn : body.dueAt ? null : undefined;
+  const dueAt = body.dueAt !== undefined ? body.dueAt : body.dueOn ? null : undefined;
+  if (body.dueOn && body.dueAt) throw new ApiError(422, 'invalid_body');
+
+  const statusChanged = status !== undefined && status !== current.status;
+  const finishing = statusChanged && status !== undefined && DONE_STATUSES.includes(status);
+  const reopening = statusChanged && DONE_STATUSES.includes(current.status) && !finishing;
+  const changes = {
+    ...(body.title !== undefined && { title: body.title }),
+    ...(body.description !== undefined && { description: body.description }),
+    ...(body.ownerMemberId !== undefined && { owner_member_id: body.ownerMemberId }),
+    ...(body.subjectMemberId !== undefined && { subject_member_id: body.subjectMemberId }),
+    ...(body.parentId !== undefined && { parent_id: body.parentId }),
+    ...(dueOn !== undefined && { due_on: dueOn }),
+    ...(dueAt !== undefined && { due_at: dueAt }),
+    ...(body.priority !== undefined && { priority: body.priority }),
+    ...(body.contactId !== undefined && { contact_id: body.contactId }),
+    ...(statusChanged && { status }),
+  };
+  if (Object.keys(changes).length === 0) throw new ApiError(422, 'no_changes');
+
+  // Who finished it, for Handled and the routine fairness view (J3b), and what it was before,
+  // so the completion can be undone exactly.
+  const completion = finishing
+    ? {
+        completed_at: clock(),
+        completed_by_member_id: member.id,
+        completed_from_status: DONE_STATUSES.includes(current.status) ? null : current.status,
+      }
+    : reopening
+      ? { completed_at: null, completed_by_member_id: null, completed_from_status: null }
+      : {};
+
+  const item = await trx
+    .updateTable('app.work_item')
+    .set({ ...changes, ...completion, version: current.version + 1, updated_at: clock() })
+    .where('id', '=', itemId)
+    .where('version', '=', body.expectedVersion)
+    .returning(ITEM_COLUMNS)
+    .executeTakeFirstOrThrow();
+
+  await recordAudit(trx, {
+    householdId: member.householdId,
+    actorMemberId: member.id,
+    entityType: 'work_item',
+    entityId: itemId,
+    action: body.undoComplete ? 'work_item.completion_undone' : 'work_item.updated',
+    payload: {
+      fields: Object.keys(changes).sort(),
+      ...(changes.status !== undefined && {
+        fromStatus: current.status,
+        toStatus: changes.status,
+      }),
+      ...(body.confirmed && changes.status === 'verified_complete' && { evidence: 'E3' }),
+      ...(changes.owner_member_id !== undefined && { ownerMemberId: changes.owner_member_id }),
+      ...(changes.subject_member_id !== undefined && {
+        subjectMemberId: changes.subject_member_id,
+      }),
+      ...(changes.contact_id !== undefined && { contactId: changes.contact_id }),
+      version: item.version,
+    },
+    requestId,
+  });
+
+  if (statusChanged && current.recurrence_rule_id) {
+    const rule = await trx
+      .selectFrom('app.recurrence_rule')
+      .select(['routine_id', 'rule'])
+      .where('id', '=', current.recurrence_rule_id)
+      .where('household_id', '=', member.householdId)
+      .executeTakeFirst();
+    if (rule) {
+      // Undoing a completion withdraws the next turn it brought due ("N days after it's done"),
+      // as long as nobody has touched that one yet.
+      if (body.undoComplete && rule.rule.freq === 'after_completion') {
+        const next = await trx
+          .selectFrom('app.work_item')
+          .select(['id', 'version'])
+          .where('household_id', '=', member.householdId)
+          .where('recurrence_rule_id', '=', current.recurrence_rule_id)
+          .where('occurrence_index', '>', current.occurrence_index ?? 0)
+          .where('status', '=', 'ready')
+          .where('version', '=', 1)
+          .execute();
+        for (const row of next) {
+          await trx
+            .updateTable('app.work_item')
+            .set({ status: 'cancelled', version: row.version + 1, updated_at: clock() })
+            .where('id', '=', row.id)
+            .where('household_id', '=', member.householdId)
+            .execute();
+          await recordAudit(trx, {
+            householdId: member.householdId,
+            actorMemberId: member.id,
+            entityType: 'work_item',
+            entityId: row.id,
+            action: 'routine.occurrence_withdrawn',
+            payload: { fromStatus: 'ready', toStatus: 'cancelled', version: row.version + 1 },
+            requestId,
+          });
+        }
+      }
+      // Closing a routine occurrence may bring the next one due (after-completion routines).
+      await materializeRoutine(trx, {
+        householdId: member.householdId,
+        routineId: rule.routine_id,
+        now: clock(),
+        requestId,
+      });
+    }
+  }
+  return item;
 }
 
 export function workItemRoutes(deps: Deps) {
@@ -209,8 +479,10 @@ export function workItemRoutes(deps: Deps) {
     if (parentId) query = query.where('parent_id', '=', uuidParam(parentId));
     const subjectId = c.req.query('subjectMemberId');
     if (subjectId) query = query.where('subject_member_id', '=', uuidParam(subjectId));
+    const contactId = c.req.query('contactId');
+    if (contactId) query = query.where('contact_id', '=', uuidParam(contactId));
     const items = await query.orderBy('created_at', 'desc').limit(500).execute();
-    return c.json({ items });
+    return c.json({ items: await decorateItems(c.get('trx'), c.get('member').householdId, items) });
   });
 
   app.post('/', async (c) => {
@@ -222,6 +494,7 @@ export function workItemRoutes(deps: Deps) {
     if (body.subjectMemberId) await assertSubject(trx, member.householdId, body.subjectMemberId);
     if (body.parentId)
       await assertValidParent(trx, member.householdId, body.parentId, { type: body.type });
+    if (body.contactId) await assertContact(trx, member.householdId, body.contactId);
     const item = await trx
       .insertInto('app.work_item')
       .values({
@@ -236,6 +509,7 @@ export function workItemRoutes(deps: Deps) {
         due_on: body.dueOn ?? null,
         due_at: body.dueAt ?? null,
         priority: body.priority ?? null,
+        contact_id: body.contactId ?? null,
         visibility: body.visibility,
         created_by_member_id: member.id,
       })
@@ -253,10 +527,12 @@ export function workItemRoutes(deps: Deps) {
         status: item.status,
         ...(item.parentId && { parentId: item.parentId }),
         ...(item.subjectMemberId && { subjectMemberId: item.subjectMemberId }),
+        ...(item.contactId && { contactId: item.contactId }),
       },
       requestId: c.get('requestId'),
     });
-    return c.json({ item }, 201);
+    const [decorated] = await decorateItems(trx, member.householdId, [item]);
+    return c.json({ item: decorated }, 201);
   });
 
   app.get('/:itemId', async (c) => {
@@ -314,9 +590,13 @@ export function workItemRoutes(deps: Deps) {
             total: subtasks.length,
           }
         : null;
-    return c.json({
+    const [decorated, ...decoratedSubtasks] = await decorateItems(trx, householdId, [
       item,
-      subtasks,
+      ...subtasks,
+    ]);
+    return c.json({
+      item: decorated,
+      subtasks: decoratedSubtasks,
       progress,
       timeline,
       routine: routine && {
@@ -335,95 +615,44 @@ export function workItemRoutes(deps: Deps) {
     const body = await parseBody(c.req.raw, UpdateWorkItem);
     const trx = c.get('trx');
     const member = c.get('member');
-    const current = await loadForUpdate(trx, member, itemId, body.expectedVersion);
+    const item = await applyUpdate(trx, member, itemId, body, c.get('requestId'), now);
+    const [decorated] = await decorateItems(trx, member.householdId, [item]);
+    return c.json({ item: decorated });
+  });
 
-    if (body.status && body.status !== current.status) {
-      checkTransition(current.status, body.status, body.confirmed === true);
-      if (current.type === 'project' && DONE_STATUSES.includes(body.status)) {
-        await assertNoOpenSubtasks(trx, member.householdId, itemId);
+  /**
+   * Several carry-forward changes at once (Weekly Reset loose ends): move or clear a due date,
+   * cancel, or assign. All or nothing: the first failure rolls every change back and answers
+   * with its code and the item it was about.
+   */
+  app.post('/bulk', async (c) => {
+    authorize(c, 'work_item.update');
+    const body = await parseBody(c.req.raw, Bulk);
+    const trx = c.get('trx');
+    const member = c.get('member');
+    const updated = [];
+    for (const entry of body.items) {
+      const update: WorkItemUpdate =
+        entry.action === 'due'
+          ? LocalDate.safeParse(entry.value).success
+            ? { expectedVersion: entry.expectedVersion, dueOn: entry.value }
+            : { expectedVersion: entry.expectedVersion, dueAt: entry.value }
+          : entry.action === 'clear_due'
+            ? { expectedVersion: entry.expectedVersion, dueOn: null, dueAt: null }
+            : entry.action === 'cancel'
+              ? { expectedVersion: entry.expectedVersion, status: 'cancelled' }
+              : { expectedVersion: entry.expectedVersion, ownerMemberId: entry.value };
+      try {
+        updated.push(await applyUpdate(trx, member, entry.id, update, c.get('requestId'), now));
+      } catch (error) {
+        // The request transaction rolls back on any 4xx, so nothing from this batch is kept.
+        if (error instanceof ApiError) {
+          return c.json({ error: error.code, itemId: entry.id }, error.status);
+        }
+        throw error;
       }
     }
-    if (body.ownerMemberId) await assertAssignable(trx, member.householdId, body.ownerMemberId);
-    if (body.subjectMemberId) await assertSubject(trx, member.householdId, body.subjectMemberId);
-    if (body.parentId) await assertValidParent(trx, member.householdId, body.parentId, current);
-
-    // Setting one kind of due date clears the other.
-    const dueOn = body.dueOn !== undefined ? body.dueOn : body.dueAt ? null : undefined;
-    const dueAt = body.dueAt !== undefined ? body.dueAt : body.dueOn ? null : undefined;
-    if (body.dueOn && body.dueAt) throw new ApiError(422, 'invalid_body');
-
-    const statusChanged = body.status !== undefined && body.status !== current.status;
-    const finishing =
-      statusChanged && body.status !== undefined && DONE_STATUSES.includes(body.status);
-    const reopening = statusChanged && DONE_STATUSES.includes(current.status) && !finishing;
-    const changes = {
-      ...(body.title !== undefined && { title: body.title }),
-      ...(body.description !== undefined && { description: body.description }),
-      ...(body.ownerMemberId !== undefined && { owner_member_id: body.ownerMemberId }),
-      ...(body.subjectMemberId !== undefined && { subject_member_id: body.subjectMemberId }),
-      ...(body.parentId !== undefined && { parent_id: body.parentId }),
-      ...(dueOn !== undefined && { due_on: dueOn }),
-      ...(dueAt !== undefined && { due_at: dueAt }),
-      ...(body.priority !== undefined && { priority: body.priority }),
-      ...(body.status !== undefined && body.status !== current.status && { status: body.status }),
-    };
-    if (Object.keys(changes).length === 0) throw new ApiError(422, 'no_changes');
-
-    // Who finished it, for Handled and the routine fairness view (J3b).
-    const completion = finishing
-      ? { completed_at: now(), completed_by_member_id: member.id }
-      : reopening
-        ? { completed_at: null, completed_by_member_id: null }
-        : {};
-
-    const item = await trx
-      .updateTable('app.work_item')
-      .set({ ...changes, ...completion, version: current.version + 1, updated_at: now() })
-      .where('id', '=', itemId)
-      .where('version', '=', body.expectedVersion)
-      .returning(ITEM_COLUMNS)
-      .executeTakeFirstOrThrow();
-
-    await recordAudit(trx, {
-      householdId: member.householdId,
-      actorMemberId: member.id,
-      entityType: 'work_item',
-      entityId: itemId,
-      action: 'work_item.updated',
-      payload: {
-        fields: Object.keys(changes).sort(),
-        ...(changes.status !== undefined && {
-          fromStatus: current.status,
-          toStatus: changes.status,
-        }),
-        ...(body.confirmed && changes.status === 'verified_complete' && { evidence: 'E3' }),
-        ...(changes.owner_member_id !== undefined && { ownerMemberId: changes.owner_member_id }),
-        ...(changes.subject_member_id !== undefined && {
-          subjectMemberId: changes.subject_member_id,
-        }),
-        version: item.version,
-      },
-      requestId: c.get('requestId'),
-    });
-
-    // Closing a routine occurrence may bring the next one due (after-completion routines).
-    if (statusChanged && current.recurrence_rule_id) {
-      const rule = await trx
-        .selectFrom('app.recurrence_rule')
-        .select('routine_id')
-        .where('id', '=', current.recurrence_rule_id)
-        .where('household_id', '=', member.householdId)
-        .executeTakeFirst();
-      if (rule) {
-        await materializeRoutine(trx, {
-          householdId: member.householdId,
-          routineId: rule.routine_id,
-          now: now(),
-          requestId: c.get('requestId'),
-        });
-      }
-    }
-    return c.json({ item });
+    return c.json({ items: await decorateItems(trx, member.householdId, updated) });
   });
 
   // Inbox triage (PRD §4): accept into the to-do list, optionally assigning it, or discard it.

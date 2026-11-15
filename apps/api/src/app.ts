@@ -15,9 +15,14 @@ import { todayRoutes } from './routes/today';
 import { routineRoutes } from './routes/routines';
 import { eventRoutes } from './routes/events';
 import { rhythmRoutes } from './routes/rhythm';
-import { calendarRoutes } from './routes/calendars';
+import { calendarRoutes, calendarSyncRoutes } from './routes/calendars';
 import { meRoutes } from './routes/me';
 import { activityRoutes } from './routes/activity';
+import { contactRoutes } from './routes/contacts';
+import { decisionRoutes } from './routes/decisions';
+import { groceryRoutes, mealRoutes } from './routes/meals';
+import { BUDGET_IMPORT_BODY_LIMIT, BUDGET_IMPORT_PATH, budgetRoutes } from './routes/budgets';
+import { resetRoutes } from './routes/reset';
 
 /** Three missed heartbeats (every 10 minutes) mean the worker has stopped. */
 const WORKER_STALE_AFTER_MS = 30 * 60 * 1000;
@@ -44,14 +49,17 @@ export function createApp(deps: Deps) {
       }),
     );
   }
-  app.use(
-    '*',
-    bodyLimit({
-      maxSize: 64 * 1024,
-      onError: () => {
-        throw new ApiError(413, 'body_too_large');
-      },
-    }),
+  const tooLarge = () => {
+    throw new ApiError(413, 'body_too_large');
+  };
+  const smallBody = bodyLimit({ maxSize: 64 * 1024, onError: tooLarge });
+  // Budget exports are larger than any other request; only that route accepts up to 1 MB.
+  const uploadBody = bodyLimit({ maxSize: BUDGET_IMPORT_BODY_LIMIT, onError: tooLarge });
+  app.use('*', (c, next) =>
+    (c.req.method === 'POST' && BUDGET_IMPORT_PATH.test(c.req.path) ? uploadBody : smallBody)(
+      c,
+      next,
+    ),
   );
   app.use('*', async (c, next) => {
     const started = performance.now();
@@ -97,6 +105,8 @@ export function createApp(deps: Deps) {
   const authed = new Hono<AppEnv>();
   authed.use('*', requireUser(deps));
   authed.route('/', accountRoutes(deps));
+  // Before the household scope: sync must not hold the request transaction during the fetch.
+  authed.route('/', calendarSyncRoutes(deps));
 
   const household = new Hono<AppEnv>();
   household.use('*', householdScope(deps));
@@ -109,6 +119,12 @@ export function createApp(deps: Deps) {
   household.route('/me', meRoutes(deps));
   household.route('/', activityRoutes(deps));
   household.route('/', rhythmRoutes(deps));
+  household.route('/contacts', contactRoutes(deps));
+  household.route('/decisions', decisionRoutes(deps));
+  household.route('/meals', mealRoutes(deps));
+  household.route('/groceries', groceryRoutes(deps));
+  household.route('/budgets', budgetRoutes(deps));
+  household.route('/reset', resetRoutes(deps));
   household.route('/export', exportRoutes());
   authed.route('/households/:householdId', household);
 

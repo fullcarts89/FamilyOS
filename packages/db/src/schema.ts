@@ -25,7 +25,20 @@ export type Visibility = 'household' | 'private';
 export type WorkItemType = 'task' | 'project' | 'routine' | 'issue';
 export type SourceKind = 'text' | 'photo' | 'document' | 'email';
 export type AuditEntityType =
-  'household' | 'member' | 'invite' | 'work_item' | 'source' | 'comment' | 'event' | 'calendar';
+  | 'household'
+  | 'member'
+  | 'invite'
+  | 'work_item'
+  | 'source'
+  | 'comment'
+  | 'event'
+  | 'calendar'
+  | 'contact'
+  | 'decision'
+  | 'meal'
+  | 'grocery_item'
+  | 'weekly_plan'
+  | 'budget';
 
 export interface SchemaInfoTable {
   key: string;
@@ -108,6 +121,14 @@ export interface WorkItemTable {
   completed_by_member_id: string | null;
   /** The child or pet the item is about ("Biscuit's flea meds"). */
   subject_member_id: string | null;
+  /** The contact it involves ("plumber" on the renovation). */
+  contact_id: ColumnType<string | null, string | null | undefined, string | null>;
+  /** The status it had when it was finished, so undoing the completion restores it. */
+  completed_from_status: ColumnType<
+    WorkItemStatus | null,
+    WorkItemStatus | null | undefined,
+    WorkItemStatus | null
+  >;
   version: Generated<number>;
   created_at: Timestamp;
   updated_at: Timestamp;
@@ -255,6 +276,136 @@ export interface MemberAcknowledgmentTable {
   acknowledged_at: Timestamp;
 }
 
+export type ContactCategory =
+  'health' | 'childcare' | 'home' | 'services' | 'school' | 'family' | 'pets' | 'other';
+
+export interface ContactTable {
+  id: Generated<string>;
+  household_id: string;
+  name: string;
+  category: Generated<ContactCategory>;
+  role: string | null;
+  organization: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  notes: string | null;
+  for_member_id: string | null;
+  created_by_member_id: string;
+  version: Generated<number>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type DecisionStatus = 'open' | 'decided' | 'dropped';
+
+export interface DecisionTable {
+  id: Generated<string>;
+  household_id: string;
+  question: string;
+  context: string | null;
+  due_on: ColumnType<string | null, string | null | undefined, string | null>;
+  status: Generated<DecisionStatus>;
+  decided_option_id: string | null;
+  decided_at: Timestamp | null;
+  decided_via: 'agreement' | 'call' | null;
+  decided_by_member_id: string | null;
+  created_by_member_id: string;
+  version: Generated<number>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface DecisionOptionTable {
+  id: Generated<string>;
+  household_id: string;
+  decision_id: string;
+  label: string;
+  detail: string | null;
+  position: Generated<number>;
+  created_at: Timestamp;
+}
+
+export interface DecisionVoteTable {
+  household_id: string;
+  decision_id: string;
+  member_id: string;
+  option_id: string;
+  voted_at: Timestamp;
+}
+
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner';
+
+export interface MealTable {
+  id: Generated<string>;
+  household_id: string;
+  on_date: LocalDate;
+  slot: Generated<MealSlot>;
+  title: string;
+  cook_member_id: string | null;
+  notes: string | null;
+  created_by_member_id: string;
+  version: Generated<number>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export type GroceryAisle =
+  | 'produce'
+  | 'dairy_eggs'
+  | 'meat_fish'
+  | 'bakery'
+  | 'pantry'
+  | 'frozen'
+  | 'household'
+  | 'baby'
+  | 'pet'
+  | 'other';
+
+export interface GroceryItemTable {
+  id: Generated<string>;
+  household_id: string;
+  name: string;
+  detail: string | null;
+  aisle: Generated<GroceryAisle>;
+  position: Generated<number>;
+  checked_at: Timestamp | null;
+  checked_by_member_id: string | null;
+  added_by_member_id: string;
+  version: Generated<number>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface WeeklyPlanTable {
+  id: Generated<string>;
+  household_id: string;
+  /** The Monday the week starts on, in the household's timezone. */
+  week_start: LocalDate;
+  notes: string | null;
+  committed_at: Timestamp | null;
+  committed_by_member_id: string | null;
+  version: Generated<number>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+/** numeric(12,2): read as a decimal string, written as a number or string. */
+type Money = ColumnType<string | null, number | string | null, number | string | null>;
+
+export interface BudgetSnapshotTable {
+  id: Generated<string>;
+  household_id: string;
+  /** First day of the month. */
+  month: LocalDate;
+  category: string;
+  category_group: string | null;
+  budgeted: Money;
+  actual: Money;
+  imported_at: Timestamp;
+  imported_by_member_id: string;
+}
+
 export interface ServiceHeartbeatTable {
   service: 'worker';
   seen_at: Timestamp;
@@ -277,5 +428,13 @@ export interface Database {
   'app.calendar_source': CalendarSourceTable;
   'app.member_state': MemberStateTable;
   'app.member_acknowledgment': MemberAcknowledgmentTable;
+  'app.contact': ContactTable;
+  'app.decision': DecisionTable;
+  'app.decision_option': DecisionOptionTable;
+  'app.decision_vote': DecisionVoteTable;
+  'app.meal': MealTable;
+  'app.grocery_item': GroceryItemTable;
+  'app.weekly_plan': WeeklyPlanTable;
+  'app.budget_snapshot': BudgetSnapshotTable;
   'app.service_heartbeat': ServiceHeartbeatTable;
 }

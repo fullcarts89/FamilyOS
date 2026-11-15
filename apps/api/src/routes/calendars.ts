@@ -11,7 +11,7 @@ import {
   type SourceRef,
 } from '@familyos/calendar';
 import type { Database } from '@familyos/db';
-import { isCaredFor } from '@familyos/domain';
+import { can, isCaredFor } from '@familyos/domain';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { Transaction } from 'kysely';
@@ -19,7 +19,8 @@ import { z } from 'zod';
 import { recordAudit } from '../audit';
 import { authorize } from '../http/authorize';
 import type { AppEnv, CurrentMember, Deps } from '../http/env';
-import { ApiError, conflict, notFound } from '../http/errors';
+import { ApiError, conflict, forbidden, notFound } from '../http/errors';
+import { inHousehold } from '../http/middleware';
 import { parseBody, uuidParam } from '../http/validation';
 
 const Uuid = z.uuid();
@@ -44,7 +45,7 @@ const UpdateCalendar = z
   })
   .strict();
 
-const CALENDAR_COLUMNS = [
+export const CALENDAR_COLUMNS = [
   'id',
   'label',
   'member_id as memberId',
@@ -291,25 +292,48 @@ export function calendarRoutes(deps: Deps) {
     return c.body(null, 204);
   });
 
-  // Sync now. Always 200 when the calendar exists: a failed fetch is recorded on the calendar.
-  app.post('/:calendarId/sync', async (c) => {
-    authorize(c, 'calendar.manage');
-    const key = requireKey();
+  return app;
+}
+
+/**
+ * Sync now: POST /households/:householdId/calendars/:calendarId/sync. Mounted outside the
+ * request transaction so no connection (or row lock) is held while the remote calendar answers:
+ * one short transaction checks access and reads the source, the fetch runs with none open, and
+ * a second short one stores the result. Always 200 when the calendar exists: a failed fetch is
+ * recorded on the calendar.
+ */
+export function calendarSyncRoutes(deps: Deps) {
+  const app = new Hono<AppEnv>();
+  app.post('/households/:householdId/calendars/:calendarId/sync', async (c) => {
+    const scope = {
+      userId: c.get('user').userId,
+      householdId: uuidParam(c.req.param('householdId')),
+    };
     const id = uuidParam(c.req.param('calendarId'));
-    const trx = c.get('trx');
-    const member = c.get('member');
-    const result = await syncSource((fn) => fn(trx), {
-      householdId: member.householdId,
+    const member = await inHousehold(deps, scope, async (_trx, m) => {
+      if (!can(m.role, 'calendar.manage')) throw forbidden();
+      return m;
+    });
+    if (!deps.calendarKey) throw new ApiError(503, 'calendars_unavailable');
+    const result = await syncSource((fn) => inHousehold(deps, scope, (trx) => fn(trx)), {
+      householdId: scope.householdId,
       sourceId: id,
-      key,
-      now: now(),
+      key: deps.calendarKey,
+      now: deps.now?.() ?? new Date(),
       requestId: c.get('requestId'),
       actorMemberId: member.id,
       ...(deps.calendarFetchPolicy && { policy: deps.calendarFetchPolicy }),
     });
     if (!result) throw notFound();
-    return c.json({ calendar: await view(trx, member.householdId, id), result });
+    const calendar = await inHousehold(deps, scope, (trx) =>
+      trx
+        .selectFrom('app.calendar_source')
+        .select(CALENDAR_COLUMNS)
+        .where('id', '=', id)
+        .where('household_id', '=', scope.householdId)
+        .executeTakeFirstOrThrow(),
+    );
+    return c.json({ calendar, result });
   });
-
   return app;
 }

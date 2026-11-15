@@ -272,15 +272,51 @@ export function routineRoutes(deps: Deps) {
     const routines = [];
     for (const { id } of rows) {
       const routine = await loadRoutine(trx, householdId, id);
+      // The current turn: the earliest occurrence still open, with what Done needs (its id and
+      // version) and what Skip and Swap need (its index, with the routine's version).
       const next = await trx
         .selectFrom('app.work_item')
-        .select(['id', 'occurrence_on as date', 'owner_member_id as ownerMemberId', 'status'])
+        .select([
+          'id',
+          'occurrence_index as index',
+          'occurrence_on as date',
+          'owner_member_id as ownerMemberId',
+          'status',
+          'due_on as dueOn',
+          'due_at as dueAt',
+          'version',
+        ])
         .where('household_id', '=', householdId)
         .where('recurrence_rule_id', '=', routine.ruleId)
         .where('status', 'not in', CLOSED)
-        .orderBy('occurrence_on')
+        .orderBy('occurrence_index')
         .executeTakeFirst();
-      routines.push({ ...view(routine), next: next ?? null });
+      let nextOccurrenceIndex = next?.index ?? null;
+      if (
+        nextOccurrenceIndex === null &&
+        isCalendarRule(routine.rule) &&
+        routine.status !== 'cancelled' &&
+        !routine.pausedAt
+      ) {
+        const today = localDateOf(now(), routine.timezone);
+        const from = routine.generateFrom > today ? routine.generateFrom : today;
+        const exceptions = await loadExceptions(trx, householdId, routine.ruleId);
+        const planned = upcomingOccurrences(
+          { rule: routine.rule, startOn: routine.startOn },
+          assignmentOf(routine),
+          exceptions,
+          from,
+          UPCOMING_COUNT,
+        ).find((p) => !p.skipped);
+        nextOccurrenceIndex = planned?.index ?? null;
+      }
+      routines.push({
+        ...view(routine),
+        nextOccurrenceIndex,
+        next: next
+          ? { ...next, dueAt: next.dueAt ? new Date(next.dueAt).toISOString() : null }
+          : null,
+      });
     }
     return c.json({ routines });
   });
