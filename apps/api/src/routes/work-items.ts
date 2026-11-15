@@ -33,6 +33,7 @@ export const ITEM_COLUMNS = [
   'occurrence_on as occurrenceOn',
   'completed_at as completedAt',
   'completed_by_member_id as completedByMemberId',
+  'subject_member_id as subjectMemberId',
   'version',
   'created_at as createdAt',
   'updated_at as updatedAt',
@@ -52,6 +53,7 @@ const CreateWorkItem = z
     description: z.string().max(10000).nullish(),
     type: z.enum(['task', 'project', 'issue']).default('task'),
     ownerMemberId: Uuid.nullish(),
+    subjectMemberId: Uuid.nullish(),
     parentId: Uuid.nullish(),
     dueOn: LocalDate.nullish(),
     dueAt: DueAt.nullish(),
@@ -68,6 +70,7 @@ const UpdateWorkItem = z
     title: z.string().trim().min(1).max(500).optional(),
     description: z.string().max(10000).nullable().optional(),
     ownerMemberId: Uuid.nullable().optional(),
+    subjectMemberId: Uuid.nullable().optional(),
     parentId: Uuid.nullable().optional(),
     dueOn: LocalDate.nullable().optional(),
     dueAt: DueAt.nullable().optional(),
@@ -90,7 +93,7 @@ const VersionOnly = z.object({ expectedVersion: z.number().int().min(1) }).stric
 
 const NewComment = z.object({ body: z.string().trim().min(1).max(4000) }).strict();
 
-/** Owners must be active, account-holding members of the same household. */
+/** Owners must be active, account-holding members of the same household (not children or pets). */
 export async function assertAssignable(
   trx: Transaction<Database>,
   householdId: string,
@@ -102,9 +105,26 @@ export async function assertAssignable(
     .where('id', '=', memberId)
     .where('household_id', '=', householdId)
     .where('status', '=', 'active')
-    .where('role', '!=', 'child')
+    .where('role', 'not in', ['child', 'pet'])
     .executeTakeFirst();
   if (!owner) throw new ApiError(422, 'invalid_owner');
+}
+
+/** A subject is an active child or pet of the same household. */
+export async function assertSubject(
+  trx: Transaction<Database>,
+  householdId: string,
+  memberId: string,
+) {
+  const subject = await trx
+    .selectFrom('app.member')
+    .select('id')
+    .where('id', '=', memberId)
+    .where('household_id', '=', householdId)
+    .where('status', '=', 'active')
+    .where('role', 'in', ['child', 'pet'])
+    .executeTakeFirst();
+  if (!subject) throw new ApiError(422, 'invalid_subject');
 }
 
 /** Subtasks go one level deep, under a visible project in the same household. */
@@ -187,6 +207,8 @@ export function workItemRoutes(deps: Deps) {
       .where('type', '!=', 'routine')
       .where('status', 'not in', ['new', 'cancelled']);
     if (parentId) query = query.where('parent_id', '=', uuidParam(parentId));
+    const subjectId = c.req.query('subjectMemberId');
+    if (subjectId) query = query.where('subject_member_id', '=', uuidParam(subjectId));
     const items = await query.orderBy('created_at', 'desc').limit(500).execute();
     return c.json({ items });
   });
@@ -197,6 +219,7 @@ export function workItemRoutes(deps: Deps) {
     const trx = c.get('trx');
     const member = c.get('member');
     if (body.ownerMemberId) await assertAssignable(trx, member.householdId, body.ownerMemberId);
+    if (body.subjectMemberId) await assertSubject(trx, member.householdId, body.subjectMemberId);
     if (body.parentId)
       await assertValidParent(trx, member.householdId, body.parentId, { type: body.type });
     const item = await trx
@@ -208,6 +231,7 @@ export function workItemRoutes(deps: Deps) {
         type: body.type,
         status: body.inbox ? 'new' : 'ready',
         owner_member_id: body.ownerMemberId ?? null,
+        subject_member_id: body.subjectMemberId ?? null,
         parent_id: body.parentId ?? null,
         due_on: body.dueOn ?? null,
         due_at: body.dueAt ?? null,
@@ -228,6 +252,7 @@ export function workItemRoutes(deps: Deps) {
         visibility: item.visibility,
         status: item.status,
         ...(item.parentId && { parentId: item.parentId }),
+        ...(item.subjectMemberId && { subjectMemberId: item.subjectMemberId }),
       },
       requestId: c.get('requestId'),
     });
@@ -319,6 +344,7 @@ export function workItemRoutes(deps: Deps) {
       }
     }
     if (body.ownerMemberId) await assertAssignable(trx, member.householdId, body.ownerMemberId);
+    if (body.subjectMemberId) await assertSubject(trx, member.householdId, body.subjectMemberId);
     if (body.parentId) await assertValidParent(trx, member.householdId, body.parentId, current);
 
     // Setting one kind of due date clears the other.
@@ -334,6 +360,7 @@ export function workItemRoutes(deps: Deps) {
       ...(body.title !== undefined && { title: body.title }),
       ...(body.description !== undefined && { description: body.description }),
       ...(body.ownerMemberId !== undefined && { owner_member_id: body.ownerMemberId }),
+      ...(body.subjectMemberId !== undefined && { subject_member_id: body.subjectMemberId }),
       ...(body.parentId !== undefined && { parent_id: body.parentId }),
       ...(dueOn !== undefined && { due_on: dueOn }),
       ...(dueAt !== undefined && { due_at: dueAt }),
@@ -371,6 +398,9 @@ export function workItemRoutes(deps: Deps) {
         }),
         ...(body.confirmed && changes.status === 'verified_complete' && { evidence: 'E3' }),
         ...(changes.owner_member_id !== undefined && { ownerMemberId: changes.owner_member_id }),
+        ...(changes.subject_member_id !== undefined && {
+          subjectMemberId: changes.subject_member_id,
+        }),
         version: item.version,
       },
       requestId: c.get('requestId'),

@@ -37,6 +37,9 @@ export function exportRoutes() {
         'display_name as displayName',
         'role',
         'status',
+        'color',
+        'species',
+        'note',
         'created_at as createdAt',
         'removed_at as removedAt',
       ])
@@ -83,6 +86,7 @@ export function exportRoutes() {
         'occurrence_on as occurrenceOn',
         'completed_at as completedAt',
         'completed_by_member_id as completedByMemberId',
+        'subject_member_id as subjectMemberId',
         'version',
         'created_at as createdAt',
         'updated_at as updatedAt',
@@ -134,6 +138,50 @@ export function exportRoutes() {
       .where('household_id', '=', householdId)
       .orderBy('created_at')
       .execute();
+    const events = await trx
+      .selectFrom('app.event')
+      .select([
+        'id',
+        'title',
+        'kind',
+        'starts_at as startsAt',
+        'ends_at as endsAt',
+        'all_day as allDay',
+        'location',
+        'notes',
+        'recurrence',
+        'recurs_until as recursUntil',
+        'timezone',
+        'care_member_id as careMemberId',
+        'care_action as careAction',
+        'care_place as carePlace',
+        'created_by_member_id as createdByMemberId',
+        'version',
+        'created_at as createdAt',
+        'updated_at as updatedAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    const eventMembers = await trx
+      .selectFrom('app.event_member')
+      .select(['event_id as eventId', 'member_id as memberId'])
+      .where('household_id', '=', householdId)
+      .execute();
+    const eventExceptions = await trx
+      .selectFrom('app.event_exception')
+      .select([
+        'id',
+        'event_id as eventId',
+        'occurrence_date as occurrenceDate',
+        'kind',
+        'cover_member_id as coverMemberId',
+        'created_by_member_id as createdByMemberId',
+        'created_at as createdAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
     const auditEvents = await trx
       .selectFrom('app.audit_event')
       .select([
@@ -161,6 +209,9 @@ export function exportRoutes() {
       recurrenceRules,
       occurrenceExceptions,
       comments,
+      events,
+      eventMembers,
+      eventExceptions,
       auditEvents: auditEvents.map((e) => ({ ...e, id: String(e.id) })),
       files: sources.flatMap((s) =>
         s.storageRef ? [{ sourceId: s.id, storageRef: s.storageRef }] : [],

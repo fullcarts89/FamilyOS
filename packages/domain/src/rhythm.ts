@@ -41,7 +41,7 @@ export interface RhythmDecision {
   dueOn: string;
 }
 
-export interface RhythmInput<T extends RhythmTask> {
+export interface RhythmInput<T extends RhythmTask, O extends EventOccurrence = EventOccurrence> {
   /** The local date the rhythm is for. */
   date: string;
   /** Today's local date, for what's overdue. */
@@ -50,7 +50,7 @@ export interface RhythmInput<T extends RhythmTask> {
   /** Active members, in display order. */
   members: readonly RhythmMember[];
   /** Occurrences overlapping `date` (skipped ones are ignored). */
-  occurrences: readonly EventOccurrence[];
+  occurrences: readonly O[];
   /** Tasks due on `date`, plus open routine occurrences that may be overdue. */
   tasks: readonly T[];
   decisions?: readonly RhythmDecision[];
@@ -84,11 +84,11 @@ export interface Handoff {
   byMemberIds: string[];
 }
 
-export interface RhythmLane<T> {
+export interface RhythmLane<T, O extends EventOccurrence = EventOccurrence> {
   memberId: string;
   role: MemberRole;
   caredFor: boolean;
-  occurrences: EventOccurrence[];
+  occurrences: O[];
   /** Children and pets with handoffs that day; empty otherwise. */
   segments: LocationSegment[];
   /** Adults: tasks they own. Children and pets: tasks about them. */
@@ -135,10 +135,10 @@ export type HeadsUp =
 
 export type HeadsUpType = HeadsUp['type'];
 
-export interface RhythmView<T> {
+export interface RhythmView<T, O extends EventOccurrence = EventOccurrence> {
   date: string;
   timezone: string;
-  lanes: RhythmLane<T>[];
+  lanes: RhythmLane<T, O>[];
   handoffs: Handoff[];
   /** Tasks for the day that nobody owns yet. */
   unassignedTasks: T[];
@@ -202,7 +202,9 @@ function overlap(a: EventOccurrence, b: EventOccurrence): boolean {
   return cmp(a.startsAt, b.endsAt) < 0 && cmp(b.startsAt, a.endsAt) < 0;
 }
 
-export function buildRhythm<T extends RhythmTask>(input: RhythmInput<T>): RhythmView<T> {
+export function buildRhythm<T extends RhythmTask, O extends EventOccurrence = EventOccurrence>(
+  input: RhythmInput<T, O>,
+): RhythmView<T, O> {
   const { date, today, timeZone } = input;
   const members = [...input.members].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role]);
   const byId = new Map(members.map((m) => [m.id, m]));
@@ -222,7 +224,7 @@ export function buildRhythm<T extends RhythmTask>(input: RhythmInput<T>): Rhythm
 
   const occurrences = input.occurrences.filter((o) => !o.skipped).sort(byStart);
   const careHandoffs = occurrences.filter(
-    (o): o is EventOccurrence & { careMemberId: string; careAction: CareAction } =>
+    (o): o is O & { careMemberId: string; careAction: CareAction } =>
       o.careMemberId !== null && o.careAction !== null && !o.allDay,
   );
 
@@ -297,7 +299,7 @@ export function buildRhythm<T extends RhythmTask>(input: RhythmInput<T>): Rhythm
   const byDueAt = (a: T, b: T) => cmp(a.dueAt ?? '', b.dueAt ?? '') || a.id.localeCompare(b.id);
   const byTitle = (a: T, b: T) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
 
-  const lanes: RhythmLane<T>[] = members.map((m) => {
+  const lanes: RhythmLane<T, O>[] = members.map((m) => {
     const caredFor = isCaredFor(m.role);
     const mine = (t: T) => (caredFor ? t.subjectMemberId === m.id : t.ownerMemberId === m.id);
     return {

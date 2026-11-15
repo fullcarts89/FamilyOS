@@ -25,7 +25,7 @@ import { authorize } from '../http/authorize';
 import type { AppEnv, CurrentMember, Deps } from '../http/env';
 import { ApiError, conflict, notFound } from '../http/errors';
 import { parseBody, uuidParam } from '../http/validation';
-import { ITEM_COLUMNS, assertAssignable } from './work-items';
+import { ITEM_COLUMNS, assertAssignable, assertSubject } from './work-items';
 
 const CLOSED: readonly WorkItemStatus[] = ['verified_complete', 'done_unverified', 'cancelled'];
 const DONE: readonly WorkItemStatus[] = ['verified_complete', 'done_unverified'];
@@ -51,6 +51,8 @@ const CreateRoutine = z
     startOn: LocalDate,
     time: LocalTime.nullish(),
     ownerMemberId: Uuid.nullish(),
+    /** The child or pet it's about ("Biscuit's flea meds"). */
+    subjectMemberId: Uuid.nullish(),
     rotation: Rotation.optional(),
   })
   .strict()
@@ -62,6 +64,7 @@ const UpdateRoutine = z
     title: z.string().trim().min(1).max(500).optional(),
     description: z.string().max(10000).nullable().optional(),
     ownerMemberId: Uuid.nullable().optional(),
+    subjectMemberId: Uuid.nullable().optional(),
     rotation: Rotation.optional(),
     paused: z.boolean().optional(),
   })
@@ -96,6 +99,7 @@ async function loadRoutine(
       'w.status',
       'w.visibility',
       'w.owner_member_id as ownerMemberId',
+      'w.subject_member_id as subjectMemberId',
       'w.created_by_member_id as createdByMemberId',
       'w.version',
       'w.created_at as createdAt',
@@ -130,6 +134,7 @@ function view(r: Routine) {
     ended: r.status === 'cancelled',
     paused: r.pausedAt !== null,
     ownerMemberId: r.ownerMemberId,
+    subjectMemberId: r.subjectMemberId,
     rotation: r.rotation,
     rule: r.rule,
     startOn: r.startOn,
@@ -177,6 +182,7 @@ export function routineRoutes(deps: Deps) {
       title?: string;
       description?: string | null;
       owner_member_id?: string | null;
+      subject_member_id?: string | null;
       status?: 'cancelled';
     } = {},
   ) {
@@ -288,6 +294,7 @@ export function routineRoutes(deps: Deps) {
     for (const id of [...rotation, ...(body.ownerMemberId ? [body.ownerMemberId] : [])]) {
       await assertAssignable(trx, member.householdId, id);
     }
+    if (body.subjectMemberId) await assertSubject(trx, member.householdId, body.subjectMemberId);
     const { timezone } = await trx
       .selectFrom('app.household')
       .select('timezone')
@@ -304,6 +311,7 @@ export function routineRoutes(deps: Deps) {
         description: body.description ?? null,
         status: 'ready',
         owner_member_id: rotation.length ? null : (body.ownerMemberId ?? null),
+        subject_member_id: body.subjectMemberId ?? null,
         visibility: body.visibility,
         created_by_member_id: member.id,
       })
@@ -328,7 +336,12 @@ export function routineRoutes(deps: Deps) {
       entityType: 'work_item',
       entityId: routine.id,
       action: 'routine.created',
-      payload: { freq: body.rule.freq, visibility: body.visibility, rotationSize: rotation.length },
+      payload: {
+        freq: body.rule.freq,
+        visibility: body.visibility,
+        rotationSize: rotation.length,
+        ...(body.subjectMemberId && { subjectMemberId: body.subjectMemberId }),
+      },
       requestId: c.get('requestId'),
     });
     await materializeRoutine(trx, {
@@ -445,6 +458,9 @@ export function routineRoutes(deps: Deps) {
     ]) {
       await assertAssignable(trx, member.householdId, id);
     }
+    if (body.subjectMemberId) await assertSubject(trx, member.householdId, body.subjectMemberId);
+    const subjectChanged =
+      body.subjectMemberId !== undefined && body.subjectMemberId !== routine.subjectMemberId;
 
     // One person or a rotation, never both.
     const rotation =
@@ -463,6 +479,7 @@ export function routineRoutes(deps: Deps) {
     const fields = [
       ...(body.title !== undefined ? ['title'] : []),
       ...(body.description !== undefined ? ['description'] : []),
+      ...(subjectChanged ? ['subject'] : []),
       ...(assignmentChanged ? ['assignment'] : []),
       ...(pausing ? ['paused'] : []),
       ...(resuming ? ['resumed'] : []),
@@ -472,6 +489,7 @@ export function routineRoutes(deps: Deps) {
     const version = await bumpRoutine(trx, routine, {
       ...(body.title !== undefined && { title: body.title }),
       ...(body.description !== undefined && { description: body.description }),
+      ...(subjectChanged && { subject_member_id: body.subjectMemberId ?? null }),
       ...(assignmentChanged && { owner_member_id: ownerMemberId }),
     });
     await trx
@@ -486,13 +504,14 @@ export function routineRoutes(deps: Deps) {
       .where('household_id', '=', member.householdId)
       .execute();
 
-    // Open occurrences follow the routine's title and description.
-    if (body.title !== undefined || body.description !== undefined) {
+    // Open occurrences follow the routine's title, description and subject.
+    if (body.title !== undefined || body.description !== undefined || subjectChanged) {
       await trx
         .updateTable('app.work_item')
         .set({
           ...(body.title !== undefined && { title: body.title }),
           ...(body.description !== undefined && { description: body.description }),
+          ...(subjectChanged && { subject_member_id: body.subjectMemberId ?? null }),
         })
         .where('household_id', '=', member.householdId)
         .where('recurrence_rule_id', '=', routine.ruleId)

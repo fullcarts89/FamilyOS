@@ -13,6 +13,8 @@ import { workItemRoutes } from './routes/work-items';
 import { exportRoutes } from './routes/export';
 import { todayRoutes } from './routes/today';
 import { routineRoutes } from './routes/routines';
+import { eventRoutes } from './routes/events';
+import { rhythmRoutes } from './routes/rhythm';
 
 /** Three missed heartbeats (every 10 minutes) mean the worker has stopped. */
 const WORKER_STALE_AFTER_MS = 30 * 60 * 1000;
@@ -99,6 +101,8 @@ export function createApp(deps: Deps) {
   household.route('/', todayRoutes(deps));
   household.route('/work-items', workItemRoutes(deps));
   household.route('/routines', routineRoutes(deps));
+  household.route('/events', eventRoutes(deps));
+  household.route('/', rhythmRoutes(deps));
   household.route('/export', exportRoutes());
   authed.route('/households/:householdId', household);
 
