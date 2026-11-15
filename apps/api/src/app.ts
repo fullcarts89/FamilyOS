@@ -15,7 +15,7 @@ import { todayRoutes } from './routes/today';
 import { routineRoutes } from './routes/routines';
 import { eventRoutes } from './routes/events';
 import { rhythmRoutes } from './routes/rhythm';
-import { calendarRoutes, calendarSyncRoutes } from './routes/calendars';
+import { calendarFetchRoutes, calendarRoutes } from './routes/calendars';
 import { meRoutes } from './routes/me';
 import { activityRoutes } from './routes/activity';
 import { contactRoutes } from './routes/contacts';
@@ -106,8 +106,9 @@ export function createApp(deps: Deps) {
   const authed = new Hono<AppEnv>();
   authed.use('*', requireUser(deps));
   authed.route('/', accountRoutes(deps));
-  // Before the household scope: sync must not hold the request transaction during the fetch.
-  authed.route('/', calendarSyncRoutes(deps));
+  // Before the household scope: adding, re-pointing and syncing a calendar fetch it, and must
+  // not hold the request transaction meanwhile.
+  authed.route('/', calendarFetchRoutes(deps));
 
   const household = new Hono<AppEnv>();
   household.use('*', householdScope(deps));
@@ -116,7 +117,7 @@ export function createApp(deps: Deps) {
   household.route('/work-items', workItemRoutes(deps));
   household.route('/routines', routineRoutes(deps));
   household.route('/events', eventRoutes(deps));
-  household.route('/calendars', calendarRoutes(deps));
+  household.route('/calendars', calendarRoutes());
   household.route('/me', meRoutes(deps));
   household.route('/', activityRoutes(deps));
   household.route('/', rhythmRoutes(deps));

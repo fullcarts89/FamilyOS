@@ -288,9 +288,9 @@ describe.skipIf(!db)('calendar subscriptions', () => {
     expect((await imported()).length).toBe(count);
   });
 
-  it('holds no database connection while the calendar answers', async () => {
-    // An app with a single connection: if sync kept its transaction open during the fetch, this
-    // query (made while the server is still answering) would wait for it.
+  it('holds no database connection while the calendar answers: add, new address, sync now', async () => {
+    // An app with a single connection: if a request kept its transaction open during the fetch,
+    // this query (made while the server is still answering) would wait for it.
     const single = createDb({ connectionString: url ?? '', maxConnections: 1 });
     const solo = createTestApp({
       db: single,
@@ -298,29 +298,76 @@ describe.skipIf(!db)('calendar subscriptions', () => {
       calendarFetchPolicy: policy,
       calendarKey,
     });
-    let probe = 'not_called';
+    // Its own household, so the other tests' calendars and audit rows stay as they expect.
+    const other = await seedHousehold(requireDb(), 'Calendars Solo');
+    let probes: string[] = [];
     duringFetch = async () => {
-      probe = await Promise.race([
-        single
-          .selectFrom('app.household')
-          .select('id')
-          .limit(1)
-          .execute()
-          .then(() => 'free'),
-        new Promise<string>((resolve) => setTimeout(() => resolve('held'), 1500)),
-      ]);
+      probes.push(
+        await Promise.race([
+          single
+            .selectFrom('app.household')
+            .select('id')
+            .limit(1)
+            .execute()
+            .then(() => 'free'),
+          new Promise<string>((resolve) => setTimeout(() => resolve('held'), 1500)),
+        ]),
+      );
     };
     try {
-      const token = await solo.tokenFor({ userId: h.owner.userId ?? '', email: 'x@example.test' });
-      const res = await solo.request(`/households/${h.id}/calendars/${calendar.id}/sync`, {
-        method: 'POST',
-        token,
+      const token = await solo.tokenFor({
+        userId: other.owner.userId ?? '',
+        email: 'x@example.test',
       });
-      expect(res.status).toBe(200);
-      expect(probe).toBe('free');
+      const send = (path: string, method: string, body?: unknown) =>
+        solo.request(`/households/${other.id}/calendars${path}`, { method, token, body });
+
+      const added = await send('', 'POST', {
+        label: 'Solo',
+        url: address,
+        memberId: other.owner.id,
+      });
+      expect(added.status).toBe(201);
+      expect(probes).toEqual(['free']);
+      const { calendar: soloCalendar } = await json<{ calendar: Calendar }>(added);
+
+      probes = [];
+      const moved = await send(`/${soloCalendar.id}`, 'PATCH', {
+        expectedVersion: 1,
+        url: address,
+      });
+      expect(moved.status).toBe(200);
+      expect(probes).toEqual(['free']);
+      expect((await json<{ calendar: Calendar }>(moved)).calendar).toMatchObject({ version: 2 });
+
+      probes = [];
+      expect((await send(`/${soloCalendar.id}/sync`, 'POST')).status).toBe(200);
+      expect(probes).toEqual(['free']);
+
+      // A change made while the new address was being fetched wins: the slow request gets 409.
+      duringFetch = async () => {
+        await requireDb()
+          .updateTable('app.calendar_source')
+          .set({ version: 3 })
+          .where('id', '=', soloCalendar.id)
+          .execute();
+      };
+      const stale = await send(`/${soloCalendar.id}`, 'PATCH', {
+        expectedVersion: 2,
+        url: address,
+        label: 'Too late',
+      });
+      expect(stale.status).toBe(409);
+      const row = await requireDb()
+        .selectFrom('app.calendar_source')
+        .select(['label', 'version'])
+        .where('id', '=', soloCalendar.id)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({ label: 'Solo', version: 3 });
     } finally {
       duringFetch = null;
       await single.destroy();
+      await purgeHouseholds(requireDb(), [other.id]);
     }
   });
 
@@ -364,7 +411,6 @@ describe.skipIf(!db)('calendar subscriptions', () => {
       .execute();
     expect(audit.map((a) => a.action)).toEqual([
       'calendar.added',
-      'calendar.synced',
       'calendar.synced',
       'calendar.synced',
       'calendar.synced',
