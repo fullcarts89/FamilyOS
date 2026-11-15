@@ -32,6 +32,66 @@ borrowed as described below). Open `design/prototype/dist/index.html` or run `np
 - **Monarch:** CSV upload (Monarch's terms forbid automated access by other apps; see the session
   notes). Optional later: a scheduled Claude task, a client Monarch supports, posting a summary.
 
+## Emotional design and interaction quality (2026-11-15, third brief)
+
+Promise: FamilyOS helps us feel organized, appreciated, coordinated, less overwhelmed, accomplished,
+and confident nothing is slipping. Motivation comes from real utility, never engagement mechanics:
+no points, leaderboards, punitive streaks, rewards for opening the app, or partner comparisons.
+
+**Motion and feedback system** (part of the design system, `apps/mobile/design/motion`):
+- *Routine feedback* (every completion): instant optimistic state change, an animated check
+  (≈250 ms spring), the row settles into its done state, optional light haptic, undo toast.
+  Never blocks rapid completion of the next item.
+- *Acknowledgment* (contextual, a line, not a modal): taking a shared item ("Yours now. One less
+  thing for both of you."), taking something off your partner ("Taken off Theo's plate"),
+  partner progress on Home ("Theo handled the car registration").
+- *Milestones* (rarer, warmer): all of today's important items done, a project milestone or
+  project complete, a decision resolved together, a conflict resolved / childcare covered for the
+  week, Weekly Reset completed. A short tasteful animation (no confetti storms) + medium haptic.
+- *Truthfulness:* celebrate only after the server confirms; a failed write rolls back with a
+  friendly, actionable message and no success feedback. Milestones are acknowledged once per
+  person (stored server-side), so refreshes and other devices never replay them.
+- Screen/sheet transitions, skeleton loading, optimistic updates with rollback, undo, haptics
+  (expo-haptics, user setting) and sound (off by default); `prefers-reduced-motion` /
+  Reduce Motion replace motion with fades or nothing; everything works with motion unavailable.
+- Copy: overdue items say what's late and offer the next step ("Renew car registration · 3 days
+  late · Do it now / Move to tomorrow / Hand to Theo"), urgent but never guilt-inducing.
+
+**Approachable complexity:** guided, small contextual actions over big forms (rotation, handoffs,
+recurring care, projects, decisions, conflicts, meals, budgets); sensible defaults; progressive
+disclosure; plain-language errors with a way forward.
+
+**Weekly Reset as the signature ritual:** warm personalized opening; reflection on what was
+accomplished together (highlights: completed responsibilities that mattered, projects, decisions,
+coverage), with appreciation for each adult's contributions described in words, never counted
+against each other; visible progress through chapters; the shared weekly board updates live as
+decisions, owners and coverage are resolved; a distinct completion ("Your week has a plan. You're
+ready to take it on together.") showing the plan, decisions, coverage, commitments,
+responsibilities, meals/groceries, and anything unresolved, clearly marked. Never claims
+everything is handled while something important is open. The plan then drives Home, Calendar and
+Tasks during the week.
+
+**First 60 seconds and daily return:** polished sign-in, invite acceptance, first-time household
+setup and personalization (members, pets, colors, calendars), first Home, skeletons, empty states,
+first capture/completion, first Weekly Reset. Home on return answers: what matters today, what my
+partner is handling, June's and the pets' day, what changed since I last looked (partner activity
+from the audit trail), what needs me, and what I can do next. Morning/evening lines are derived
+from real data only; nothing invented.
+
+**Healthy reasons to return:** morning check-in, upcoming handoffs, genuinely due items, an
+end-of-day sense of closure, the weekly Reset, meaningful partner changes. Notifications (with the
+iPhone app) are timely, actionable, controllable, respect quiet hours; none exist to drive
+engagement. Widgets follow the same rule.
+
+**Backend support:** `member_state` (last seen per member for "since you last looked"; notification
+preferences and quiet hours), `member_acknowledgment` (milestone keys acknowledged once),
+an activity endpoint over `audit_event` joined to titles the household wrote.
+
+**Acceptance additions:** short recordings (GIF/video of the real app) of: completing a task;
+completing a recurring pet-care task; taking something off the partner's plate; resolving a
+childcare conflict; completing a project milestone; the full Weekly Reset; returning to Home after
+the plan changed.
+
 ## Design system: C with A's warmth
 
 - **Structure from C:** a lane per person through the day; June's (and pets') care shown as
