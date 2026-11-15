@@ -235,7 +235,9 @@ function OccurrenceView({
       <View style={styles.viewHead}>
         <Text variant="chapter">{o.title}</Text>
         <Text variant="body" tone="muted">
-          {relativeDay(o.date, today) === longDate(o.date) ? '' : `${relativeDay(o.date, today)}, `}
+          {['Today', 'Tomorrow', 'Yesterday'].includes(relativeDay(o.date, today))
+            ? `${relativeDay(o.date, today)}, `
+            : ''}
           {longDate(o.date)}
           {o.allDay ? ' · all day' : ` · ${rangeOf(o.startsAt, o.endsAt, timeZone)}`}
         </Text>
@@ -269,7 +271,9 @@ function OccurrenceView({
         >
           {adults.length === 0 && child
             ? 'Nobody is down for it yet'
-            : who.map((p) => (p.isMe ? 'You' : p.name)).join(', ')}
+            : (child && o.careAction ? adults : [...adults, ...who.filter((p) => p.caredFor)])
+                .map((p) => (p.isMe ? 'You' : p.name))
+                .join(', ')}
           {o.cover && replaced.length > 0
             ? ` (covering for ${replaced.map((p) => (p.isMe ? 'you' : p.name)).join(' and ')})`
             : ''}
@@ -293,7 +297,9 @@ function OccurrenceView({
 
       {loadError ? <ErrorNotice message={loadError} /> : null}
 
-      {!o.readOnly ? (
+      {!o.readOnly &&
+      new Date(o.endsAt).getTime() > Date.now() &&
+      (o.careMemberId || o.recurring) ? (
         <View style={styles.oneOff}>
           {o.recurring || o.careMemberId ? (
             <Text variant="kicker" tone="muted">
@@ -316,7 +322,7 @@ function OccurrenceView({
               />
             ) : (
               <>
-                {coverOptions.map((p) => (
+                {(o.careMemberId ? coverOptions : []).map((p) => (
                   <Button
                     key={p.id}
                     title={p.isMe ? 'I’ll cover it' : `Ask ${p.name} to cover`}

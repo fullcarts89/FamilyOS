@@ -22,7 +22,11 @@ export interface NextEntry {
 }
 
 /** Everything timed today, in order: events (one per occurrence), handoffs and timed tasks. */
-export function dayEntries(lanes: RhythmLaneView[], people: People, timeZone: string): NextEntry[] {
+export function dayEntries(
+  lanes: (Pick<RhythmLaneView, 'occurrences'> & { tasks?: { timed: RhythmTaskView[] } })[],
+  people: People,
+  timeZone: string,
+): NextEntry[] {
   const seen = new Set<string>();
   const out: NextEntry[] = [];
   for (const lane of lanes) {
@@ -60,7 +64,7 @@ export function dayEntries(lanes: RhythmLaneView[], people: People, timeZone: st
         occurrence: o,
       });
     }
-    for (const t of lane.tasks.timed) {
+    for (const t of lane.tasks?.timed ?? []) {
       if (seen.has(t.id) || !t.dueAt || !isOpen(t)) continue;
       seen.add(t.id);
       const owner = people.byId(t.ownerMemberId);

@@ -414,7 +414,7 @@ function Card({
         <Text variant="small" style={styles.handoffText}>
           {o.careAction === 'drop_off' ? 'Drop' : 'Pick'}{' '}
           <Text variant="small" tone="muted">
-            {time.replace(/am|pm/, '')}
+            {time}
           </Text>
         </Text>
         {who && !problem ? (
@@ -482,9 +482,27 @@ function DayList({
   onOpen: (o: Occurrence) => void;
   onNew: (date: string) => void;
 }) {
+  // Days already gone fold away, so the list starts with today.
+  const [showPast, setShowPast] = useState(false);
+  const past = days.filter((d) => d < today);
+  const shown = showPast ? days : days.filter((d) => d >= today);
   return (
     <View style={styles.dayList}>
-      {days.map((d) => {
+      {past.length > 0 ? (
+        <Pressable
+          accessibilityRole="button"
+          aria-expanded={showPast}
+          onPress={() => setShowPast((v) => !v)}
+          style={styles.pastToggle}
+        >
+          <Text variant="label" tone="muted">
+            {showPast
+              ? 'Hide the days already gone'
+              : `Earlier this week (${past.length} day${past.length === 1 ? '' : 's'})`}
+          </Text>
+        </Pressable>
+      ) : null}
+      {shown.map((d) => {
         const filled = rows
           .map((r) => ({ row: r, items: r.on(d) }))
           .filter((x) => x.items.length > 0);
@@ -648,6 +666,7 @@ const styles = StyleSheet.create({
   },
   legendLink: { fontFamily: font.uiBold, color: color.ink },
   dayList: { gap: 12 },
+  pastToggle: { minHeight: 40, justifyContent: 'center', alignSelf: 'flex-start' },
   dayCard: {
     gap: 10,
     padding: 14,

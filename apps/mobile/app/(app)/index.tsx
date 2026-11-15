@@ -27,7 +27,7 @@ import { color, font, radius, shadow } from '../../design/tokens';
 import type { Occurrence, WorkItem } from '../../lib/api';
 import { SETUP_KEY } from '../../lib/acknowledgments';
 import { useCapture } from '../../lib/capture';
-import { greetingFor, longDate, shortDate } from '../../lib/dates';
+import { greetingFor, longDate, shortDate, weekdayName } from '../../lib/dates';
 import { useOccurrenceActions } from '../../lib/events';
 import { headline } from '../../lib/headline';
 import { useHousehold } from '../../lib/household';
@@ -264,14 +264,7 @@ export default function Today() {
       entries.some((e) => new Date(e.endsAt).getTime() > now.getTime()) ? (
         <NextUp entries={entries} now={now} timeZone={timeZone} onOpen={openOccurrence} />
       ) : (
-        <View style={styles.dayDone}>
-          <Text variant="title">
-            {entries.length
-              ? 'That’s everything on today’s calendar.'
-              : 'Nothing on the calendar today.'}
-          </Text>
-          <TomorrowLine occurrences={week?.occurrences ?? []} today={today} />
-        </View>
+        <Tomorrow occurrences={week?.occurrences ?? []} today={today} onOpen={openOccurrence} />
       )
     ) : null;
 
@@ -493,10 +486,13 @@ export default function Today() {
             <View style={styles.timelineCard}>{timeline}</View>
           )}
 
-          <View style={styles.blockTight}>
-            {capture}
-            {inbox}
-          </View>
+          {!phone || inbox ? (
+            <View style={styles.blockTight}>
+              {/* Phones capture with the floating button; desktop keeps the line. */}
+              {!phone ? capture : null}
+              {inbox}
+            </View>
+          ) : null}
 
           {desktop ? (
             <View style={styles.twoCols}>
@@ -533,17 +529,37 @@ function sinceLabel(iso: string, now: Date, timeZone: string): string {
   return shortDate(then.date);
 }
 
-function TomorrowLine({ occurrences, today }: { occurrences: Occurrence[]; today: string }) {
+/** Phones, once today's calendar is done: tomorrow's first few things, at a glance. */
+function Tomorrow({
+  occurrences,
+  today,
+  onOpen,
+}: {
+  occurrences: Occurrence[];
+  today: string;
+  onOpen: (o: Occurrence) => void;
+}) {
   const { timeZone } = useHousehold();
+  const people = usePeople();
   const tomorrow = addDays(today, 1);
-  const first = occurrences
-    .filter((o) => o.date === tomorrow && !o.skipped && !o.allDay)
-    .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
-  if (!first) return null;
+  const entries = dayEntries(
+    [{ occurrences: occurrences.filter((o) => o.date === tomorrow && !o.skipped) }],
+    people,
+    timeZone,
+  );
   return (
-    <Text variant="meta" tone="muted">
-      Tomorrow starts with {first.title} at {timeOf(first.startsAt, timeZone)}.
-    </Text>
+    <View style={styles.tomorrow}>
+      <Text variant="kicker" tone="muted">
+        Tomorrow · {weekdayName(tomorrow)}
+      </Text>
+      {entries.length ? (
+        <NextUp entries={entries} now={new Date(0)} timeZone={timeZone} limit={3} onOpen={onOpen} />
+      ) : (
+        <View style={styles.dayDone}>
+          <Text variant="title">Nothing on the calendar tomorrow yet.</Text>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -595,6 +611,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     alignSelf: 'flex-start',
   },
+  tomorrow: { gap: 8 },
   dayDone: {
     gap: 4,
     padding: 16,
