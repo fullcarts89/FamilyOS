@@ -11,12 +11,17 @@ const helpersWith = (info = vi.fn(), error = vi.fn()) =>
   ({ logger: { info, error }, job: { id: '42' } }) as unknown as JobHelpers;
 
 describe('worker tasks', () => {
-  it('registers the heartbeat and the hourly routine scheduler', () => {
+  it('registers the heartbeat, the hourly routine scheduler and calendar sync', () => {
     const db = createDb({ connectionString: 'postgresql://unused@127.0.0.1:1/unused' });
-    expect(Object.keys(createTaskList(db))).toEqual(['heartbeat', 'materialize_routines']);
+    expect(Object.keys(createTaskList(db))).toEqual([
+      'heartbeat',
+      'materialize_routines',
+      'sync_calendars',
+    ]);
     expect(CRONTAB.split('\n')).toEqual([
       '*/10 * * * * heartbeat',
       expect.stringMatching(/^\d+ \* \* \* \* materialize_routines$/),
+      '*/15 * * * * sync_calendars',
     ]);
   });
 });

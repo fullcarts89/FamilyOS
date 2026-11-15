@@ -24,6 +24,7 @@ const app = createApp({
   logger,
   inviteLinkBase: config.INVITE_LINK_BASE,
   corsOrigins: config.CORS_ORIGINS,
+  ...(config.CALENDAR_ENCRYPTION_KEY && { calendarKey: config.CALENDAR_ENCRYPTION_KEY }),
   ...(config.RAILWAY_GIT_COMMIT_SHA && { version: config.RAILWAY_GIT_COMMIT_SHA.slice(0, 12) }),
 });
 

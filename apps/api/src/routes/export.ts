@@ -155,10 +155,27 @@ export function exportRoutes() {
         'care_member_id as careMemberId',
         'care_action as careAction',
         'care_place as carePlace',
+        'source_calendar_id as sourceCalendarId',
         'created_by_member_id as createdByMemberId',
         'version',
         'created_at as createdAt',
         'updated_at as updatedAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    // Calendar subscriptions without their addresses: those stay encrypted and are never exported.
+    const calendars = await trx
+      .selectFrom('app.calendar_source')
+      .select([
+        'id',
+        'label',
+        'member_id as memberId',
+        'url_hint as urlHint',
+        'color',
+        'status',
+        'last_synced_at as lastSyncedAt',
+        'created_at as createdAt',
       ])
       .where('household_id', '=', householdId)
       .orderBy('created_at')
@@ -209,6 +226,7 @@ export function exportRoutes() {
       recurrenceRules,
       occurrenceExceptions,
       comments,
+      calendars,
       events,
       eventMembers,
       eventExceptions,

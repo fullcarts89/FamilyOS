@@ -1,3 +1,4 @@
+import type { FetchPolicy } from '@familyos/calendar';
 import type { Database } from '@familyos/db';
 import type { MemberRole } from '@familyos/domain';
 import type { Kysely, Transaction } from 'kysely';
@@ -14,6 +15,10 @@ export interface Deps {
   /** Browser origins allowed by CORS; empty means none. */
   corsOrigins?: string[];
   now?: () => Date;
+  /** Encrypts calendar subscription addresses (CALENDAR_ENCRYPTION_KEY); calendars are off without it. */
+  calendarKey?: Buffer;
+  /** How calendars are fetched; tests point it at a local server. */
+  calendarFetchPolicy?: FetchPolicy;
   /** Deployed commit, shown by the health checks so a rollback can be confirmed. */
   version?: string;
 }

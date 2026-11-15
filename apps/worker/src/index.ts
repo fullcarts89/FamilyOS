@@ -1,3 +1,4 @@
+import { parseCalendarKey } from '@familyos/calendar';
 import { createDb, databaseUrl } from '@familyos/db';
 import { run } from 'graphile-worker';
 import { z } from 'zod';
@@ -9,6 +10,19 @@ const env = z
     /** The password for DATABASE_URL, when the host keeps it separately (Railway). */
     DATABASE_PASSWORD: z.string().min(1).optional(),
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(20).default(2),
+    /** 32 bytes, base64; the same key as the API's. Calendar sync is off without it. */
+    CALENDAR_ENCRYPTION_KEY: z
+      .string()
+      .optional()
+      .refine((v) => {
+        if (!v) return true;
+        try {
+          parseCalendarKey(v);
+          return true;
+        } catch {
+          return false;
+        }
+      }),
   })
   .safeParse(process.env);
 
@@ -23,7 +37,12 @@ const db = createDb({ connectionString });
 const runner = await run({
   connectionString,
   concurrency: env.data.WORKER_CONCURRENCY,
-  taskList: createTaskList(db),
+  taskList: createTaskList(
+    db,
+    env.data.CALENDAR_ENCRYPTION_KEY
+      ? { calendarKey: parseCalendarKey(env.data.CALENDAR_ENCRYPTION_KEY) }
+      : {},
+  ),
   crontab: CRONTAB,
 });
 // Report in straight away, so readiness shows a fresh deploy as running without a 10-minute wait.

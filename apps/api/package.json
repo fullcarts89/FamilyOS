@@ -13,6 +13,7 @@
     "demo:seed": "tsx src/cli/seed-demo.ts"
   },
   "dependencies": {
+    "@familyos/calendar": "workspace:*",
     "@familyos/db": "workspace:*",
     "@familyos/domain": "workspace:*",
     "@hono/node-server": "2.1.5",

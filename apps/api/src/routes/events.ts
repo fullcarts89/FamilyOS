@@ -106,6 +106,7 @@ const EVENT_COLUMNS = [
   'care_member_id',
   'care_action',
   'care_place',
+  'source_calendar_id',
   'created_by_member_id',
   'version',
   'created_at',
@@ -115,6 +116,8 @@ const EVENT_COLUMNS = [
 const iso = (value: Date | string) => new Date(value).toISOString();
 
 export interface StoredSeries extends EventSeries {
+  /** Imported from a read-only calendar subscription. */
+  source: { calendarId: string; label: string; color: string | null } | null;
   location: string | null;
   notes: string | null;
   createdByMemberId: string;
@@ -165,6 +168,7 @@ export async function loadSeries(
     .select(['event_id', 'member_id'])
     .where('household_id', '=', householdId)
     .where('event_id', 'in', ids)
+    .orderBy('member_id')
     .execute();
   const exceptions = await trx
     .selectFrom('app.event_exception')
@@ -173,6 +177,18 @@ export async function loadSeries(
     .where('event_id', 'in', ids)
     .orderBy('occurrence_date')
     .execute();
+  const calendarIds = [
+    ...new Set(rows.flatMap((r) => (r.source_calendar_id ? [r.source_calendar_id] : []))),
+  ];
+  const calendars =
+    calendarIds.length === 0
+      ? []
+      : await trx
+          .selectFrom('app.calendar_source')
+          .select(['id', 'label', 'color'])
+          .where('household_id', '=', householdId)
+          .where('id', 'in', calendarIds)
+          .execute();
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
@@ -190,6 +206,12 @@ export async function loadSeries(
     exceptions: exceptions
       .filter((e) => e.event_id === r.id)
       .map((e) => ({ date: e.occurrence_date, kind: e.kind, coverMemberId: e.cover_member_id })),
+    source: (() => {
+      const calendar = calendars.find((s) => s.id === r.source_calendar_id);
+      return calendar
+        ? { calendarId: calendar.id, label: calendar.label, color: calendar.color }
+        : null;
+    })(),
     location: r.location,
     notes: r.notes,
     createdByMemberId: r.created_by_member_id,
@@ -226,6 +248,8 @@ export function occurrenceView(occurrence: EventOccurrence, series: StoredSeries
     notes: series.notes,
     timezone: series.timezone,
     version: series.version,
+    readOnly: series.source !== null,
+    source: series.source,
   };
 }
 
@@ -256,6 +280,8 @@ function seriesView(s: StoredSeries) {
     careAction: s.careAction,
     carePlace: s.carePlace,
     exceptions: s.exceptions,
+    readOnly: s.source !== null,
+    source: s.source,
     createdByMemberId: s.createdByMemberId,
     version: s.version,
     createdAt: s.createdAt,
@@ -362,12 +388,14 @@ export function eventRoutes(deps: Deps) {
   ) => {
     const row = await trx
       .selectFrom('app.event')
-      .select(['id', 'version'])
+      .select(['id', 'version', 'source_calendar_id'])
       .where('id', '=', eventId)
       .where('household_id', '=', member.householdId)
       .forUpdate()
       .executeTakeFirst();
     if (!row) throw notFound();
+    // Imported events change only in their own calendar.
+    if (row.source_calendar_id !== null) throw conflict('read_only');
     if (row.version !== expectedVersion) throw conflict();
     return row;
   };
@@ -612,6 +640,7 @@ export function eventRoutes(deps: Deps) {
   ) => {
     const series = await loadOne(trx, member, eventId);
     if (!isOccurrenceDate(series, date)) throw notFound();
+    if (series.source !== null) throw conflict('read_only');
     return series;
   };
 

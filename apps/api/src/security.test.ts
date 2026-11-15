@@ -35,6 +35,7 @@ describe.skipIf(!db)('API security (G1)', () => {
   let bRoutineId: string;
   let bEventId: string;
   let aEventId: string;
+  let bCalendarId: string;
   const created: string[] = [];
 
   const tokenOf = (member: SeededHousehold['owner']) =>
@@ -64,6 +65,21 @@ describe.skipIf(!db)('API security (G1)', () => {
       memberIds: [b.adult.id, b.child.id],
       careMemberId: b.child.id,
     });
+    bCalendarId = (
+      await requireDb()
+        .insertInto('app.calendar_source')
+        .values({
+          household_id: b.id,
+          member_id: b.adult.id,
+          label: 'Beta work',
+          url_ciphertext: Buffer.alloc(40, 1),
+          url_nonce: Buffer.alloc(12, 2),
+          url_hint: 'calendar.example.test/…',
+          created_by_member_id: b.adult.id,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+    ).id;
     aEventId = await seedEvent(requireDb(), a, {
       ...care,
       memberIds: [a.adult.id, a.child.id],
@@ -88,7 +104,8 @@ describe.skipIf(!db)('API security (G1)', () => {
         | 'app.occurrence_exception'
         | 'app.event'
         | 'app.event_member'
-        | 'app.event_exception',
+        | 'app.event_exception'
+        | 'app.calendar_source',
     ) =>
       Number(
         (
@@ -133,6 +150,12 @@ describe.skipIf(!db)('API security (G1)', () => {
       events: await count('app.event'),
       eventMembers: await count('app.event_member'),
       eventExceptions: await count('app.event_exception'),
+      calendars: await count('app.calendar_source'),
+      calendar: await requireDb()
+        .selectFrom('app.calendar_source')
+        .select(['label', 'member_id', 'version', 'status', 'last_synced_at'])
+        .where('id', '=', bCalendarId)
+        .executeTakeFirstOrThrow(),
       audit: await count('app.audit_event'),
       item,
       adult,
@@ -230,6 +253,19 @@ describe.skipIf(!db)('API security (G1)', () => {
         { action: 'cover', memberId: a.adult.id },
       ],
       ['DELETE', `/households/${a.id}/events/${bEventId}/occurrences/2026-11-16`],
+      // Calendar subscriptions.
+      ['GET', `/households/${b.id}/calendars`],
+      [
+        'POST',
+        `/households/${b.id}/calendars`,
+        { label: 'x', url: 'https://calendar.example.test/x.ics', memberId: b.adult.id },
+      ],
+      ['PATCH', `/households/${b.id}/calendars/${bCalendarId}`, { expectedVersion: 1, label: 'x' }],
+      ['DELETE', `/households/${b.id}/calendars/${bCalendarId}?expectedVersion=1`],
+      ['POST', `/households/${b.id}/calendars/${bCalendarId}/sync`],
+      ['PATCH', `/households/${a.id}/calendars/${bCalendarId}`, { expectedVersion: 1, label: 'x' }],
+      ['DELETE', `/households/${a.id}/calendars/${bCalendarId}?expectedVersion=1`],
+      ['POST', `/households/${a.id}/calendars/${bCalendarId}/sync`],
     ];
 
     it('answers every foreign request with 404 and changes nothing in the other household', async () => {
@@ -293,6 +329,7 @@ describe.skipIf(!db)('API security (G1)', () => {
       for (const path of [
         `/households/${h.id}/events?from=2026-11-16&to=2026-11-16`,
         `/households/${h.id}/rhythm`,
+        `/households/${h.id}/calendars`,
       ]) {
         expect((await request(path, { token })).status).toBe(404);
       }
@@ -369,6 +406,12 @@ describe.skipIf(!db)('API security (G1)', () => {
         ],
         ['POST', `/households/${a.id}/members`, { role: 'pet', displayName: 'x' }],
         ['PATCH', `/households/${a.id}/members/${a.pet.id}`, { expectedVersion: 1, note: 'x' }],
+        ['GET', `/households/${a.id}/calendars`, undefined],
+        [
+          'POST',
+          `/households/${a.id}/calendars`,
+          { label: 'x', url: 'https://calendar.example.test/x.ics', memberId: a.adult.id },
+        ],
       ];
       for (const [method, path, body] of writes) {
         const res = await request(path, { method, token, body });
@@ -695,6 +738,7 @@ describe.skipIf(!db)('API security (G1)', () => {
 
       expect(raw).not.toContain(b.id);
       expect(raw).not.toContain('token_hash');
+      expect(raw).not.toMatch(/url_ciphertext|url_nonce|urlCiphertext/);
       expect(parsed.auditEvents.at(-1)?.action).toBe('household.exported');
     });
   });

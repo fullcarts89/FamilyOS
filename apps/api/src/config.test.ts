@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from './config';
 
@@ -33,5 +34,22 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, DATABASE_URL: 'not a url secret-value' })).toThrow(
       /^Invalid API configuration: DATABASE_URL$/,
     );
+  });
+
+  it('reads the calendar key when set, and refuses one of the wrong size without echoing it', () => {
+    expect(loadConfig(base).CALENDAR_ENCRYPTION_KEY).toBeUndefined();
+    const key = randomBytes(32).toString('base64');
+    expect(
+      loadConfig({ ...base, CALENDAR_ENCRYPTION_KEY: key }).CALENDAR_ENCRYPTION_KEY?.length,
+    ).toBe(32);
+    const short = randomBytes(16).toString('base64');
+    expect(() => loadConfig({ ...base, CALENDAR_ENCRYPTION_KEY: short })).toThrow(
+      'Invalid API configuration: CALENDAR_ENCRYPTION_KEY',
+    );
+    try {
+      loadConfig({ ...base, CALENDAR_ENCRYPTION_KEY: short });
+    } catch (error) {
+      expect(String(error)).not.toContain(short);
+    }
   });
 });

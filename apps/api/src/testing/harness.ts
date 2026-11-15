@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import type { FetchPolicy } from '@familyos/calendar';
 import { createDb, type Database } from '@familyos/db';
 import { SignJWT } from 'jose';
 import type { Kysely } from 'kysely';
@@ -14,9 +15,17 @@ export const LEAKED_PASSWORD = 'password1234';
 
 /** Test app with a per-run random signing secret, an in-memory auth admin and captured logs. */
 export function createTestApp(
-  options: { db?: Kysely<Database>; now?: () => Date; corsOrigins?: string[] } = {},
+  options: {
+    db?: Kysely<Database>;
+    now?: () => Date;
+    corsOrigins?: string[];
+    calendarFetchPolicy?: FetchPolicy;
+    /** Leave out the calendar key, as a deployment without CALENDAR_ENCRYPTION_KEY would. */
+    withoutCalendars?: boolean;
+  } = {},
 ) {
   const secret = randomBytes(32).toString('hex');
+  const calendarKey = randomBytes(32);
   const logs: string[] = [];
   /** Accounts the auth admin holds: email → user ID and password. */
   const accounts = new Map<string, { userId: string; password: string }>();
@@ -46,6 +55,8 @@ export function createTestApp(
     inviteLinkBase: 'familyos://invite',
     ...(options.now && { now: options.now }),
     ...(options.corsOrigins && { corsOrigins: options.corsOrigins }),
+    ...(!options.withoutCalendars && { calendarKey }),
+    ...(options.calendarFetchPolicy && { calendarFetchPolicy: options.calendarFetchPolicy }),
   });
 
   const tokenFor = async (
@@ -74,5 +85,5 @@ export function createTestApp(
       ...(init.body !== undefined && { body: JSON.stringify(init.body) }),
     });
 
-  return { app, db, logs, accounts, tokenFor, request };
+  return { app, db, logs, accounts, tokenFor, request, calendarKey };
 }

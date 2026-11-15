@@ -303,7 +303,7 @@ describe.skipIf(!db)('Family Rhythm API', () => {
         [`${dropOffId}:2026-11-02`, '2026-11-02T16:15:00Z'],
       ]);
       expect(drops[0]).toMatchObject({
-        memberIds: [h.adult.id, h.child.id],
+        memberIds: expect.arrayContaining([h.adult.id, h.child.id]),
         careAction: 'drop_off',
       });
       // Caregivers can read the schedule.
