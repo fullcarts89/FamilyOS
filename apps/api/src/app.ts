@@ -23,6 +23,7 @@ import { decisionRoutes } from './routes/decisions';
 import { groceryRoutes, mealRoutes } from './routes/meals';
 import { BUDGET_IMPORT_BODY_LIMIT, BUDGET_IMPORT_PATH, budgetRoutes } from './routes/budgets';
 import { resetRoutes } from './routes/reset';
+import { widgetRoutes } from './routes/widget';
 
 /** Three missed heartbeats (every 10 minutes) mean the worker has stopped. */
 const WORKER_STALE_AFTER_MS = 30 * 60 * 1000;
@@ -125,6 +126,7 @@ export function createApp(deps: Deps) {
   household.route('/groceries', groceryRoutes(deps));
   household.route('/budgets', budgetRoutes(deps));
   household.route('/reset', resetRoutes(deps));
+  household.route('/', widgetRoutes(deps));
   household.route('/export', exportRoutes());
   authed.route('/households/:householdId', household);
 

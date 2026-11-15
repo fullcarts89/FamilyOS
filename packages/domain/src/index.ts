@@ -17,3 +17,4 @@ export * from './lists';
 export * from './decisions';
 export * from './reset';
 export * from './budget-csv';
+export * from './widget';

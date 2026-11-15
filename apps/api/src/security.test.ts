@@ -488,6 +488,8 @@ describe.skipIf(!db)('API security (G1)', () => {
       ],
       ['GET', `/households/${b.id}/reset?week=2026-11-16`],
       ['POST', `/households/${b.id}/reset/commit`, { week: '2026-11-16' }],
+      // The iPhone widget.
+      ['GET', `/households/${b.id}/widget`],
     ];
 
     it('answers every foreign request with 404 and changes nothing in the other household', async () => {
@@ -590,6 +592,7 @@ describe.skipIf(!db)('API security (G1)', () => {
         `/households/${h.id}/groceries`,
         `/households/${h.id}/budgets`,
         `/households/${h.id}/reset`,
+        `/households/${h.id}/widget`,
       ]) {
         expect((await request(path, { token })).status).toBe(404);
       }
@@ -686,6 +689,7 @@ describe.skipIf(!db)('API security (G1)', () => {
         `/households/${a.id}/contacts/${aContactId}`,
         `/households/${a.id}/meals?from=2026-11-16&to=2026-11-22`,
         `/households/${a.id}/groceries`,
+        `/households/${a.id}/widget`,
       ]) {
         expect({ path, status: (await request(path, { token })).status }).toEqual({
           path,
