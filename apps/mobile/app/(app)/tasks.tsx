@@ -155,6 +155,12 @@ export default function Tasks() {
     [people.assignable],
   );
 
+  const projectOf = useCallback(
+    (item: WorkItem) =>
+      item.parentId ? items?.find((i) => i.id === item.parentId)?.title : undefined,
+    [items],
+  );
+
   const groupsFor = useCallback(
     (ownerId: string | null): Record<When, WorkItem[]> => {
       const g = Object.fromEntries(WHEN_ORDER.map((w) => [w, [] as WorkItem[]])) as Record<
@@ -164,7 +170,9 @@ export default function Tasks() {
       if (!items || !today) return g;
       const sort = byDue(timeZone);
       for (const item of currentTurns(items)) {
-        if (item.parentId || item.type === 'project') continue;
+        if (item.type === 'project') continue;
+        // A project's step shows on its owner's list too; unowned steps stay with the project.
+        if (item.parentId && !item.ownerMemberId) continue;
         if (item.ownerMemberId !== ownerId) continue;
         if (!isOpen(item) && !settling.has(item.id)) continue;
         g[whenOf(item, today, timeZone)].push(item);
@@ -194,6 +202,7 @@ export default function Tasks() {
       title={c.title}
       sub={c.sub}
       groups={groupsFor(c.person?.id ?? null)}
+      contextOf={projectOf}
       today={today ?? ''}
       onComplete={actions.complete}
       onAssign={actions.assign}
@@ -298,6 +307,7 @@ export default function Tasks() {
                   key={t.key}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: on }}
+                  aria-selected={on}
                   onPress={() => setSection(t.key)}
                   style={(s: PressState) => [
                     styles.tab,

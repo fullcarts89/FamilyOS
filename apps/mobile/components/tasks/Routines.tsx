@@ -23,7 +23,7 @@ import {
 import { relativeDay } from '../../lib/dates';
 import { useHousehold } from '../../lib/household';
 import { usePeople, type Person } from '../../lib/people';
-import { isDone } from '../../lib/tasks';
+import { DONE, isDone } from '../../lib/tasks';
 
 export interface RoutineEntry {
   entry: RoutineListEntry;
@@ -144,12 +144,37 @@ function RoutineRing({
   const base = household ? `/households/${household.id}/routines/${entry.id}` : '';
 
   const rotation = entry.rotation.map((id) => people.byId(id)).filter((p): p is Person => !!p);
-  const firstOpen = detail?.upcoming.find((o) => !o.skipped) ?? null;
-  const turnId = entry.next?.ownerMemberId ?? firstOpen?.ownerMemberId ?? entry.ownerMemberId;
+  // The current turn is the first one still open: a turn done early (this month's flea meds on
+  // the 20th) gives way to the next one, which the API marks as the current turn.
+  const open = (status: WorkItem['status'] | null) =>
+    status === null || (!DONE.includes(status) && status !== 'cancelled');
+  const firstOpen = detail?.upcoming.find((o) => !o.skipped && open(o.status)) ?? null;
+  const next = entry.next && open(entry.next.status) ? entry.next : null;
+  const nextItem =
+    (next ? items.find((i) => i.id === next.id) : undefined) ??
+    items.find(
+      (i) =>
+        (i as WorkItem & { routineId?: string | null }).routineId === entry.id &&
+        i.isCurrentTurn === true &&
+        !isDone(i),
+    ) ??
+    (firstOpen?.itemId ? items.find((i) => i.id === firstOpen.itemId) : undefined) ??
+    null;
+  const turnId =
+    nextItem?.ownerMemberId ??
+    next?.ownerMemberId ??
+    firstOpen?.ownerMemberId ??
+    entry.ownerMemberId;
   const turn = people.byId(turnId);
-  const nextItem = entry.next ? (items.find((i) => i.id === entry.next?.id) ?? null) : null;
-  const nextDate = entry.next?.date ?? firstOpen?.date ?? null;
+  const nextDate = nextItem?.occurrenceOn ?? next?.date ?? firstOpen?.date ?? null;
   const index = nextItem?.occurrenceIndex ?? firstOpen?.index ?? null;
+  // A new current turn (after a refresh) clears the moment's "Done".
+  const turnKey = nextItem?.id ?? nextDate;
+  const [seenTurn, setSeenTurn] = useState(turnKey);
+  if (seenTurn !== turnKey) {
+    setSeenTurn(turnKey);
+    setDoneNow(false);
+  }
   const after =
     rotation.length > 1 && turn
       ? rotation[(rotation.findIndex((p) => p.id === turn.id) + 1) % rotation.length]

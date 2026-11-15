@@ -64,6 +64,8 @@ export function RoundCheckbox({
       accessibilityRole="checkbox"
       accessibilityLabel={label}
       accessibilityState={{ checked, disabled: !!disabled }}
+      aria-checked={checked}
+      aria-disabled={!!disabled}
       disabled={disabled || !onPress}
       onPress={onPress}
       hitSlop={hitSlopFor(size)}

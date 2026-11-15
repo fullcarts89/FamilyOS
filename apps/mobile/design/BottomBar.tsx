@@ -67,6 +67,7 @@ export function BottomBar() {
             key={item.label}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
+            aria-selected={on}
             onPress={() => router.navigate(item.href)}
             style={[styles.tab, on && styles.tabOn]}
           >
@@ -79,6 +80,7 @@ export function BottomBar() {
       <Pressable
         accessibilityRole="tab"
         accessibilityState={{ selected: moreOn }}
+        aria-selected={moreOn}
         accessibilityLabel="More: household, meals, decisions, contacts and budgets"
         onPress={() => setMore(true)}
         style={[styles.tab, moreOn && styles.tabOn]}

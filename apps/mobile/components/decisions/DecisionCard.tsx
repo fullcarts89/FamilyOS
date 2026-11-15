@@ -122,6 +122,8 @@ export function DecisionCard({
                 key={o.id}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: mine, busy: busy === o.id }}
+                aria-checked={mine}
+                aria-busy={busy === o.id}
                 accessibilityLabel={`${o.label}${faces.length ? `, picked by ${faces.map((p) => (p.isMe ? 'you' : p.name)).join(' and ')}` : ''}`}
                 onPress={() => void press(o.id)}
                 style={(s: PressState) => [

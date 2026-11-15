@@ -16,6 +16,7 @@ import {
   SkeletonRows,
   useCelebrate,
 } from '../../../design/motion';
+import { EmptyState } from '../../../design/EmptyState';
 import { ErrorNotice } from '../../../design/Notice';
 import { Page } from '../../../design/Page';
 import { RoundCheckbox } from '../../../design/RoundCheckbox';
@@ -25,6 +26,7 @@ import { useToast } from '../../../design/Toast';
 import { color, font, radius } from '../../../design/tokens';
 import {
   api,
+  ApiRequestError,
   errorMessage,
   type Comment,
   type ItemDetail,
@@ -102,6 +104,7 @@ export default function ItemScreen() {
   const [subtask, setSubtask] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   const hid = household?.id ?? '';
   const base = `/households/${hid}/work-items/${id}`;
@@ -123,6 +126,14 @@ export default function ItemScreen() {
       setProjects(list.items.filter((i) => i.type === 'project' && !CLOSED.includes(i.status)));
       setLoadError(null);
     } catch (caught) {
+      // Another household's item, or one that was removed: say so plainly (nothing leaks).
+      if (
+        caught instanceof ApiRequestError &&
+        (caught.status === 404 || caught.status === 422 || caught.status === 403)
+      ) {
+        setNotFound(true);
+        return;
+      }
       setLoadError(errorMessage(caught));
     }
   }, [household, id, base]);
@@ -168,7 +179,18 @@ export default function ItemScreen() {
   if (!detail) {
     return (
       <Page maxWidth={1100}>
-        {loadError ? (
+        {notFound ? (
+          <EmptyState
+            title="This isn’t in your household, or it was removed"
+            body="It may have been deleted, or the link belongs to another household. Everything that’s yours is in Tasks."
+            action={
+              <View style={styles.notFoundActions}>
+                <Button title="Open Tasks" onPress={() => router.replace('/tasks')} />
+                <Button title="Back" variant="secondary" onPress={() => goBack('/tasks')} />
+              </View>
+            }
+          />
+        ) : loadError ? (
           <ErrorNotice message={loadError} onRetry={load} />
         ) : (
           <Skeleton label="Loading">
@@ -723,6 +745,7 @@ function when(iso: string, timeZone: string): string {
 }
 
 const styles = StyleSheet.create({
+  notFoundActions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   headline: { gap: 8 },
   back: {
     flexDirection: 'row',

@@ -89,6 +89,7 @@ export function GroceryAdd({
               key={a}
               accessibilityRole="radio"
               accessibilityState={{ checked: guessed === a }}
+              aria-checked={guessed === a}
               onPress={() => {
                 setAisle(a);
                 setPicking(false);

@@ -205,6 +205,7 @@ export function CaptureSheet({
               key={id ?? 'shared'}
               accessibilityRole="radio"
               accessibilityState={{ checked: on }}
+              aria-checked={on}
               accessibilityLabel={p ? (p.isMe ? 'You' : p.name) : 'Either of you'}
               onPress={() => {
                 setPicked(id);

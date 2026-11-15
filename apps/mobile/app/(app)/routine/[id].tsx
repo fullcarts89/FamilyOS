@@ -21,7 +21,7 @@ import { relativeDay, shortDate, weekdayName } from '../../../lib/dates';
 import { useHousehold } from '../../../lib/household';
 import { goBack } from '../../../lib/navigation';
 import { usePeople, type Person } from '../../../lib/people';
-import { isDone } from '../../../lib/tasks';
+import { DONE, isDone } from '../../../lib/tasks';
 
 // One routine: whose turn it is and who's next, what's coming (skip or swap any turn), who did
 // the earlier ones, and pause or end it. No tallies: who did what is a list, not a score.
@@ -91,7 +91,11 @@ export default function RoutineScreen() {
   };
 
   const rotation = routine.rotation.map((m) => people.byId(m)).filter((p): p is Person => !!p);
-  const firstOpen = upcoming.find((o) => !o.skipped) ?? null;
+  // Turns already done (an early Done) belong to the history, not to what's coming up.
+  const coming = upcoming.filter(
+    (o) => o.status === null || (!DONE.includes(o.status) && o.status !== 'cancelled'),
+  );
+  const firstOpen = coming.find((o) => !o.skipped) ?? null;
   const turn = people.byId(firstOpen?.ownerMemberId ?? routine.ownerMemberId);
   const active = !routine.ended && !routine.paused;
   const name = (p: Person | null) => (p ? (p.isMe ? 'you' : p.name) : 'anyone');
@@ -218,8 +222,8 @@ export default function RoutineScreen() {
             {active ? (
               <View style={styles.section}>
                 <SectionHeader title="Coming up" sub="Skip or swap any turn" />
-                {upcoming.length ? (
-                  upcoming.map(occurrence)
+                {coming.length ? (
+                  coming.map(occurrence)
                 ) : (
                   <Text variant="body" tone="muted" style={styles.gap}>
                     Nothing scheduled yet.

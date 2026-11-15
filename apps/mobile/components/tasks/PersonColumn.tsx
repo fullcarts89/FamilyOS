@@ -25,6 +25,7 @@ export function PersonColumn({
   onAdd,
   sharedColors,
   showHeader = true,
+  contextOf,
 }: {
   /** null for the shared list. */
   person: Person | null;
@@ -38,6 +39,8 @@ export function PersonColumn({
   onAdd: () => void;
   sharedColors?: [string, string];
   showHeader?: boolean;
+  /** Extra meta for a row: a project step shows its project's name. */
+  contextOf?: (item: WorkItem) => string | undefined;
 }) {
   const empty = WHEN_ORDER.every((w) => groups[w].length === 0);
   return (
@@ -92,6 +95,7 @@ export function PersonColumn({
                   onComplete={onComplete}
                   onAssign={onAssign}
                   onReschedule={onReschedule}
+                  context={contextOf?.(item)}
                   last={i === rows.length - 1}
                 />
               ))}

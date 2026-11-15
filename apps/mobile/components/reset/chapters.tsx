@@ -58,6 +58,7 @@ export function ChapterSteps({
             key={c.key}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
+            aria-selected={on}
             accessibilityLabel={`Chapter ${i + 1}: ${c.title}${s?.badge ? `, ${s.badge}` : s?.done ? ', done' : ''}`}
             onPress={() => onGo(i)}
             style={(st: PressState) => [

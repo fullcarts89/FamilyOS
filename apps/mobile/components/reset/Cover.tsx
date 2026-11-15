@@ -171,6 +171,8 @@ export function WhoPicker({
             key={p.id}
             accessibilityRole="radio"
             accessibilityState={{ checked: current === p.id, busy: busy === p.id }}
+            aria-checked={current === p.id}
+            aria-busy={busy === p.id}
             accessibilityLabel={p.isMe ? 'You' : p.name}
             onPress={async () => {
               if (current === p.id) return;

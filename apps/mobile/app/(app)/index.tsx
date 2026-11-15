@@ -137,7 +137,9 @@ export default function Today() {
     if (!items || !today) return out;
     const sort = byDue(timeZone);
     for (const item of currentTurns(items)) {
-      if (item.parentId || item.type === 'project' || !isOpen(item)) continue;
+      if (item.type === 'project' || !isOpen(item)) continue;
+      // A project's step shows on its owner's list too; unowned steps stay with the project.
+      if (item.parentId && !item.ownerMemberId) continue;
       const when = whenOf(item, today, timeZone);
       if (!NEAR.includes(when)) continue;
       const g =
@@ -353,6 +355,7 @@ export default function Today() {
                 key={c.key ?? 'shared'}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: on }}
+                aria-selected={on}
                 onPress={() => setColumn(c.key)}
                 style={[styles.tab, on && styles.tabOn]}
               >
@@ -384,6 +387,9 @@ export default function Today() {
                 onAssign={actions.assign}
                 onReschedule={actions.reschedule}
                 onAdd={() => open(c.key)}
+                contextOf={(item) =>
+                  item.parentId ? items?.find((i) => i.id === item.parentId)?.title : undefined
+                }
                 sharedColors={partnerColors}
                 showHeader={!phone}
               />

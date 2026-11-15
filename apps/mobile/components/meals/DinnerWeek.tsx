@@ -137,6 +137,8 @@ function DinnerRow({
             key={p.id}
             accessibilityRole="radio"
             accessibilityState={{ checked: on, disabled: !meal }}
+            aria-checked={on}
+            aria-disabled={!meal}
             accessibilityLabel={`${p.isMe ? 'You cook' : `${p.name} cooks`} on ${weekdayName(date)}`}
             disabled={!meal || readOnly}
             onPress={() => setCook(on ? null : p)}

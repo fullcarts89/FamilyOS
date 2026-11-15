@@ -63,6 +63,8 @@ export function Button({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
       accessibilityState={{ disabled: inactive, busy: !!busy }}
+      aria-disabled={inactive}
+      aria-busy={!!busy}
       disabled={inactive}
       onPress={onPress}
       hitSlop={hitSlopFor(height)}
@@ -133,6 +135,7 @@ export function IconButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!disabled }}
+      aria-disabled={!!disabled}
       disabled={disabled}
       onPress={onPress}
       hitSlop={hitSlopFor(size)}

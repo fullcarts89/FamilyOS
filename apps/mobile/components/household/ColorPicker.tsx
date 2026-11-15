@@ -28,6 +28,7 @@ export function ColorPicker({
             key={hex}
             accessibilityRole="radio"
             accessibilityState={{ checked: on }}
+            aria-checked={on}
             accessibilityLabel={`${label} ${hex}${other ? ', someone else’s' : ''}`}
             onPress={() => onChange(hex)}
             hitSlop={hitSlopFor(34)}
