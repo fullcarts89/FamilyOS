@@ -1,5 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { APP_GROUP, SESSION_STORAGE_KEY, SHARED_KEYCHAIN_SERVICE } from '../native/shared';
+import { clearWidget } from '../native/widget';
 
 /**
  * Session storage for Supabase Auth. On iOS and Android the session lives in the keychain or
@@ -42,4 +44,26 @@ const web = {
   removeItem: async (key: string) => globalThis.localStorage?.removeItem(key),
 };
 
-export const sessionStorage = Platform.OS === 'web' ? web : secure;
+/**
+ * iPhone: one keychain item per key, in the App Group's access group, so the widget can read
+ * the session and write back the tokens it refreshes (docs/operations/iphone.md). Readable
+ * after the first unlock so Lock Screen widgets work; never synced or restored to another device.
+ * No iPhone build has shipped before this, so there are no older sessions to move.
+ */
+const SHARED: SecureStore.SecureStoreOptions = {
+  keychainService: SHARED_KEYCHAIN_SERVICE,
+  accessGroup: APP_GROUP,
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+};
+
+const ios = {
+  getItem: (key: string) => SecureStore.getItemAsync(key, SHARED),
+  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value, SHARED),
+  async removeItem(key: string): Promise<void> {
+    await SecureStore.deleteItemAsync(key, SHARED);
+    // Signed out: the widget forgets the household too.
+    if (key === SESSION_STORAGE_KEY) clearWidget();
+  },
+};
+
+export const sessionStorage = Platform.OS === 'web' ? web : Platform.OS === 'ios' ? ios : secure;
