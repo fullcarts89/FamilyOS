@@ -883,6 +883,27 @@ async function seedPlanning(
     )
     .execute();
 
+  // Saturday's swim lesson in the Reset's week has nobody down for it yet.
+  const swim = await trx
+    .insertInto('app.event')
+    .values({
+      household_id: hid,
+      title: 'Swim lesson',
+      kind: 'family',
+      starts_at: at(addDays(p.resetWeek, 5), '09:30'),
+      ends_at: at(addDays(p.resetWeek, 5), '10:15'),
+      location: 'Dishman Pool',
+      timezone: TZ,
+      care_member_id: june,
+      created_by_member_id: maya,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+  await trx
+    .insertInto('app.event_member')
+    .values({ household_id: hid, event_id: swim.id, member_id: june })
+    .execute();
+
   // Last week's plan was committed; Theo covered one of Maya's pickups.
   await trx
     .insertInto('app.weekly_plan')
