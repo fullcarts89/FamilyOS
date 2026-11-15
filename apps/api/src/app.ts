@@ -15,7 +15,7 @@ import { todayRoutes } from './routes/today';
 import { routineRoutes } from './routes/routines';
 import { eventRoutes } from './routes/events';
 import { rhythmRoutes } from './routes/rhythm';
-import { calendarRoutes } from './routes/calendars';
+import { calendarRoutes, calendarSyncRoutes } from './routes/calendars';
 import { meRoutes } from './routes/me';
 import { activityRoutes } from './routes/activity';
 
@@ -97,6 +97,8 @@ export function createApp(deps: Deps) {
   const authed = new Hono<AppEnv>();
   authed.use('*', requireUser(deps));
   authed.route('/', accountRoutes(deps));
+  // Before the household scope: sync must not hold the request transaction during the fetch.
+  authed.route('/', calendarSyncRoutes(deps));
 
   const household = new Hono<AppEnv>();
   household.use('*', householdScope(deps));

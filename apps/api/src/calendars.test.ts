@@ -54,18 +54,17 @@ describe.skipIf(!db)('calendar subscriptions', () => {
   let feed = google;
   let status = 200;
   let address = '';
-  const { request, tokenFor, logs } = db
-    ? createTestApp({
-        db,
-        now: () => NOW,
-        calendarFetchPolicy: {
-          maxBytes: 1024 * 1024,
-          timeoutMs: 2000,
-          maxRedirects: 3,
-          allowHttp: true,
-          allowAddress: (ip) => ip === '127.0.0.1',
-        },
-      })
+  /** Runs while the server is answering a calendar request, before it responds. */
+  let duringFetch: (() => Promise<void>) | null = null;
+  const policy = {
+    maxBytes: 1024 * 1024,
+    timeoutMs: 4000,
+    maxRedirects: 3,
+    allowHttp: true,
+    allowAddress: (ip: string) => ip === '127.0.0.1',
+  };
+  const { request, tokenFor, logs, calendarKey } = db
+    ? createTestApp({ db, now: () => NOW, calendarFetchPolicy: policy })
     : createTestApp();
   let h: SeededHousehold;
   let owner: string;
@@ -87,8 +86,12 @@ describe.skipIf(!db)('calendar subscriptions', () => {
   beforeAll(async () => {
     server = createServer((req, res) => {
       if (req.url === `/calendar/ical/${SECRET}/basic.ics`) {
-        res.statusCode = status;
-        return void res.end(status === 200 ? feed : '');
+        const respond = () => {
+          res.statusCode = status;
+          res.end(status === 200 ? feed : '');
+        };
+        if (duringFetch) return void duringFetch().then(respond, respond);
+        return void respond();
       }
       if (req.url === '/not-a-calendar') return void res.end('<html>Sign in</html>');
       res.statusCode = 404;
@@ -225,6 +228,19 @@ describe.skipIf(!db)('calendar subscriptions', () => {
         body: { error: 'read_only' },
       });
     }
+
+    // A caregiver sees the household's own events, never the adults' imported calendars.
+    const sitter = await tokenOf(h.caregiver);
+    const theirs = await json<{ occurrences: Occurrence[] }>(
+      await call('/events?from=2026-11-16&to=2026-11-22', { token: sitter }),
+    );
+    expect(theirs.occurrences.map((o) => o.title)).toEqual(['Daycare pickup']);
+    const theirRhythm = await json<{ lanes: { occurrences: Occurrence[] }[]; headsUps: unknown[] }>(
+      await call('/rhythm?date=2026-11-19', { token: sitter }),
+    );
+    expect(theirRhythm.lanes.flatMap((l) => l.occurrences).some((o) => o.readOnly)).toBe(false);
+    expect(JSON.stringify(theirRhythm)).not.toContain('Quarterly planning');
+    expect((await call(`/events/${id}`, { token: sitter })).status).toBe(404);
   });
 
   it('re-syncs idempotently, updating what changed and removing what vanished', async () => {
@@ -272,6 +288,42 @@ describe.skipIf(!db)('calendar subscriptions', () => {
     expect((await imported()).length).toBe(count);
   });
 
+  it('holds no database connection while the calendar answers', async () => {
+    // An app with a single connection: if sync kept its transaction open during the fetch, this
+    // query (made while the server is still answering) would wait for it.
+    const single = createDb({ connectionString: url ?? '', maxConnections: 1 });
+    const solo = createTestApp({
+      db: single,
+      now: () => NOW,
+      calendarFetchPolicy: policy,
+      calendarKey,
+    });
+    let probe = 'not_called';
+    duringFetch = async () => {
+      probe = await Promise.race([
+        single
+          .selectFrom('app.household')
+          .select('id')
+          .limit(1)
+          .execute()
+          .then(() => 'free'),
+        new Promise<string>((resolve) => setTimeout(() => resolve('held'), 1500)),
+      ]);
+    };
+    try {
+      const token = await solo.tokenFor({ userId: h.owner.userId ?? '', email: 'x@example.test' });
+      const res = await solo.request(`/households/${h.id}/calendars/${calendar.id}/sync`, {
+        method: 'POST',
+        token,
+      });
+      expect(res.status).toBe(200);
+      expect(probe).toBe('free');
+    } finally {
+      duringFetch = null;
+      await single.destroy();
+    }
+  });
+
   it('edits a calendar, moving its events to the new owner, and removes it with them', async () => {
     const patch = (body: Record<string, unknown>) =>
       call(`/calendars/${calendar.id}`, { method: 'PATCH', body });
@@ -312,6 +364,7 @@ describe.skipIf(!db)('calendar subscriptions', () => {
       .execute();
     expect(audit.map((a) => a.action)).toEqual([
       'calendar.added',
+      'calendar.synced',
       'calendar.synced',
       'calendar.synced',
       'calendar.synced',

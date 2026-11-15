@@ -22,10 +22,12 @@ export function createTestApp(
     calendarFetchPolicy?: FetchPolicy;
     /** Leave out the calendar key, as a deployment without CALENDAR_ENCRYPTION_KEY would. */
     withoutCalendars?: boolean;
+    /** Share another test app's calendar key, so it can read the addresses that one saved. */
+    calendarKey?: Buffer;
   } = {},
 ) {
   const secret = randomBytes(32).toString('hex');
-  const calendarKey = randomBytes(32);
+  const calendarKey = options.calendarKey ?? randomBytes(32);
   const logs: string[] = [];
   /** Accounts the auth admin holds: email → user ID and password. */
   const accounts = new Map<string, { userId: string; password: string }>();

@@ -1,7 +1,8 @@
-import { setContext, withRequestContext } from '@familyos/db';
+import { setContext, withRequestContext, type Database } from '@familyos/db';
+import type { Transaction } from 'kysely';
 import type { MiddlewareHandler } from 'hono';
 import { InvalidTokenError } from '../auth/verify';
-import type { AppEnv, Deps } from './env';
+import type { AppEnv, CurrentMember, Deps } from './env';
 import { ApiError, notFound } from './errors';
 import { uuidParam } from './validation';
 
@@ -53,4 +54,28 @@ export function householdScope(deps: Deps): MiddlewareHandler<AppEnv> {
       if (!(error instanceof Rollback)) throw error;
     }
   };
+}
+
+/**
+ * A short household-scoped transaction outside the request transaction, for routes that must not
+ * hold a connection while they wait on something else (a calendar fetch). Same rules as
+ * householdScope: RLS role, the caller's active membership or 404, rolled back on any error.
+ */
+export async function inHousehold<T>(
+  deps: Deps,
+  scope: { userId: string; householdId: string },
+  fn: (trx: Transaction<Database>, member: CurrentMember) => Promise<T>,
+): Promise<T> {
+  return withRequestContext(deps.db, scope, async (trx) => {
+    const member = await trx
+      .selectFrom('app.member')
+      .select(['id', 'role'])
+      .where('household_id', '=', scope.householdId)
+      .where('user_id', '=', scope.userId)
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+    if (!member) throw notFound();
+    await setContext(trx, { ...scope, memberId: member.id });
+    return fn(trx, { id: member.id, role: member.role, householdId: scope.householdId });
+  });
 }
