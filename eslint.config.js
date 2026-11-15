@@ -12,6 +12,8 @@ export default tseslint.config(
       'research_notes/**',
       'reports/**',
       'apps/mobile/expo-env.d.ts',
+      // Throwaway design prototypes: their own tooling, not part of the app.
+      'design/**',
     ],
   },
   js.configs.recommended,

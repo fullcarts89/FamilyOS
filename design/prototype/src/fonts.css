@@ -1,0 +1,7 @@
+/* Latin subsets only, bundled with the prototype so it renders the same everywhere. */
+@font-face { font-family: 'Fraunces'; src: url('@fontsource-variable/fraunces/files/fraunces-latin-opsz-normal.woff2') format('woff2-variations'); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: 'Figtree'; src: url('@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2') format('woff2-variations'); font-weight: 300 900; font-display: swap; }
+@font-face { font-family: 'Geist'; src: url('@fontsource-variable/geist/files/geist-latin-wght-normal.woff2') format('woff2-variations'); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: 'Geist Mono'; src: url('@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2') format('woff2-variations'); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: 'Bricolage Grotesque'; src: url('@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-opsz-normal.woff2') format('woff2-variations'); font-weight: 200 800; font-display: swap; }
+@font-face { font-family: 'Manrope'; src: url('@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2') format('woff2-variations'); font-weight: 200 800; font-display: swap; }
