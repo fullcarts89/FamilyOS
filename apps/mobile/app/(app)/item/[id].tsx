@@ -742,7 +742,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   titleDone: { color: color.muted, textDecorationLine: 'line-through' },
-  titlePress: { flex: 1, cursor: 'text' },
+  titlePress: { flex: 1, cursor: 'pointer' },
   titleHover: {
     textDecorationLine: 'underline',
     textDecorationStyle: 'dotted',
