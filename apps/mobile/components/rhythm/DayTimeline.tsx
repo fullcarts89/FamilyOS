@@ -392,25 +392,46 @@ export function DayTimeline({
             </View>
           </View>
 
-          {/* Shared events, named under the timeline */}
-          {!compact && model.together.length > 0 ? (
-            <View style={[styles.foot, { marginLeft: head }]}>
-              {model.together.map((t) => (
-                <Text
-                  key={t.o.key}
-                  variant="small"
-                  tone="muted"
-                  numberOfLines={1}
-                  style={[
-                    styles.footText,
-                    { left: Math.max(0, Math.min(track - 200, x((t.start + t.end) / 2) - 100)) },
-                  ]}
-                >
-                  {t.o.title.split(':')[0]} · {t.names}
-                </Text>
-              ))}
-            </View>
-          ) : null}
+          {/* Shared events, named under the timeline; captions that would overlap take a new row */}
+          {!compact && model.together.length > 0
+            ? (() => {
+                const placed: { key: string; label: string; left: number; row: number }[] = [];
+                const rowEnds: number[] = [];
+                const sorted = [...model.together].sort((a, b) => a.start - b.start);
+                for (const t of sorted) {
+                  const left = Math.max(0, Math.min(track - 200, x((t.start + t.end) / 2) - 100));
+                  let row = rowEnds.findIndex((end) => end + 8 <= left);
+                  if (row === -1) row = rowEnds.length;
+                  rowEnds[row] = left + 200;
+                  placed.push({
+                    key: t.o.key,
+                    label: `${t.o.title.split(':')[0]} · ${t.names}`,
+                    left,
+                    row,
+                  });
+                }
+                return (
+                  <View
+                    style={[
+                      styles.foot,
+                      { marginLeft: head, height: 22 * Math.max(1, rowEnds.length) },
+                    ]}
+                  >
+                    {placed.map((p) => (
+                      <Text
+                        key={p.key}
+                        variant="small"
+                        tone="muted"
+                        numberOfLines={1}
+                        style={[styles.footText, { left: p.left, top: p.row * 22 }]}
+                      >
+                        {p.label}
+                      </Text>
+                    ))}
+                  </View>
+                );
+              })()
+            : null}
         </View>
       ) : (
         <View style={{ height: compact ? 120 : 260 }} />

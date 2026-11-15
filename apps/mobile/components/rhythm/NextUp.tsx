@@ -143,7 +143,7 @@ export function NextUp({
                   </Text>
                 </View>
               ) : (
-                <Text style={styles.clock}>
+                <Text style={styles.clock} numberOfLines={1}>
                   {time.replace(/am|pm/, '')}
                   <Text style={styles.ampm}>{time.slice(-2)}</Text>
                 </Text>
@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
   },
   last: { borderBottomWidth: 0 },
   pressed: { opacity: 0.7 },
-  time: { width: 54 },
+  time: { width: 68 },
   clock: {
     fontFamily: font.display,
     fontSize: 19,
