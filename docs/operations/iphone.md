@@ -72,7 +72,7 @@ When it asks, sign in with your Apple ID (two-factor code on your phone) and let
 - Generate a distribution certificate.
 - Register the bundle IDs `app.familyos.household` and `app.familyos.household.widget`, with the App Groups capability for `group.app.familyos.household`.
 - Create provisioning profiles for both targets.
-- Set up Push Notifications (an APNs key). Nothing sends notifications yet; this saves a later trip.
+- Set up Push Notifications (an APNs key). The app asks for permission and registers its token (below); the worker sends through Expo with this key.
 
 The build runs on Expo's Macs. This is the first time the widget's Swift is compiled; if it fails, send Claude the "Run fastlane" or "Xcode build" log from the build page.
 
@@ -162,7 +162,15 @@ Not implemented yet; the widget already calls it and falls back to the app's sna
 
 ## Push notifications
 
-`expo-notifications` 58.1.6 is installed and configured (`aps-environment: production`); step 4 creates the APNs key. The backend is ready; the app still needs to ask for permission (at a moment that makes sense, not at first launch) and register its token.
+`expo-notifications` 58.1.6 is installed and configured (`aps-environment: production`); step 4 creates the APNs key.
+
+**In the app** (`apps/mobile/native/push.ios.ts`, `components/push/`):
+
+- **When it asks:** once per iPhone, after the first sign-in, on Today after a couple of seconds (never at launch): a short sheet says what would be sent (handoff reminders, the morning check-in, the Weekly Reset) and that quiet hours hold. "Turn on notifications" shows iOS's prompt; "Not now" is also final for that sheet. Household → Your settings shows the state ("On for this iPhone", "Off for this iPhone" with **Open Settings**, "Not on yet" with **Turn on**).
+- **Token:** `getExpoPushTokenAsync` needs the EAS project ID (`extra.eas.projectId`, written by `eas init`, step 1). Without it the app says notifications are allowed but will start once the build is set up for push, and registers nothing.
+- **Registering:** whenever the app starts or comes to the front with permission granted it registers the token (`POST …/me/push-tokens`, idempotent); if permission was turned off in iOS Settings it unregisters (`DELETE`). The token and household are kept in the app's own keychain item (`familyos.push.registration`) so that **signing out** removes the token first (at most 4 seconds, then signs out regardless).
+- **Tapping a notification** opens Today, or the Weekly Reset for its reminder. In the foreground a notification shows as a banner; only handoff reminders play a sound.
+- **Web:** nothing to turn on; the settings say notifications arrive in the iPhone app and the switches apply there.
 
 **API (the app's side):**
 
