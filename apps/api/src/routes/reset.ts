@@ -69,7 +69,12 @@ function weekParam(value: string | undefined, today: string): string {
  * groceries, routines' turns, and what is still unresolved, so the plan never claims everything
  * is handled while something important is open.
  */
-async function assembleReset(trx: Transaction<Database>, member: CurrentMember, week: string) {
+async function assembleReset(
+  trx: Transaction<Database>,
+  member: CurrentMember,
+  week: string,
+  today: string,
+) {
   const { householdId } = member;
   const { timezone } = await trx
     .selectFrom('app.household')
@@ -282,7 +287,10 @@ async function assembleReset(trx: Transaction<Database>, member: CurrentMember, 
   }));
   const dueBeforeWeek = (i: { dueOn: string | null; dueAt: string | null }) =>
     i.dueOn !== null ? i.dueOn < week : i.dueAt !== null && i.dueAt < weekStartAt.toISOString();
-  const unfinished = decorated.filter(dueBeforeWeek);
+  // Loose ends: due before the week starts and still open; one turn per routine (the current).
+  const unfinished = decorated.filter(
+    (i) => dueBeforeWeek(i) && (i.recurrenceRuleId === null || i.isCurrentTurn === true),
+  );
   const dueThisWeek = decorated.filter((i) => !dueBeforeWeek(i) && i.recurrenceRuleId === null);
 
   // ------------------------------------------------------------------------------------------
@@ -389,7 +397,12 @@ async function assembleReset(trx: Transaction<Database>, member: CurrentMember, 
   const unresolved = unresolvedForWeek({
     week: weekRhythm,
     openDecisions: openDecisions.map((d) => ({ id: d.id, dueOn: d.dueOn })),
-    overdue: unfinished,
+    // Only what is actually late counts as unresolved; something due today isn't yet.
+    overdue: unfinished.filter((i) =>
+      i.dueOn !== null
+        ? i.dueOn < today
+        : i.dueAt !== null && i.dueAt < instantOf(today, timezone).toISOString(),
+    ),
     timeZone: timezone,
   });
 
@@ -438,7 +451,7 @@ export function resetRoutes(deps: Deps) {
     const member = c.get('member');
     const local = await today(trx, member.householdId);
     const week = weekParam(c.req.query('week'), local);
-    return c.json({ today: local, ...(await assembleReset(trx, member, week)) });
+    return c.json({ today: local, ...(await assembleReset(trx, member, week, local)) });
   });
 
   // Commit the week's plan. Idempotent: committing again keeps the first commit's time and
@@ -499,7 +512,7 @@ export function resetRoutes(deps: Deps) {
         version: existing.version + 1,
       });
     }
-    const reset = await assembleReset(trx, member, body.week);
+    const reset = await assembleReset(trx, member, body.week, await today(trx, member.householdId));
     return c.json({
       plan: reset.plan,
       summary: {
