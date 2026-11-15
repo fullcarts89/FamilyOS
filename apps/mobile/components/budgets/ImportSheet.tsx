@@ -1,4 +1,5 @@
 import { BudgetCsvError, parseBudgetCsv } from '@familyos/domain';
+import * as DocumentPicker from 'expo-document-picker';
 import { FileUp } from 'lucide-react-native';
 import { useState } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
@@ -14,8 +15,25 @@ const MAX_BYTES = 1024 * 1024;
 const UNRECOGNIZED =
   'That file doesn’t look like a Monarch budget export. FamilyOS looks for columns such as Category, Budget and Actual. Export the budget (not transactions) and try again.';
 
+const TOO_LARGE = '\u0000too_large';
+
+/** iPhone: the Files picker (iCloud Drive, Downloads, AirDrop'd files), then read the copy. */
+async function pickCsvNative(): Promise<{ name: string; text: string } | null> {
+  const result = await DocumentPicker.getDocumentAsync({
+    type: ['text/csv', 'text/comma-separated-values', 'text/plain'],
+    copyToCacheDirectory: true,
+    multiple: false,
+  });
+  const file = result.canceled ? null : result.assets[0];
+  if (!file) return null;
+  if ((file.size ?? 0) > MAX_BYTES) return { name: file.name, text: TOO_LARGE };
+  const text = await fetch(file.uri).then((r) => r.text());
+  return { name: file.name, text: text.length > MAX_BYTES ? TOO_LARGE : text };
+}
+
 /** Web: open the browser's file picker for a CSV and read it as text. */
 function pickCsv(): Promise<{ name: string; text: string } | null> {
+  if (Platform.OS !== 'web') return pickCsvNative().catch(() => null);
   return new Promise((resolve) => {
     if (typeof document === 'undefined') return resolve(null);
     const input = document.createElement('input');
@@ -24,7 +42,7 @@ function pickCsv(): Promise<{ name: string; text: string } | null> {
     input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return resolve(null);
-      if (file.size > MAX_BYTES) return resolve({ name: file.name, text: '\u0000too_large' });
+      if (file.size > MAX_BYTES) return resolve({ name: file.name, text: TOO_LARGE });
       file
         .text()
         .then((text) => resolve({ name: file.name, text }))
@@ -55,7 +73,6 @@ export function ImportSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<string | null>(null);
-  const web = Platform.OS === 'web';
 
   const choose = async () => {
     if (!household) return;
@@ -63,7 +80,7 @@ export function ImportSheet({
     const picked = await pickCsv();
     if (!picked) return;
     setFile(picked.name);
-    if (picked.text === '\u0000too_large') {
+    if (picked.text === TOO_LARGE) {
       setError('That file is too big. Export one month (or a few) at a time.');
       return;
     }
@@ -140,35 +157,33 @@ export function ImportSheet({
             </View>
           ))}
         </View>
-        {!web ? (
+        {Platform.OS === 'ios' ? (
           <View style={styles.note}>
             <Text variant="meta">
-              Uploading from the iPhone app isn’t available yet. Open FamilyOS on the web on a
-              computer to upload the file; the budget then shows here too.
+              On iPhone: save the export to Files (or AirDrop it from your computer), then choose it
+              here.
             </Text>
           </View>
         ) : null}
       </View>
-      {web ? (
-        <SheetActions>
-          {error ? <ErrorNotice message={error} /> : null}
-          <View style={styles.actions}>
-            <Button
-              title={
-                busy
-                  ? 'Reading the file…'
-                  : file && error
-                    ? 'Choose another file'
-                    : 'Choose the CSV file'
-              }
-              icon={FileUp}
-              busy={busy}
-              onPress={() => void choose()}
-            />
-            <Button title="Cancel" variant="quiet" onPress={onClose} />
-          </View>
-        </SheetActions>
-      ) : null}
+      <SheetActions>
+        {error ? <ErrorNotice message={error} /> : null}
+        <View style={styles.actions}>
+          <Button
+            title={
+              busy
+                ? 'Reading the file…'
+                : file && error
+                  ? 'Choose another file'
+                  : 'Choose the CSV file'
+            }
+            icon={FileUp}
+            busy={busy}
+            onPress={() => void choose()}
+          />
+          <Button title="Cancel" variant="quiet" onPress={onClose} />
+        </View>
+      </SheetActions>
     </Sheet>
   );
 }
