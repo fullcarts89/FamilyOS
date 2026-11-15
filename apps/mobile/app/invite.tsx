@@ -1,7 +1,12 @@
 import { PASSWORD_MIN_LENGTH, passwordProblem } from '@familyos/domain';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Body, Brand, Button, ErrorText, Field, Screen, Title } from '../components/ui';
+import { View } from 'react-native';
+import { AuthLayout } from '../components/AuthLayout';
+import { Button } from '../design/Button';
+import { Field } from '../design/Field';
+import { ErrorNotice } from '../design/Notice';
+import { Loading } from '../design/Page';
 import { ApiRequestError, api, claimInvite } from '../lib/api';
 import { useSession } from '../lib/session';
 import { signInWithPassword } from '../lib/supabase';
@@ -13,7 +18,7 @@ export default function AcceptInvite() {
   const { token } = useLocalSearchParams<{ token?: string }>();
   const { session, loading } = useSession();
 
-  if (loading) return null;
+  if (loading) return <Loading />;
   if (!token) return <Redirect href="/" />;
   return session ? <JoinAsSignedIn token={token} /> : <CreateAccount token={token} />;
 }
@@ -46,10 +51,10 @@ function CreateAccount({ token }: { token: string }) {
       }
       setError(
         code === 'invite_not_found'
-          ? 'This invite isn’t valid for that email. It may have expired or already been used.'
+          ? 'This invite isn’t valid for that email. It may have expired or already been used. Ask for a new link.'
           : code === 'weak_password'
             ? 'That password is known from a data breach or too easy to guess. Choose another.'
-            : 'Couldn’t create your account. Try again.',
+            : 'Couldn’t create your account. Check your connection and try again.',
       );
       return;
     }
@@ -65,21 +70,23 @@ function CreateAccount({ token }: { token: string }) {
 
   if (hasAccount) {
     return (
-      <Screen>
-        <Title>You already have an account</Title>
-        <Body muted>Sign in with your password, then open the invite link again to join.</Body>
-        <Button title="Sign in" onPress={() => router.push('/sign-in')} />
-      </Screen>
+      <AuthLayout
+        title="You already have an account"
+        lead="Sign in with your password, then open the invite link again to join."
+      >
+        <Button title="Sign in" size="lg" full onPress={() => router.push('/sign-in')} />
+      </AuthLayout>
     );
   }
 
   return (
-    <Screen>
-      <Brand />
-      <Title>You’re invited</Title>
-      <Body muted>Use the email this invite was sent to, and choose a password.</Body>
+    <AuthLayout
+      title="You’re invited"
+      lead="Join your household. Use the email this invite was sent to, and choose a password."
+    >
       <Field
         label="Your name"
+        hint="What your household will call you."
         value={name}
         onChangeText={setName}
         autoComplete="given-name"
@@ -96,7 +103,9 @@ function CreateAccount({ token }: { token: string }) {
         textContentType="username"
       />
       <Field
-        label={`Password (at least ${PASSWORD_MIN_LENGTH} characters)`}
+        label="Password"
+        hint={`At least ${PASSWORD_MIN_LENGTH} characters. A short sentence works well.`}
+        error={problem === 'too_long' ? 'That password is too long.' : null}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -106,6 +115,7 @@ function CreateAccount({ token }: { token: string }) {
       />
       <Field
         label="Password again"
+        error={again.length > 0 && again !== password ? 'The passwords don’t match.' : null}
         value={again}
         onChangeText={setAgain}
         secureTextEntry
@@ -115,16 +125,24 @@ function CreateAccount({ token }: { token: string }) {
         returnKeyType="go"
         onSubmitEditing={() => ready && void create()}
       />
-      {problem === 'too_long' && <ErrorText>That password is too long.</ErrorText>}
-      {again.length > 0 && again !== password && <ErrorText>The passwords don’t match.</ErrorText>}
-      {error && <ErrorText>{error}</ErrorText>}
-      <Button title="Join" onPress={create} busy={busy} disabled={!ready} />
-      <Button
-        title="I already have an account"
-        variant="secondary"
-        onPress={() => router.push('/sign-in')}
-      />
-    </Screen>
+      {error ? <ErrorNotice message={error} /> : null}
+      <View style={{ gap: 6 }}>
+        <Button
+          title="Join the household"
+          size="lg"
+          full
+          onPress={create}
+          busy={busy}
+          disabled={!ready}
+        />
+        <Button
+          title="I already have an account"
+          variant="quiet"
+          full
+          onPress={() => router.push('/sign-in')}
+        />
+      </View>
+    </AuthLayout>
   );
 }
 
@@ -155,18 +173,25 @@ function JoinAsSignedIn({ token }: { token: string }) {
   };
 
   return (
-    <Screen>
-      <Title>Join your household</Title>
-      <Body muted>Choose the name your household will see.</Body>
+    <AuthLayout title="Join your household" lead="Choose the name your household will see.">
       <Field
         label="Your name"
         value={name}
         onChangeText={setName}
         autoComplete="given-name"
         maxLength={60}
+        returnKeyType="go"
+        onSubmitEditing={() => name.trim() && void accept()}
       />
-      {error && <ErrorText>{error}</ErrorText>}
-      <Button title="Join" onPress={accept} busy={busy} disabled={name.trim().length === 0} />
-    </Screen>
+      {error ? <ErrorNotice message={error} /> : null}
+      <Button
+        title="Join"
+        size="lg"
+        full
+        onPress={accept}
+        busy={busy}
+        disabled={name.trim().length === 0}
+      />
+    </AuthLayout>
   );
 }

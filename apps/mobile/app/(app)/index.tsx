@@ -1,20 +1,39 @@
-import { Redirect, router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
-import { ItemRow, ListScreen, Section } from '../components/items';
-import { Body, Button, ErrorText, Screen, Title } from '../components/ui';
-import { api, type TodayResponse } from '../lib/api';
-import { useHousehold } from '../lib/household';
-import { useSession } from '../lib/session';
-import { supabase } from '../lib/supabase';
+import { router, useFocusEffect } from 'expo-router';
+import { ArrowRight, Inbox, Plus } from 'lucide-react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { TaskRow } from '../../components/tasks/TaskRow';
+import { Avatar } from '../../design/Avatar';
+import type { PressState } from '../../design/Button';
+import { EmptyState } from '../../design/EmptyState';
+import { useLayout } from '../../design/layout';
+import { FadeIn, Skeleton, SkeletonBlock, SkeletonRows } from '../../design/motion';
+import { ErrorNotice } from '../../design/Notice';
+import { Page } from '../../design/Page';
+import { SectionHeader } from '../../design/Section';
+import { Text } from '../../design/Text';
+import { color, radius } from '../../design/tokens';
+import { api, type TodayResponse, type WorkItem } from '../../lib/api';
+import { useCapture } from '../../lib/capture';
+import { greetingFor, hourIn, longDate } from '../../lib/dates';
+import { useHousehold } from '../../lib/household';
+import { usePeople } from '../../lib/people';
+import { useTaskActions } from '../../lib/tasks';
 
-// Today (PRD §4): decisions and exceptions first, then what's moving, what's due, what got handled.
+type Lists = Pick<TodayResponse, 'needsYou' | 'inProgress' | 'thisWeek' | 'handled'>;
+const LISTS: (keyof Lists)[] = ['needsYou', 'inProgress', 'thisWeek', 'handled'];
+
+// Today: a greeting and a plain sentence about the day, capture, then what needs you, what's
+// moving, what's coming this week and what got handled. The day's lanes arrive with events.
 export default function Today() {
-  const { session, loading: sessionLoading } = useSession();
-  const { household, loading: householdLoading, error: householdError } = useHousehold();
+  const { household, timeZone } = useHousehold();
+  const people = usePeople();
+  const { desktop, phone } = useLayout();
+  const { open, version } = useCapture();
   const [today, setToday] = useState<TodayResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     if (!household) return;
@@ -31,38 +50,30 @@ export default function Today() {
       void load();
     }, [load]),
   );
+  useEffect(() => {
+    if (version > 0) void load();
+  }, [version, load]);
+  useEffect(() => () => void (reloadTimer.current && clearTimeout(reloadTimer.current)), []);
 
-  if (sessionLoading)
-    return (
-      <Screen>
-        <ActivityIndicator />
-      </Screen>
-    );
-  if (!session) return <Redirect href="/sign-in" />;
-  if (householdLoading)
-    return (
-      <Screen>
-        <ActivityIndicator />
-      </Screen>
-    );
-  if (householdError)
-    return (
-      <Screen>
-        <ErrorText>Couldn’t load your household.</ErrorText>
-      </Screen>
-    );
-  if (!household) {
-    return (
-      <Screen>
-        <Title>FamilyOS</Title>
-        <Body muted>
-          You’re signed in but not in a household yet. Open the invite link your household owner
-          sent you.
-        </Body>
-        <Button title="Sign out" onPress={() => supabase.auth.signOut()} />
-      </Screen>
-    );
-  }
+  // Moves update the row in place; the lists regroup a moment later, after it settles.
+  const onChange = useCallback(
+    (item: WorkItem) => {
+      setToday((t) =>
+        t
+          ? {
+              ...t,
+              ...Object.fromEntries(
+                LISTS.map((k) => [k, t[k].map((i) => (i.id === item.id ? item : i))]),
+              ),
+            }
+          : t,
+      );
+      if (reloadTimer.current) clearTimeout(reloadTimer.current);
+      reloadTimer.current = setTimeout(() => void load(), 1600);
+    },
+    [load],
+  );
+  const actions = useTaskActions(onChange);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -70,66 +81,272 @@ export default function Today() {
     setRefreshing(false);
   };
 
+  const me = people.me;
+  const name = me?.name.split(' ')[0] ?? '';
+  const greeting = `${greetingFor(hourIn(timeZone))}${name ? `, ${name}` : ''}`;
   const date = today?.date ?? '';
-  return (
-    <ListScreen
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
-      footer={
-        <>
-          {today && today.inboxCount > 0 ? (
-            <Button
-              title={`Sort inbox (${today.inboxCount})`}
-              onPress={() => router.push('/inbox')}
-            />
-          ) : null}
-          <Button title="Capture" onPress={() => router.push('/capture')} />
-        </>
-      }
-    >
-      <Title>Today</Title>
-      <View style={styles.links}>
-        <Pressable accessibilityRole="link" onPress={() => router.push('/work')}>
-          <Body muted>All to-dos →</Body>
-        </Pressable>
-        <Pressable accessibilityRole="link" onPress={() => router.push('/routines')}>
-          <Body muted>Routines →</Body>
-        </Pressable>
-        <Pressable accessibilityRole="link" onPress={() => router.push('/household')}>
-          <Body muted>Household →</Body>
-        </Pressable>
-      </View>
-      {error && <ErrorText>Couldn’t refresh. Pull down to try again.</ErrorText>}
-      {!today && !error && <ActivityIndicator />}
-      {today && (
-        <>
-          <Section title="Needs you" empty="Nothing needs you right now.">
-            {today.needsYou.map((item) => (
-              <ItemRow key={item.id} item={item} today={date} />
-            ))}
-          </Section>
-          {today.inProgress.length > 0 && (
-            <Section title="In progress">
-              {today.inProgress.map((item) => (
-                <ItemRow key={item.id} item={item} today={date} />
-              ))}
-            </Section>
-          )}
-          <Section title="This week" empty="Nothing due in the next seven days.">
-            {today.thisWeek.map((item) => (
-              <ItemRow key={item.id} item={item} today={date} />
-            ))}
-          </Section>
-          {today.handled.length > 0 && (
-            <Section title="Handled">
-              {today.handled.map((item) => (
-                <ItemRow key={item.id} item={item} today={date} />
-              ))}
-            </Section>
-          )}
-        </>
+
+  const row = (item: WorkItem, i: number, list: WorkItem[]) => (
+    <TaskRow
+      key={item.id}
+      item={item}
+      today={date}
+      onComplete={actions.complete}
+      onReopen={actions.reopen}
+      onAssign={actions.assign}
+      onReschedule={actions.reschedule}
+      context={item.ownerMemberId !== me?.id ? people.label(item.ownerMemberId) : undefined}
+      last={i === list.length - 1}
+    />
+  );
+
+  const needs = today ? (
+    <View style={styles.block}>
+      <SectionHeader title="Needs you" sub={countLine(today.needsYou.length)} />
+      {today.needsYou.length ? (
+        today.needsYou.map(row)
+      ) : (
+        <EmptyState
+          compact
+          title="Nothing needs you right now"
+          body="Enjoy it, or get ahead on something below."
+        />
       )}
-    </ListScreen>
+    </View>
+  ) : null;
+
+  const week = today ? (
+    <View style={styles.block}>
+      <SectionHeader title="This week" sub="The next seven days" />
+      {today.thisWeek.length ? (
+        today.thisWeek.map(row)
+      ) : (
+        <EmptyState
+          compact
+          title="A clear week ahead"
+          body="Nothing is due in the next seven days."
+          action={<CaptureLink onPress={() => open()} label="Add something" />}
+        />
+      )}
+    </View>
+  ) : null;
+
+  const moving =
+    today && today.inProgress.length > 0 ? (
+      <View style={styles.block}>
+        <SectionHeader title="On the move" sub="Started, booked or waiting" />
+        {today.inProgress.map(row)}
+      </View>
+    ) : null;
+
+  const handled =
+    today && today.handled.length > 0 ? (
+      <View style={styles.block}>
+        <SectionHeader title="Handled" sub="In the last week" />
+        {today.handled.slice(0, phone ? 4 : 8).map((item) => {
+          const by = people.byId(item.completedByMemberId ?? item.ownerMemberId);
+          return (
+            <Pressable
+              key={item.id}
+              accessibilityRole="link"
+              onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
+              style={(s: PressState) => [styles.handled, s.hovered && styles.handledHover]}
+            >
+              <Avatar person={by} size={22} />
+              <Text variant="body" style={styles.handledText} numberOfLines={2}>
+                <Text variant="bodyStrong">{by ? (by.isMe ? 'You' : by.name) : 'Someone'}</Text>
+                {' handled '}
+                {item.title}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    ) : null;
+
+  return (
+    <Page refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
+      <View style={styles.head}>
+        <Text variant="kicker" tone="muted">
+          {date ? longDate(date) : ' '}
+        </Text>
+        <Text variant="greeting">{greeting}</Text>
+        {today ? (
+          <Text variant="lead" tone="muted" style={styles.summary}>
+            {summary(today, people.label)}
+          </Text>
+        ) : null}
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Add something for the household"
+        onPress={() => open()}
+        style={(s: PressState) => [styles.capture, s.hovered && { borderColor: color.ink }]}
+      >
+        <Plus size={18} color={color.ink} strokeWidth={2.2} />
+        <Text variant="body" tone="muted" style={styles.captureText}>
+          Add something for the household…
+        </Text>
+        {!phone ? (
+          <View style={styles.kbd}>
+            <Text variant="small" tone="muted">
+              N
+            </Text>
+          </View>
+        ) : null}
+      </Pressable>
+
+      {today && today.inboxCount > 0 ? (
+        <Pressable
+          accessibilityRole="link"
+          onPress={() => router.push('/inbox')}
+          style={(s: PressState) => [styles.inbox, s.hovered && { borderColor: color.ink }]}
+        >
+          <Inbox size={18} color={color.ink} strokeWidth={2.2} />
+          <Text variant="label" style={styles.inboxText}>
+            {today.inboxCount === 1 ? '1 thing to sort' : `${today.inboxCount} things to sort`} in
+            the inbox
+          </Text>
+          <ArrowRight size={16} color={color.ink} strokeWidth={2.2} />
+        </Pressable>
+      ) : null}
+
+      {error ? (
+        <View style={styles.block}>
+          <ErrorNotice
+            message={today ? 'Couldn’t refresh. Pull down or try again.' : 'Couldn’t load today.'}
+            onRetry={load}
+          />
+        </View>
+      ) : null}
+
+      {!today && !error ? (
+        <Skeleton label="Loading today">
+          <View style={[styles.block, styles.skeletonHead]}>
+            <SkeletonBlock width={160} height={18} />
+          </View>
+          <SkeletonRows count={4} />
+        </Skeleton>
+      ) : null}
+
+      {today ? (
+        <FadeIn>
+          {desktop ? (
+            <View style={styles.columns}>
+              <View style={styles.main}>
+                {needs}
+                {week}
+              </View>
+              <View style={styles.side}>
+                {moving}
+                {handled}
+                {!moving && !handled ? (
+                  <View style={styles.block}>
+                    <SectionHeader title="Handled" sub="In the last week" />
+                    <Text variant="body" tone="muted" style={styles.quiet}>
+                      When either of you finishes something, it shows here.
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          ) : (
+            <>
+              {needs}
+              {week}
+              {moving}
+              {handled}
+            </>
+          )}
+        </FadeIn>
+      ) : null}
+    </Page>
   );
 }
 
-const styles = StyleSheet.create({ links: { flexDirection: 'row', gap: 20 } });
+function CaptureLink({ onPress, label }: { onPress: () => void; label: string }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={styles.link}>
+      <Plus size={15} color={color.ink} strokeWidth={2.4} />
+      <Text variant="label">{label}</Text>
+    </Pressable>
+  );
+}
+
+const countLine = (n: number) => (n === 0 ? 'All clear' : n === 1 ? '1 thing' : `${n} things`);
+
+/** One plain sentence about the day, from real data only. */
+function summary(t: TodayResponse, label: (id: string | null) => string): string {
+  const parts: string[] = [];
+  if (t.needsYou.length === 0) parts.push('Nothing needs you right now');
+  else if (t.needsYou.length === 1) parts.push(`One thing needs you: ${t.needsYou[0]?.title}`);
+  else parts.push(`${t.needsYou.length} things need you`);
+  if (t.thisWeek.length > 0)
+    parts.push(
+      `${t.thisWeek.length === 1 ? 'one thing is' : `${t.thisWeek.length} things are`} due this week across the household`,
+    );
+  const latest = t.handled[0];
+  const line = `${parts.join(', and ')}.`;
+  if (!latest) return line;
+  const who = label(latest.completedByMemberId ?? latest.ownerMemberId);
+  return `${line} Most recently, ${who === 'You' ? 'you' : who} handled “${latest.title}”.`;
+}
+
+const styles = StyleSheet.create({
+  head: { gap: 6 },
+  summary: { maxWidth: 720, marginTop: 4 },
+  capture: {
+    marginTop: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 54,
+    paddingHorizontal: 18,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: color.hairline,
+    backgroundColor: color.surface,
+    cursor: 'pointer',
+  },
+  captureText: { flex: 1 },
+  kbd: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: color.line2,
+  },
+  inbox: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 48,
+    paddingHorizontal: 16,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: color.ink,
+    borderStyle: 'dashed',
+    cursor: 'pointer',
+  },
+  inboxText: { flex: 1 },
+  columns: { flexDirection: 'row', gap: 56, alignItems: 'flex-start' },
+  main: { flex: 1.35, minWidth: 0 },
+  side: { flex: 1, minWidth: 0 },
+  block: { marginTop: 36 },
+  skeletonHead: { marginBottom: 8 },
+  quiet: { paddingVertical: 14 },
+  handled: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: color.hairline,
+    cursor: 'pointer',
+  },
+  handledHover: { opacity: 0.8 },
+  handledText: { flex: 1 },
+  link: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40 },
+});

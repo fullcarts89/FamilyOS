@@ -60,7 +60,10 @@ export interface MyHousehold {
 export interface Member {
   id: string;
   displayName: string;
-  role: 'owner' | 'adult' | 'caregiver' | 'child';
+  /** `pet` arrives with the redesign's member migration; pets, like children, have no account. */
+  role: 'owner' | 'adult' | 'caregiver' | 'child' | 'pet';
+  /** The member's own color (#RRGGBB) once the API stores it; a palette color is used until then. */
+  color?: string | null;
 }
 
 export interface Invite {
@@ -82,8 +85,11 @@ export interface WorkItem {
   parentId: string | null;
   dueOn: string | null;
   dueAt: string | null;
+  /** 1 is the most important. */
+  priority?: number | null;
   visibility: 'household' | 'private';
   createdByMemberId: string;
+  completedAt?: string | null;
   /** Set when this is one occurrence of a routine. */
   recurrenceRuleId: string | null;
   occurrenceIndex: number | null;

@@ -2,7 +2,6 @@ import {
   RULE_LIMITS,
   describeSchedule,
   dueOptions,
-  formatDue,
   monthStartOptions,
   upcomingOccurrences,
   type NthWeek,
@@ -10,14 +9,27 @@ import {
   type Weekday,
 } from '@familyos/domain';
 import { router } from 'expo-router';
+import { Minus, Plus } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Chip, ListScreen } from '../../components/items';
-import { Body, Button, ErrorText, Field, Title } from '../../components/ui';
-import { api, errorMessage, type Routine, type TodayResponse } from '../../lib/api';
-import { useHousehold } from '../../lib/household';
-import { goBack } from '../../lib/navigation';
-import { useTheme } from '../../lib/theme';
+import { StyleSheet, TextInput, View } from 'react-native';
+import { Avatar, Either } from '../../../design/Avatar';
+import { Button, IconButton } from '../../../design/Button';
+import { Chip } from '../../../design/Chip';
+import { Field } from '../../../design/Field';
+import { useLayout } from '../../../design/layout';
+import { FadeIn } from '../../../design/motion';
+import { ErrorNotice } from '../../../design/Notice';
+import { Page, PageHeader } from '../../../design/Page';
+import { RotationRing } from '../../../design/RotationRing';
+import { Text } from '../../../design/Text';
+import { useToast } from '../../../design/Toast';
+import { color, font, radius } from '../../../design/tokens';
+import { api, errorMessage, type Routine, type TodayResponse } from '../../../lib/api';
+import { useCapture } from '../../../lib/capture';
+import { clock, relativeDay, shortDate } from '../../../lib/dates';
+import { useHousehold } from '../../../lib/household';
+import { goBack } from '../../../lib/navigation';
+import { usePeople, type Person } from '../../../lib/people';
 
 type Kind = 'daily' | 'weekly' | 'monthly' | 'after_completion';
 type MonthlyMode = 'date' | 'weekday';
@@ -45,6 +57,15 @@ const UNITS: Record<Kind, string> = {
   monthly: 'month',
   after_completion: 'day',
 };
+type Preset = 'weekly' | 'fortnightly' | 'first' | 'quarterly' | 'daily' | 'after';
+const PRESETS: { id: Preset; label: string }[] = [
+  { id: 'weekly', label: 'Every week' },
+  { id: 'fortnightly', label: 'Every other week' },
+  { id: 'first', label: 'Monthly on the 1st' },
+  { id: 'quarterly', label: 'Every 3 months' },
+  { id: 'daily', label: 'Every day' },
+  { id: 'after', label: 'A while after it’s done' },
+];
 
 function Stepper({
   value,
@@ -59,34 +80,54 @@ function Stepper({
   onChange: (n: number) => void;
   label: string;
 }) {
-  const t = useTheme();
   const step = (d: number) => onChange(Math.min(max, Math.max(min, value + d)));
-  const button = (text: string, d: number, a11y: string) => (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={a11y}
-      onPress={() => step(d)}
-      style={[styles.stepButton, { borderColor: t.border, backgroundColor: t.surface }]}
-    >
-      <Text style={{ color: t.text, fontSize: 20 }}>{text}</Text>
-    </Pressable>
-  );
   return (
     <View style={styles.stepper}>
-      {button('−', -1, `Decrease: ${label}`)}
-      <Text style={{ color: t.text, fontSize: 17, minWidth: 110, textAlign: 'center' }}>
+      <IconButton
+        icon={Minus}
+        label={`Fewer: ${label}`}
+        variant="outline"
+        size={40}
+        disabled={value <= min}
+        onPress={() => step(-1)}
+      />
+      <Text variant="label" style={styles.stepLabel}>
         {label}
       </Text>
-      {button('+', 1, `Increase: ${label}`)}
+      <IconButton
+        icon={Plus}
+        label={`More: ${label}`}
+        variant="outline"
+        size={40}
+        disabled={value >= max}
+        onPress={() => step(1)}
+      />
     </View>
   );
 }
 
-// New routine (PRD WF-02, J3, J3b): schedule, who does it, and a preview before saving. No AI.
+function Group({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <View style={styles.group}>
+      <Text variant="kicker" tone="muted">
+        {label}
+      </Text>
+      {children}
+    </View>
+  );
+}
+
+// New routine: a quick preset ("Monthly on the 1st"), then fine-tune; who does it or takes turns;
+// and a preview of the next turns before saving. Everything here is plain rules, no AI.
 export default function NewRoutine() {
-  const { household, members, memberName } = useHousehold();
+  const { household } = useHousehold();
+  const people = usePeople();
+  const toast = useToast();
+  const { changed } = useCapture();
+  const { desktop } = useLayout();
   const [today, setToday] = useState<string | null>(null);
   const [title, setTitle] = useState('');
+  const [preset, setPreset] = useState<Preset | null>('weekly');
   const [kind, setKind] = useState<Kind>('weekly');
   const [interval, setEvery] = useState(1);
   const [weekdays, setWeekdays] = useState<Weekday[]>([]);
@@ -148,7 +189,6 @@ export default function NewRoutine() {
   }, [rule, startOn, today, turns, rotation, ownerId]);
 
   if (!household) return null;
-  const adults = members.filter((m) => m.role !== 'child');
   const limit = rule ? RULE_LIMITS[rule.freq] : 1;
   const unit = UNITS[kind];
   const ready =
@@ -157,6 +197,39 @@ export default function NewRoutine() {
     startOn !== null &&
     timeValid &&
     (!turns || rotation.length >= 2);
+
+  const choosePreset = (p: Preset) => {
+    setPreset(p);
+    if (!today) return;
+    const firstOfNext =
+      monthStartOptions(today)[Number(today.slice(8, 10)) === 1 ? 0 : 1]?.date ?? today;
+    switch (p) {
+      case 'weekly':
+      case 'fortnightly':
+        setKind('weekly');
+        setEvery(p === 'weekly' ? 1 : 2);
+        setStartOn(today);
+        break;
+      case 'first':
+      case 'quarterly':
+        setKind('monthly');
+        setMonthlyMode('date');
+        setDayOfMonth(1);
+        setEvery(p === 'first' ? 1 : 3);
+        setStartOn(firstOfNext);
+        break;
+      case 'daily':
+        setKind('daily');
+        setEvery(1);
+        setStartOn(today);
+        break;
+      case 'after':
+        setKind('after_completion');
+        setEvery(30);
+        setStartOn(today);
+        break;
+    }
+  };
 
   const save = async () => {
     if (!rule || !startOn) return;
@@ -173,6 +246,8 @@ export default function NewRoutine() {
           ...(turns ? { rotation } : { ownerMemberId: ownerId }),
         },
       });
+      toast.show(`Routine set up: ${routine.title}`, { detail: routine.summary });
+      changed();
       router.replace({ pathname: '/routine/[id]', params: { id: routine.id } });
     } catch (caught) {
       setError(errorMessage(caught));
@@ -186,129 +261,143 @@ export default function NewRoutine() {
   const toggleTurn = (id: string) =>
     setRotation(rotation.includes(id) ? rotation.filter((r) => r !== id) : [...rotation, id]);
 
-  return (
-    <ListScreen
-      footer={
-        <>
-          {error && <ErrorText>{error}</ErrorText>}
-          <Button title="Save routine" onPress={save} busy={busy} disabled={!ready} />
-          <Button title="Cancel" onPress={() => goBack('/routines')} />
-        </>
-      }
-    >
-      <Title>New routine</Title>
+  const rotationPeople = rotation.map((id) => people.byId(id)).filter((p): p is Person => !!p);
+  const turn = turns ? (rotationPeople[0] ?? null) : people.byId(ownerId);
+
+  const form = (
+    <View style={styles.form}>
       <Field
         label="What needs doing?"
         value={title}
         onChangeText={setTitle}
         autoFocus
         maxLength={500}
-        placeholder="For example, bins out"
+        placeholder="Biscuit’s flea treatment"
       />
 
-      <Body muted>How often</Body>
-      <View style={styles.chips}>
-        {(
-          [
-            ['daily', 'Daily'],
-            ['weekly', 'Weekly'],
-            ['monthly', 'Monthly'],
-            ['after_completion', 'After it’s done'],
-          ] as const
-        ).map(([k, label]) => (
-          <Chip
-            key={k}
-            label={label}
-            selected={kind === k}
-            onPress={() => {
-              setKind(k);
-              setEvery(k === 'after_completion' ? 7 : 1);
-              // Monthly series count from the start month; other kinds start on a day.
-              if (today)
-                setStartOn(k === 'monthly' ? (monthStartOptions(today)[0]?.date ?? today) : today);
-            }}
-          />
-        ))}
-      </View>
-      <Stepper
-        value={interval}
-        min={1}
-        max={limit}
-        onChange={setEvery}
-        label={
-          kind === 'after_completion'
-            ? `${interval} ${unit}${interval === 1 ? '' : 's'} later`
-            : interval === 1
-              ? `Every ${unit}`
-              : `Every ${interval} ${unit}s`
-        }
-      />
-
-      {kind === 'weekly' && (
+      <Group label="How often">
         <View style={styles.chips}>
-          {WEEKDAYS.map((w) => (
+          {PRESETS.map((p) => (
             <Chip
-              key={w.day}
-              label={w.label}
-              selected={weekdays.includes(w.day)}
-              onPress={() => toggleWeekday(w.day)}
+              key={p.id}
+              label={p.label}
+              selected={preset === p.id}
+              onPress={() => choosePreset(p.id)}
             />
           ))}
         </View>
-      )}
+      </Group>
 
-      {kind === 'monthly' && (
-        <>
+      <View style={styles.fine}>
+        <View style={styles.chips}>
+          {(
+            [
+              ['daily', 'Daily'],
+              ['weekly', 'Weekly'],
+              ['monthly', 'Monthly'],
+              ['after_completion', 'After it’s done'],
+            ] as const
+          ).map(([k, label]) => (
+            <Chip
+              key={k}
+              label={label}
+              selected={kind === k}
+              onPress={() => {
+                setPreset(null);
+                setKind(k);
+                setEvery(k === 'after_completion' ? 7 : 1);
+                // Monthly series count from the start month; other kinds start on a day.
+                if (today)
+                  setStartOn(
+                    k === 'monthly' ? (monthStartOptions(today)[0]?.date ?? today) : today,
+                  );
+              }}
+            />
+          ))}
+        </View>
+        <Stepper
+          value={interval}
+          min={1}
+          max={limit}
+          onChange={(n) => {
+            setPreset(null);
+            setEvery(n);
+          }}
+          label={
+            kind === 'after_completion'
+              ? `${interval} ${unit}${interval === 1 ? '' : 's'} after it’s done`
+              : interval === 1
+                ? `Every ${unit}`
+                : `Every ${interval} ${unit}s`
+          }
+        />
+        {kind === 'weekly' ? (
           <View style={styles.chips}>
-            <Chip
-              label="On a date"
-              selected={monthlyMode === 'date'}
-              onPress={() => setMonthlyMode('date')}
-            />
-            <Chip
-              label="On a weekday"
-              selected={monthlyMode === 'weekday'}
-              onPress={() => setMonthlyMode('weekday')}
-            />
+            {WEEKDAYS.map((w) => (
+              <Chip
+                key={w.day}
+                label={w.label}
+                selected={weekdays.includes(w.day)}
+                onPress={() => toggleWeekday(w.day)}
+              />
+            ))}
           </View>
-          {monthlyMode === 'date' ? (
-            <Stepper
-              value={dayOfMonth}
-              min={1}
-              max={31}
-              onChange={setDayOfMonth}
-              label={`On day ${dayOfMonth}`}
-            />
-          ) : (
-            <>
-              <View style={styles.chips}>
-                {NTHS.map((n) => (
-                  <Chip
-                    key={n.nth}
-                    label={n.label}
-                    selected={nth === n.nth}
-                    onPress={() => setNth(n.nth)}
-                  />
-                ))}
-              </View>
-              <View style={styles.chips}>
-                {WEEKDAYS.map((w) => (
-                  <Chip
-                    key={w.day}
-                    label={w.label}
-                    selected={weekday === w.day}
-                    onPress={() => setWeekday(w.day)}
-                  />
-                ))}
-              </View>
-            </>
-          )}
-        </>
-      )}
+        ) : null}
+        {kind === 'monthly' ? (
+          <>
+            <View style={styles.chips}>
+              <Chip
+                label="On a date"
+                selected={monthlyMode === 'date'}
+                onPress={() => setMonthlyMode('date')}
+              />
+              <Chip
+                label="On a weekday"
+                selected={monthlyMode === 'weekday'}
+                onPress={() => setMonthlyMode('weekday')}
+              />
+            </View>
+            {monthlyMode === 'date' ? (
+              <Stepper
+                value={dayOfMonth}
+                min={1}
+                max={31}
+                onChange={(n) => {
+                  setPreset(null);
+                  setDayOfMonth(n);
+                }}
+                label={dayOfMonth === 1 ? 'On the 1st' : `On day ${dayOfMonth}`}
+              />
+            ) : (
+              <>
+                <View style={styles.chips}>
+                  {NTHS.map((n) => (
+                    <Chip
+                      key={n.nth}
+                      label={n.label}
+                      selected={nth === n.nth}
+                      onPress={() => setNth(n.nth)}
+                    />
+                  ))}
+                </View>
+                <View style={styles.chips}>
+                  {WEEKDAYS.map((w) => (
+                    <Chip
+                      key={w.day}
+                      label={w.label}
+                      selected={weekday === w.day}
+                      onPress={() => setWeekday(w.day)}
+                    />
+                  ))}
+                </View>
+              </>
+            )}
+          </>
+        ) : null}
+      </View>
 
-      {today && (
-        <>
-          <Body muted>{kind === 'after_completion' ? 'First one due' : 'Starting'}</Body>
+      {today ? (
+        <Group label={kind === 'after_completion' ? 'First one due' : 'Starting'}>
           <View style={styles.chips}>
             {(kind === 'monthly' ? monthStartOptions(today) : dueOptions(today)).map((o) => (
               <Chip
@@ -319,104 +408,199 @@ export default function NewRoutine() {
               />
             ))}
           </View>
-        </>
-      )}
+        </Group>
+      ) : null}
 
-      <Body muted>Time</Body>
-      <View style={styles.chips}>
-        <Chip
-          label="Any time that day"
-          selected={!time && !otherTime.trim()}
-          onPress={() => {
-            setTime(null);
-            setOtherTime('');
-          }}
-        />
-        {TIMES.map((value) => (
+      <Group label="Time">
+        <View style={styles.chips}>
           <Chip
-            key={value}
-            label={value}
-            selected={time === value && !otherTime.trim()}
+            label="Any time that day"
+            selected={!time && !otherTime.trim()}
             onPress={() => {
-              setTime(value);
+              setTime(null);
               setOtherTime('');
             }}
           />
-        ))}
-      </View>
-      <Field
-        label="Or another time (24-hour, like 06:30)"
-        value={otherTime}
-        onChangeText={setOtherTime}
-        maxLength={5}
-        keyboardType="numbers-and-punctuation"
-      />
-      {!timeValid && <ErrorText>Use a 24-hour time like 06:30.</ErrorText>}
+          {TIMES.map((value) => (
+            <Chip
+              key={value}
+              label={clock(value)}
+              selected={time === value && !otherTime.trim()}
+              onPress={() => {
+                setTime(value);
+                setOtherTime('');
+              }}
+            />
+          ))}
+          <TextInput
+            value={otherTime}
+            onChangeText={setOtherTime}
+            maxLength={5}
+            placeholder="Other, e.g. 06:30"
+            placeholderTextColor={color.faint}
+            accessibilityLabel="Another time, 24-hour, like 06:30"
+            keyboardType="numbers-and-punctuation"
+            style={[styles.timeInput, !timeValid && { borderColor: color.danger }]}
+          />
+        </View>
+        {!timeValid ? (
+          <Text variant="meta" tone="danger">
+            Use a 24-hour time like 06:30.
+          </Text>
+        ) : null}
+      </Group>
 
-      <Body muted>Who</Body>
-      <View style={styles.chips}>
-        <Chip label="One person" selected={!turns} onPress={() => setTurns(false)} />
-        <Chip label="Take turns" selected={turns} onPress={() => setTurns(true)} />
-      </View>
-      <View style={styles.chips}>
-        {adults.map((m) =>
-          turns ? (
+      <Group label="Who">
+        <View style={styles.chips}>
+          <Chip label="One person" selected={!turns} onPress={() => setTurns(false)} />
+          <Chip label="Take turns" selected={turns} onPress={() => setTurns(true)} />
+        </View>
+        <View style={styles.chips}>
+          {people.assignable.map((m) =>
+            turns ? (
+              <Chip
+                key={m.id}
+                label={
+                  rotation.includes(m.id)
+                    ? `${rotation.indexOf(m.id) + 1}. ${m.isMe ? 'Me' : m.name}`
+                    : m.isMe
+                      ? 'Me'
+                      : m.name
+                }
+                leading={<Avatar person={m} size={18} />}
+                accent={m.color}
+                selected={rotation.includes(m.id)}
+                onPress={() => toggleTurn(m.id)}
+              />
+            ) : (
+              <Chip
+                key={m.id}
+                label={m.isMe ? 'Me' : m.name}
+                leading={<Avatar person={m} size={18} />}
+                accent={m.color}
+                selected={ownerId === m.id}
+                onPress={() => setOwnerId(ownerId === m.id ? null : m.id)}
+              />
+            ),
+          )}
+          {!turns ? (
             <Chip
-              key={m.id}
-              label={
-                rotation.includes(m.id)
-                  ? `${rotation.indexOf(m.id) + 1}. ${m.displayName}`
-                  : m.displayName
-              }
-              selected={rotation.includes(m.id)}
-              onPress={() => toggleTurn(m.id)}
+              label="Anyone"
+              leading={<Either size={18} />}
+              selected={ownerId === null}
+              onPress={() => setOwnerId(null)}
             />
-          ) : (
-            <Chip
-              key={m.id}
-              label={m.displayName}
-              selected={ownerId === m.id}
-              onPress={() => setOwnerId(ownerId === m.id ? null : m.id)}
-            />
-          ),
+          ) : null}
+        </View>
+        {turns && rotation.length < 2 ? (
+          <Text variant="meta" tone="muted">
+            Tap people in the order they take turns (two or more).
+          </Text>
+        ) : null}
+      </Group>
+    </View>
+  );
+
+  const previewCard =
+    rule && today && startOn ? (
+      <View style={styles.preview}>
+        <View style={styles.previewHead}>
+          <RotationRing rotation={turns ? rotationPeople : []} turn={turn} size={64} />
+          <View style={styles.previewText}>
+            <Text variant="h3">{title.trim() || 'Your routine'}</Text>
+            <Text variant="meta" tone="muted">
+              {describeSchedule(rule, timeValid ? timeValue : null)}
+            </Text>
+          </View>
+        </View>
+        {rule.freq === 'after_completion' ? (
+          <Text variant="body" tone="muted">
+            First one {relativeDay(startOn, today).toLowerCase()}, then {rule.intervalDays} days
+            after each time it’s done or skipped.
+          </Text>
+        ) : (
+          preview.map((p) => {
+            const who = people.byId(p.ownerMemberId);
+            return (
+              <View key={p.index} style={styles.previewRow}>
+                <Text variant="label" style={styles.previewDay}>
+                  {relativeDay(p.date, today)}
+                </Text>
+                <Text variant="meta" tone="muted" style={styles.previewDate}>
+                  {shortDate(p.date, today)}
+                </Text>
+                <Avatar person={who} size={20} />
+                <Text variant="meta">{who ? (who.isMe ? 'You' : who.name) : 'Anyone'}</Text>
+              </View>
+            );
+          })
         )}
       </View>
-      {turns && rotation.length < 2 && (
-        <Body muted>Tap people in the order they take turns (two or more).</Body>
-      )}
+    ) : null;
 
-      {rule && today && startOn && (
-        <View style={styles.preview}>
-          <Body>{describeSchedule(rule, timeValid ? timeValue : null)}</Body>
-          {rule.freq === 'after_completion' ? (
-            <Body muted>
-              First one {formatDue(startOn, today)}, then {rule.intervalDays} days after each time
-              it’s done or skipped.
-            </Body>
-          ) : (
-            preview.map((p) => (
-              <Body key={p.index} muted>
-                {formatDue(p.date, today)}
-                {p.ownerMemberId ? ` · ${memberName(p.ownerMemberId) ?? ''}` : ''}
-              </Body>
-            ))
-          )}
+  return (
+    <Page maxWidth={1100}>
+      <PageHeader
+        kicker="Routines"
+        title="New routine"
+        lead="Set it up once. FamilyOS adds each turn on its day, for whoever’s turn it is."
+      />
+      <FadeIn style={[styles.body, desktop && styles.bodyWide]}>
+        <View style={styles.main}>{form}</View>
+        <View style={[styles.side, desktop && styles.sideWide]}>
+          {previewCard}
+          {error ? <ErrorNotice message={error} /> : null}
+          <View style={styles.actions}>
+            <Button title="Save routine" onPress={save} busy={busy} disabled={!ready} />
+            <Button title="Cancel" variant="quiet" onPress={() => goBack('/tasks')} />
+          </View>
         </View>
-      )}
-    </ListScreen>
+      </FadeIn>
+    </Page>
   );
 }
 
 const styles = StyleSheet.create({
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  stepButton: {
-    borderWidth: 1,
-    borderRadius: 10,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+  body: { marginTop: 24, gap: 28 },
+  bodyWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 56 },
+  main: { flex: 1.4, minWidth: 0 },
+  side: { gap: 16 },
+  sideWide: { flex: 1 },
+  form: { gap: 26 },
+  group: { gap: 10 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  fine: {
+    gap: 12,
+    padding: 16,
+    borderRadius: radius.lg,
+    backgroundColor: color.lane,
   },
-  preview: { gap: 4 },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  stepLabel: { minWidth: 150, textAlign: 'center' },
+  timeInput: {
+    height: 36,
+    width: 150,
+    paddingHorizontal: 13,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: color.line2,
+    backgroundColor: color.surface,
+    fontFamily: font.uiSemi,
+    fontSize: 13.5,
+    color: color.ink,
+  },
+  preview: {
+    gap: 10,
+    padding: 20,
+    borderRadius: radius.xl,
+    backgroundColor: color.surface,
+    borderWidth: 1,
+    borderColor: color.hairline,
+  },
+  previewHead: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 6 },
+  previewText: { flex: 1, gap: 2 },
+  previewRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  previewDay: { width: 92 },
+  previewDate: { width: 64 },
+  actions: { flexDirection: 'row', gap: 8, alignItems: 'center' },
 });
