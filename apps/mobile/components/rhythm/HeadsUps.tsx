@@ -205,7 +205,7 @@ function HeadsUpRow({
   } else {
     icon = <Vote size={17} color={color.ink} strokeWidth={2.2} />;
     text = h.text;
-    open = () => router.push('/reset');
+    open = () => router.push('/decisions');
   }
 
   return (

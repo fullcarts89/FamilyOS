@@ -8,6 +8,7 @@ import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
 import { NextUp, dayEntries } from '../../components/rhythm/NextUp';
 import { SinceLastLooked } from '../../components/rhythm/SinceLastLooked';
 import { WeekStrip } from '../../components/rhythm/WeekStrip';
+import { WeekPlanStrip } from '../../components/rhythm/WeekPlanStrip';
 import { PersonColumn } from '../../components/tasks/PersonColumn';
 import { Avatar, Either } from '../../design/Avatar';
 import type { PressState } from '../../design/Button';
@@ -55,7 +56,7 @@ export default function Today() {
   const { timeZone } = useHousehold();
   const people = usePeople();
   const { desktop, phone } = useLayout();
-  const { open } = useCapture();
+  const { open, version } = useCapture();
   const data = useTodayData();
   const { household } = useHousehold();
   // A new household's owner, alone in it, gets the guided setup first (once; skippable).
@@ -485,6 +486,10 @@ export default function Today() {
           ) : (
             <View style={styles.timelineCard}>{timeline}</View>
           )}
+
+          <View style={styles.blockTight}>
+            <WeekPlanStrip today={today} version={version} />
+          </View>
 
           {!phone || inbox ? (
             <View style={styles.blockTight}>
