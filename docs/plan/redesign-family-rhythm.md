@@ -9,6 +9,29 @@ or production before then. Branch: `redesign/family-rhythm`.
 Canonical design reference: `design/prototype` (direction C, with A's typography and pacing
 borrowed as described below). Open `design/prototype/dist/index.html` or run `npm run dev` there.
 
+## Founder adjustments (2026-11-15, second brief)
+
+- **Core first:** Home/Today and the family timeline, calendar, tasks, projects, routines, Weekly
+  Reset, household members, pets, contacts, meals and groceries come before the iPhone app,
+  widgets and Monarch, which proceed in parallel without delaying the core.
+- **Read-only calendar integration early.** No manual duplication of existing calendars. Approach:
+  each adult adds the private iCal (ICS) address of each calendar they want shown (Google "secret
+  address in iCal format", iCloud shared/public calendar link, Outlook published ICS), and assigns
+  it to a person. FamilyOS fetches and expands them server-side (read-only; FamilyOS never writes
+  to them). Addresses are encrypted at rest, never shown again after saving, fetched only over
+  https with size, time and private-network limits. Imported events appear in the lanes and the
+  week, marked with their calendar; FamilyOS's own events (care handoffs etc.) stay editable.
+- **Design refinements:** a compact phone timeline (today's responsibilities visible without
+  long scrolling); A's warmth, typography and refinement throughout; **no implication that
+  equal task counts mean equal workload** (no load meters, no count comparisons or "who did more"
+  scores; show what each person has, not a score); the shared weekly planning board stays central
+  in Weekly Reset; quick capture reachable from every screen (button + keyboard shortcut).
+- **No simulated functionality in production.** Real data only; synthetic data for development,
+  tests and screenshots.
+- **For this family only.** Optimize for the household's real use, not scale or customers.
+- **Monarch:** CSV upload (Monarch's terms forbid automated access by other apps; see the session
+  notes). Optional later: a scheduled Claude task, a client Monarch supports, posting a summary.
+
 ## Design system: C with A's warmth
 
 - **Structure from C:** a lane per person through the day; June's (and pets') care shown as
