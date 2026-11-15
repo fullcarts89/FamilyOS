@@ -1,6 +1,8 @@
 packages:
   - apps/*
   - packages/*
+  # End-to-end journeys (Playwright) against a local stack: see e2e/README.md.
+  - e2e
 
 # Expo and Metro resolve dependencies most reliably from a hoisted node_modules.
 nodeLinker: hoisted

@@ -21,3 +21,7 @@ apps/mobile/expo-env.d.ts
 
 # Builder worktrees created by Claude Code agents
 .claude/worktrees/
+
+# End-to-end runs: the web export, videos, test output and recorded GIFs.
+e2e/.cache/
+e2e/artifacts/
