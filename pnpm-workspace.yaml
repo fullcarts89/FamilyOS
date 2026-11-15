@@ -13,3 +13,5 @@ allowBuilds:
 overrides:
   '@expo/router-server': 58.0.17
   '@react-native/metro-config': 0.88.0
+  # @bacons/apple-targets 5.0.0 asks for the SDK 55 prebuild config; use SDK 58's (same API).
+  '@bacons/apple-targets>@expo/prebuild-config': 58.0.19
