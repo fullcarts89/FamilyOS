@@ -18,6 +18,12 @@ interface CaptureState {
   version: number;
   /** Tell visible screens to reload. */
   changed: () => void;
+  /**
+   * A screen that carries its own capture button (the Weekly Reset's chapter bar on phones)
+   * hides the floating one while it shows, so nothing covers its controls or content.
+   */
+  fabHidden: boolean;
+  setFabHidden: (hidden: boolean) => void;
 }
 
 const CaptureContext = createContext<CaptureState | null>(null);
@@ -26,6 +32,7 @@ const CaptureContext = createContext<CaptureState | null>(null);
 export function CaptureProvider({ children, enabled }: { children: ReactNode; enabled: boolean }) {
   const [target, setTarget] = useState<{ owner: string | null | undefined } | null>(null);
   const [version, setVersion] = useState(0);
+  const [fabHidden, setFabHidden] = useState(false);
 
   const open = useCallback((owner?: string | null) => setTarget({ owner }), []);
   const changed = useCallback(() => {
@@ -49,7 +56,10 @@ export function CaptureProvider({ children, enabled }: { children: ReactNode; en
     return () => window.removeEventListener('keydown', onKey);
   }, [enabled]);
 
-  const value = useMemo(() => ({ open, version, changed }), [open, version, changed]);
+  const value = useMemo(
+    () => ({ open, version, changed, fabHidden, setFabHidden }),
+    [open, version, changed, fabHidden],
+  );
   return (
     <CaptureContext.Provider value={value}>
       {children}

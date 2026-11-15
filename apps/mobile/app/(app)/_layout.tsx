@@ -1,5 +1,6 @@
 import { Redirect, Stack, usePathname } from 'expo-router';
 import { Platform, StyleSheet, View } from 'react-native';
+import { PushPrompt } from '../../components/push/PushPrompt';
 import { BottomBar, CaptureFab, PhoneHeader } from '../../design/BottomBar';
 import { Button } from '../../design/Button';
 import { EmptyState, LanesArt } from '../../design/EmptyState';
@@ -15,7 +16,7 @@ import { MemberStateProvider } from '../../lib/member-state';
 import { WidgetSync } from '../../native/WidgetSync';
 import { useHousehold } from '../../lib/household';
 import { useSession } from '../../lib/session';
-import { supabase } from '../../lib/supabase';
+import { signOut } from '../../lib/sign-out';
 
 /** Everything after sign-in: the app shell around each screen, and capture from anywhere. */
 export default function AppLayout() {
@@ -54,9 +55,7 @@ export default function AppLayout() {
           art={<LanesArt style={styles.art} />}
           title="You’re signed in, but not in a household yet"
           body="Open the invite link your household sent you, and you’ll land here together."
-          action={
-            <Button title="Sign out" variant="secondary" onPress={() => supabase.auth.signOut()} />
-          }
+          action={<Button title="Sign out" variant="secondary" onPress={() => void signOut()} />}
         />
       </Centered>
     );
@@ -74,12 +73,13 @@ export default function AppLayout() {
 
 function Shell() {
   const { phone } = useLayout();
-  const { open } = useCapture();
+  const { open, fabHidden } = useCapture();
   // First-time setup is a focused, full-screen flow: no navigation around it.
   const focused = usePathname() === '/setup';
   return (
     <View style={styles.shell}>
       {focused ? null : phone ? <PhoneHeader /> : <TopBar onCapture={() => open()} />}
+      {focused ? null : <PushPrompt />}
       <View style={styles.main}>
         <Stack
           screenOptions={{
@@ -94,7 +94,7 @@ function Shell() {
       {phone && !focused ? (
         <>
           <BottomBar />
-          <CaptureFab onPress={() => open()} />
+          {fabHidden ? null : <CaptureFab onPress={() => open()} />}
         </>
       ) : null}
     </View>

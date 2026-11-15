@@ -258,6 +258,76 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
     ).toBeVisible();
   });
 
+  test('contacts on a task: link one, add one inline, call from the task', async ({
+    app,
+    maya,
+    mayaApi,
+  }) => {
+    const task = await mayaApi.item('Fix sticking back door');
+    const contactOf = async () =>
+      (await mayaApi.get<{ item: { contactId: string | null } }>(`/work-items/${task.id}`)).item
+        .contactId;
+    expect(await contactOf(), 'the seed links no one to the back door').toBeNull();
+    const { contacts } = await mayaApi.get<{ contacts: Contactish[] }>('/contacts');
+    const dee = contacts.find((c) => c.name === 'Dee Okafor');
+    if (!dee) throw new Error('the seed should have Dee Okafor, the plumber');
+
+    await maya.goto(`/item/${task.id}`);
+    await expect(
+      maya.getByRole('button', { name: 'Fix sticking back door. Edit the title' }),
+    ).toBeVisible();
+
+    await app.clip('link-a-contact-to-a-task', maya, async () => {
+      // Pick from the household's contacts, found by what they do.
+      await maya.getByRole('button', { name: 'Link a contact' }).click();
+      const picker = maya.getByRole('dialog', { name: 'Link a contact' });
+      await picker.getByLabel('Search contacts').fill('plumb');
+      await expect(picker.getByRole('button', { name: /^Link Dr\. Priya Raman/ })).toHaveCount(0);
+      await picker.getByRole('button', { name: /^Link Dee Okafor, Plumber/ }).click();
+      await expect(toast(maya, 'Linked Dee Okafor')).toBeVisible();
+    });
+    // On the task: who it is, and a call or a text in a tap.
+    const card = maya.getByLabel('Contact: Dee Okafor');
+    await expect(card.getByText('Plumber · Riverside Plumbing')).toBeVisible();
+    await expect(
+      card.getByRole('button', { name: 'Call Dee Okafor at (503) 555-0152' }),
+    ).toBeVisible();
+    await expect(
+      card.getByRole('button', { name: 'Text Dee Okafor at (503) 555-0152' }),
+    ).toBeVisible();
+    await expect.poll(contactOf).toBe(dee.id);
+
+    // Someone new, added right from the task and linked in the same step.
+    await card.getByRole('button', { name: 'Change contact' }).click();
+    await maya
+      .getByRole('dialog', { name: 'Link a contact' })
+      .getByRole('button', { name: 'Add a new contact' })
+      .click();
+    const form = maya.getByRole('dialog', { name: 'Add a contact' });
+    await form.getByLabel('Name', { exact: true }).fill('Ana Ruiz');
+    await form.getByRole('button', { name: 'Home', exact: true }).click();
+    await form.getByLabel('Role', { exact: true }).fill('Carpenter');
+    await form.getByLabel('Phone', { exact: true }).fill('(503) 555-0199');
+    await form.getByRole('button', { name: 'Add contact' }).click();
+    await expect(toast(maya, 'Linked Ana Ruiz')).toBeVisible();
+    await expect(
+      maya.getByRole('button', { name: 'Call Ana Ruiz at (503) 555-0199' }),
+    ).toBeVisible();
+
+    const ana = (await mayaApi.get<{ contacts: Contactish[] }>('/contacts')).contacts.find(
+      (c) => c.name === 'Ana Ruiz',
+    );
+    expect(ana?.category).toBe('home');
+    await expect.poll(contactOf).toBe(ana?.id);
+
+    // It holds on a reload; unlinking takes it off again.
+    await maya.reload();
+    await expect(maya.getByLabel('Contact: Ana Ruiz')).toBeVisible();
+    await maya.getByRole('button', { name: 'Unlink Ana Ruiz' }).click();
+    await expect(maya.getByRole('button', { name: 'Link a contact' })).toBeVisible();
+    await expect.poll(contactOf).toBeNull();
+  });
+
   test('Monarch budget CSV import', async ({ app, maya, mayaApi }) => {
     await openMore(app, maya, 'Budgets');
     await expect(maya.getByText('Spent so far')).toBeVisible();

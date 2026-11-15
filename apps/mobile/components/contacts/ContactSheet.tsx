@@ -264,7 +264,7 @@ function Detail({
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function ContactForm({
+export function ContactForm({
   contact,
   category,
   onClose,

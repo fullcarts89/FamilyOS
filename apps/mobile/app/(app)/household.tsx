@@ -41,7 +41,8 @@ import { clock } from '../../lib/dates';
 import { useHousehold } from '../../lib/household';
 import { useMemberState } from '../../lib/member-state';
 import { usePeople, type Person } from '../../lib/people';
-import { supabase } from '../../lib/supabase';
+import { signOut } from '../../lib/sign-out';
+import { PushSetting } from '../../components/push/PushSetting';
 import {
   setWidgetLockScreenVisible,
   widgetLockScreenVisible,
@@ -660,9 +661,7 @@ function Settings({ timeZone }: { timeZone: string }) {
           )
         : null}
       <GroupLabel label="Notifications" />
-      <Text variant="meta" tone="muted" style={styles.settingNote}>
-        They arrive with the iPhone app; your choices are saved for it now.
-      </Text>
+      <PushSetting />
       {NOTIFY.map((n) =>
         row(
           n.title,
@@ -722,7 +721,7 @@ function Settings({ timeZone }: { timeZone: string }) {
         title="Sign out"
         variant="secondary"
         icon={LogOut}
-        onPress={() => supabase.auth.signOut()}
+        onPress={() => void signOut()}
         style={styles.signOut}
       />
     </View>
@@ -824,7 +823,6 @@ const styles = StyleSheet.create({
     borderBottomColor: color.hairline,
   },
   settingText: { flex: 1, gap: 2 },
-  settingNote: { marginBottom: 4 },
   quiet: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
   timeInput: {
     width: 90,

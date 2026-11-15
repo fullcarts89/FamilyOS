@@ -19,7 +19,7 @@ export function Page({
   maxWidth = 1360,
   style,
   scrollRef,
-  bottomSpace,
+  docked,
 }: {
   children: ReactNode;
   refreshControl?: ReactElement<RefreshControlProps>;
@@ -27,8 +27,11 @@ export function Page({
   style?: StyleProp<ViewStyle>;
   /** To scroll back to the top (a new chapter, a new step). */
   scrollRef?: Ref<ComponentRef<typeof ScrollView>>;
-  /** Extra room at the bottom on phones, above the floating controls. */
-  bottomSpace?: number;
+  /**
+   * Phones: the screen docks its own controls below the page (the Weekly Reset's chapter bar)
+   * and hides the floating capture button, so the page needs no room kept for it.
+   */
+  docked?: boolean;
 }) {
   const { kind } = useLayout();
   const pad = kind === 'desktop' ? 40 : kind === 'tablet' ? 28 : 16;
@@ -40,7 +43,7 @@ export function Page({
         paddingHorizontal: pad,
         paddingTop: kind === 'phone' ? 18 : 36,
         // Clear the floating capture button on phones.
-        paddingBottom: (kind === 'phone' ? 120 : 80) + (bottomSpace ?? 0),
+        paddingBottom: kind === 'phone' ? (docked ? 32 : 120) : 80,
       }}
       keyboardShouldPersistTaps="handled"
       {...(refreshControl && { refreshControl })}

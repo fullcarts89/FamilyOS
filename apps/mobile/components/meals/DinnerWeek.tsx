@@ -204,9 +204,11 @@ function DinnerRow({
             </Text>
           ) : null}
         </View>
-        {!isPhone ? cooks : null}
+        {!phone ? cooks : null}
       </View>
-      {isPhone && meal ? <View style={styles.phoneCooks}>{cooks}</View> : null}
+      {/* Phones and the Weekly Reset's narrow panel: the cooks go under the dinner, which keeps
+          the whole width for its name. */}
+      {phone && meal ? <View style={styles.phoneCooks}>{cooks}</View> : null}
       {open && ideas.length ? (
         <View style={styles.ideas} accessibilityLabel="Recent dinners">
           {ideas
