@@ -279,3 +279,27 @@ export function useTaskActions(
 
   return { complete, reopen, assign, reschedule, patch, fail };
 }
+
+/**
+ * A routine's turns appear one at a time: only the earliest open occurrence of each routine is
+ * listed (the next ones belong to the routine's own view). Everything else passes through.
+ */
+export function currentTurns<
+  T extends Pick<
+    WorkItem,
+    'id' | 'status' | 'recurrenceRuleId' | 'occurrenceIndex' | 'occurrenceOn'
+  >,
+>(items: readonly T[]): T[] {
+  const key = (i: T) =>
+    `${i.occurrenceOn ?? ''}#${String(i.occurrenceIndex ?? 0).padStart(6, '0')}`;
+  const first = new Map<string, T>();
+  for (const item of items) {
+    if (!item.recurrenceRuleId || !isOpen(item)) continue;
+    const seen = first.get(item.recurrenceRuleId);
+    if (!seen || key(item) < key(seen)) first.set(item.recurrenceRuleId, item);
+  }
+  return items.filter(
+    (item) =>
+      !item.recurrenceRuleId || !isOpen(item) || first.get(item.recurrenceRuleId)?.id === item.id,
+  );
+}

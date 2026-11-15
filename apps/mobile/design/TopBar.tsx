@@ -70,14 +70,20 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
             accessibilityRole="link"
             accessibilityLabel={`Household: ${shown.map((p) => p.name).join(', ')}`}
             onPress={() => router.navigate('/household')}
-            style={(s: PressState) => [styles.people, s.hovered && styles.hover]}
+            style={(s: PressState) => [
+              styles.people,
+              shown.length > 3 && styles.peopleTight,
+              s.hovered && styles.hover,
+            ]}
           >
             {shown.map((p) => (
               <View key={p.id} style={styles.person}>
                 <Avatar person={p} size={30} />
-                <Text variant="label" style={styles.personName} numberOfLines={1}>
-                  {p.name.split(' ')[0]}
-                </Text>
+                {shown.length <= 3 ? (
+                  <Text variant="label" style={styles.personName} numberOfLines={1}>
+                    {p.name.split(' ')[0]}
+                  </Text>
+                ) : null}
               </View>
             ))}
           </Pressable>
@@ -223,6 +229,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     cursor: 'pointer',
   },
+  peopleTight: { gap: 4 },
   person: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   personName: { fontSize: 13.5 },
   nav: {

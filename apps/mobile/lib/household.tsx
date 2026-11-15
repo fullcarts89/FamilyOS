@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api, type Member, type MyHousehold } from './api';
+import { api, type HouseholdDetail, type Member, type MyHousehold } from './api';
 import { useSession } from './session';
 
 interface HouseholdState {
@@ -9,7 +9,9 @@ interface HouseholdState {
   timeZone: string;
   loading: boolean;
   error: boolean;
-  reload: () => void;
+  reload: () => Promise<void>;
+  /** Swap in a member the API just returned (or add one), without a round trip. */
+  putMember: (member: Member) => void;
   memberName: (id: string | null) => string | null;
 }
 
@@ -38,9 +40,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       const first = me.households[0] ?? null;
       // Members first, so screens never see a household without its people.
       if (first) {
-        const detail = await api<{ members: Member[]; household: { timezone: string } }>(
-          `/households/${first.id}`,
-        );
+        const detail = await api<HouseholdDetail>(`/households/${first.id}`);
         setMembers(detail.members);
         setTimeZone(detail.household.timezone);
       }
@@ -56,12 +56,20 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
     void load();
   }, [load]);
 
+  const putMember = useCallback((member: Member) => {
+    setMembers((all) =>
+      all.some((m) => m.id === member.id)
+        ? all.map((m) => (m.id === member.id ? { ...m, ...member } : m))
+        : [...all, member],
+    );
+  }, []);
+
   const memberName = (id: string | null) =>
     id ? (members.find((m) => m.id === id)?.displayName ?? null) : null;
 
   return (
     <HouseholdContext.Provider
-      value={{ household, members, timeZone, loading, error, reload: load, memberName }}
+      value={{ household, members, timeZone, loading, error, reload: load, putMember, memberName }}
     >
       {children}
     </HouseholdContext.Provider>

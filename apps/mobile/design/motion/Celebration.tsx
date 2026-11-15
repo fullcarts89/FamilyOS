@@ -16,6 +16,7 @@ import { Text } from '../Text';
 import { color, memberPalette, radius, shadow } from '../tokens';
 import { acknowledgeOnce } from './acknowledgment';
 import { useHaptics } from './haptics';
+import { playChime } from './sound';
 
 export interface Milestone {
   /** Stable key: a milestone is shown once (see useAcknowledgment). */
@@ -40,9 +41,13 @@ export function CelebrationProvider({ children }: { children: ReactNode }) {
   const haptics = useHaptics();
   const celebrate = useCallback(
     (m: Milestone) => {
-      if (!acknowledgeOnce(m.key)) return;
-      setCurrent(m);
-      haptics.medium();
+      // Shown only the first time this person reaches it, on any device.
+      void acknowledgeOnce(m.key).then((first) => {
+        if (!first) return;
+        setCurrent(m);
+        haptics.medium();
+        playChime();
+      });
     },
     [haptics],
   );

@@ -19,6 +19,7 @@ import { usePeople, type Person } from '../../lib/people';
 import {
   WHEN_ORDER,
   byDue,
+  currentTurns,
   isDone,
   isOpen,
   useTaskActions,
@@ -162,7 +163,7 @@ export default function Tasks() {
       >;
       if (!items || !today) return g;
       const sort = byDue(timeZone);
-      for (const item of items) {
+      for (const item of currentTurns(items)) {
         if (item.parentId || item.type === 'project') continue;
         if (item.ownerMemberId !== ownerId) continue;
         if (!isOpen(item) && !settling.has(item.id)) continue;

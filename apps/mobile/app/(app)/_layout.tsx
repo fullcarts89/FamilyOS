@@ -9,7 +9,9 @@ import { ErrorNotice } from '../../design/Notice';
 import { Loading } from '../../design/Page';
 import { TopBar } from '../../design/TopBar';
 import { color } from '../../design/tokens';
+import { useServerAcknowledgments } from '../../lib/acknowledgments';
 import { CaptureProvider, useCapture } from '../../lib/capture';
+import { MemberStateProvider } from '../../lib/member-state';
 import { useHousehold } from '../../lib/household';
 import { useSession } from '../../lib/session';
 import { supabase } from '../../lib/supabase';
@@ -18,6 +20,7 @@ import { supabase } from '../../lib/supabase';
 export default function AppLayout() {
   const { session, loading: sessionLoading } = useSession();
   const { household, loading, error, reload } = useHousehold();
+  useServerAcknowledgments(household?.id ?? null, household?.memberId ?? null);
 
   if (sessionLoading)
     return (
@@ -59,9 +62,11 @@ export default function AppLayout() {
   }
 
   return (
-    <CaptureProvider enabled>
-      <Shell />
-    </CaptureProvider>
+    <MemberStateProvider>
+      <CaptureProvider enabled>
+        <Shell />
+      </CaptureProvider>
+    </MemberStateProvider>
   );
 }
 

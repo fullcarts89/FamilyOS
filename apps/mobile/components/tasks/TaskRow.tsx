@@ -63,7 +63,9 @@ export function TaskRow({
         onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
         titleAccessory={
           item.priority === 1 ? (
-            <View style={styles.important} accessibilityLabel="Important" />
+            <Text style={styles.important} accessibilityLabel="Important">
+              {'\u00A0\u25CF'}
+            </Text>
           ) : null
         }
         leading={
@@ -242,7 +244,7 @@ const styles = StyleSheet.create({
   },
   nextHover: { borderColor: color.ink, backgroundColor: color.surface },
   nextText: { fontFamily: 'Figtree-700', color: color.ink },
-  important: { width: 7, height: 7, borderRadius: 4, backgroundColor: color.ink, marginBottom: 2 },
+  important: { fontSize: 9, lineHeight: 21, color: color.ink },
   handGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   take: {
     height: 32,

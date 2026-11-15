@@ -14,6 +14,11 @@ export interface Person {
   isMe: boolean;
   /** Can own tasks: adults and caregivers, not children or pets. */
   assignable: boolean;
+  /** Children and pets: looked after, no account. */
+  caredFor: boolean;
+  species: string | null;
+  note: string | null;
+  version: number;
 }
 
 /** "Either of you": items nobody has taken yet. */
@@ -37,6 +42,10 @@ export function toPeople(members: Member[], meId: string | null): Person[] {
       role: m.role,
       isMe: m.id === meId,
       assignable: m.role !== 'child' && m.role !== 'pet',
+      caredFor: m.role === 'child' || m.role === 'pet',
+      species: m.species ?? null,
+      note: m.note ?? null,
+      version: m.version ?? 1,
     };
   });
 }
@@ -50,6 +59,10 @@ export interface People {
   others: Person[];
   /** The first other adult: who "hand to" means by default. */
   partner: Person | null;
+  /** Owners and adults (me first), then caregivers. */
+  adults: Person[];
+  /** Children, then pets. */
+  caredFor: Person[];
   byId: (id: string | null | undefined) => Person | null;
   /** "You", their first name, or "Either of you" for unowned. */
   label: (id: string | null | undefined, shared?: string) => string;
@@ -74,6 +87,8 @@ export function usePeople(): People {
       assignable,
       others,
       partner: others[0] ?? null,
+      adults: assignable,
+      caredFor: [...all.filter((p) => p.role === 'child'), ...all.filter((p) => p.role === 'pet')],
       byId,
       label: (id, shared = 'Either of you') => {
         if (!id) return shared;
