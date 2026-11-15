@@ -11,3 +11,5 @@ export * from './presentation';
 export * from './due-options';
 export * from './recurrence';
 export * from './password';
+export * from './events';
+export * from './rhythm';
