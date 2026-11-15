@@ -19,7 +19,8 @@
     "stack:reset": "supabase db reset",
     "dev:api": "pnpm --filter @familyos/api dev",
     "dev:worker": "pnpm --filter @familyos/worker dev",
-    "dev:mobile": "pnpm --filter @familyos/mobile start"
+    "dev:mobile": "pnpm --filter @familyos/mobile start",
+    "demo:seed": "pnpm --filter @familyos/api demo:seed"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
