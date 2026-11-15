@@ -8,7 +8,7 @@ import {
   type RecurrenceRule,
   type Weekday,
 } from '@familyos/domain';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Minus, Plus } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
@@ -120,13 +120,16 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
 // New routine: a quick preset ("Monthly on the 1st"), then fine-tune; who does it or takes turns;
 // and a preview of the next turns before saving. Everything here is plain rules, no AI.
 export default function NewRoutine() {
+  // Optional: who it's for, a suggested title and a preset (from "Set up Biscuit's care routine").
+  const params = useLocalSearchParams<{ for?: string; title?: string; preset?: string }>();
   const { household } = useHousehold();
   const people = usePeople();
   const toast = useToast();
   const { changed } = useCapture();
   const { desktop } = useLayout();
   const [today, setToday] = useState<string | null>(null);
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState(params.title ?? '');
+  const [subjectId, setSubjectId] = useState<string | null>(params.for ?? null);
   const [preset, setPreset] = useState<Preset | null>('weekly');
   const [kind, setKind] = useState<Kind>('weekly');
   const [interval, setEvery] = useState(1);
@@ -153,10 +156,21 @@ export default function NewRoutine() {
         const dow = new Date(`${td.date}T12:00:00Z`).getUTCDay();
         setWeekdays([(dow === 0 ? 7 : dow) as Weekday]);
         setDayOfMonth(Number(td.date.slice(8, 10)));
+        if (params.preset === 'first') {
+          // "Monthly on the 1st", starting with the next 1st.
+          setPreset('first');
+          setKind('monthly');
+          setMonthlyMode('date');
+          setDayOfMonth(1);
+          setEvery(1);
+          setStartOn(
+            monthStartOptions(td.date)[Number(td.date.slice(8, 10)) === 1 ? 0 : 1]?.date ?? td.date,
+          );
+        }
       })
       .catch(() => setToday(null));
     setOwnerId(household.memberId);
-  }, [household]);
+  }, [household, params.preset]);
 
   const rule: RecurrenceRule | null = useMemo(() => {
     switch (kind) {
@@ -244,6 +258,7 @@ export default function NewRoutine() {
           startOn,
           time: timeValue || null,
           ...(turns ? { rotation } : { ownerMemberId: ownerId }),
+          ...(subjectId && { subjectMemberId: subjectId }),
         },
       });
       toast.show(`Routine set up: ${routine.title}`, { detail: routine.summary });
@@ -274,6 +289,28 @@ export default function NewRoutine() {
         maxLength={500}
         placeholder="Biscuit’s flea treatment"
       />
+
+      {people.caredFor.length > 0 ? (
+        <Group label="Who it’s for">
+          <View style={styles.chips}>
+            <Chip
+              label="The household"
+              selected={subjectId === null}
+              onPress={() => setSubjectId(null)}
+            />
+            {people.caredFor.map((p) => (
+              <Chip
+                key={p.id}
+                label={p.name}
+                accent={p.color}
+                leading={<Avatar person={p} size={18} />}
+                selected={subjectId === p.id}
+                onPress={() => setSubjectId(p.id)}
+              />
+            ))}
+          </View>
+        </Group>
+      ) : null}
 
       <Group label="How often">
         <View style={styles.chips}>

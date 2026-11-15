@@ -1,4 +1,4 @@
-import { Redirect, Stack } from 'expo-router';
+import { Redirect, Stack, usePathname } from 'expo-router';
 import { Platform, StyleSheet, View } from 'react-native';
 import { BottomBar, CaptureFab, PhoneHeader } from '../../design/BottomBar';
 import { Button } from '../../design/Button';
@@ -9,7 +9,10 @@ import { ErrorNotice } from '../../design/Notice';
 import { Loading } from '../../design/Page';
 import { TopBar } from '../../design/TopBar';
 import { color } from '../../design/tokens';
+import { useServerAcknowledgments } from '../../lib/acknowledgments';
 import { CaptureProvider, useCapture } from '../../lib/capture';
+import { MemberStateProvider } from '../../lib/member-state';
+import { WidgetSync } from '../../native/WidgetSync';
 import { useHousehold } from '../../lib/household';
 import { useSession } from '../../lib/session';
 import { supabase } from '../../lib/supabase';
@@ -18,6 +21,7 @@ import { supabase } from '../../lib/supabase';
 export default function AppLayout() {
   const { session, loading: sessionLoading } = useSession();
   const { household, loading, error, reload } = useHousehold();
+  useServerAcknowledgments(household?.id ?? null, household?.memberId ?? null);
 
   if (sessionLoading)
     return (
@@ -59,18 +63,23 @@ export default function AppLayout() {
   }
 
   return (
-    <CaptureProvider enabled>
-      <Shell />
-    </CaptureProvider>
+    <MemberStateProvider>
+      <CaptureProvider enabled>
+        <WidgetSync />
+        <Shell />
+      </CaptureProvider>
+    </MemberStateProvider>
   );
 }
 
 function Shell() {
   const { phone } = useLayout();
   const { open } = useCapture();
+  // First-time setup is a focused, full-screen flow: no navigation around it.
+  const focused = usePathname() === '/setup';
   return (
     <View style={styles.shell}>
-      {phone ? <PhoneHeader /> : <TopBar onCapture={() => open()} />}
+      {focused ? null : phone ? <PhoneHeader /> : <TopBar onCapture={() => open()} />}
       <View style={styles.main}>
         <Stack
           screenOptions={{
@@ -82,7 +91,7 @@ function Shell() {
           <Stack.Screen name="routine/new" options={{ presentation: 'modal' }} />
         </Stack>
       </View>
-      {phone ? (
+      {phone && !focused ? (
         <>
           <BottomBar />
           <CaptureFab onPress={() => open()} />

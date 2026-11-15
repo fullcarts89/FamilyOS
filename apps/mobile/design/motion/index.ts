@@ -4,8 +4,15 @@
  * rare milestones once per person, skeletons and fades. Built on React Native's Animated so it
  * runs the same on iPhone and the web; reduced motion replaces movement with fades or nothing.
  */
-export { acknowledgeOnce, setAcknowledgmentStore, useAcknowledgment } from './acknowledgment';
+export {
+  acknowledgeOnce,
+  memoryAcknowledgments,
+  setAcknowledgmentStore,
+  useAcknowledgment,
+  type AcknowledgmentStore,
+} from './acknowledgment';
 export { CelebrationProvider, useCelebrate, type Milestone } from './Celebration';
 export { FadeIn } from './FadeIn';
 export { HapticsProvider, hapticsAvailable, useHaptics } from './haptics';
 export { Skeleton, SkeletonBlock, SkeletonRows } from './Skeleton';
+export { playChime, setSoundEnabled, soundAvailable } from './sound';

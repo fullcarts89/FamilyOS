@@ -58,7 +58,8 @@ export function Row({
           {title}
           {titleAccessory ? (
             <>
-              {'  '}
+              {/* A no-break space keeps the accessory with the last word. */}
+              {'\u00A0'}
               {titleAccessory}
             </>
           ) : null}

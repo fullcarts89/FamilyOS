@@ -24,6 +24,17 @@ export const color = {
 /** Member colors when a member has none stored yet: coral, blue, marigold, sage, plum, teal. */
 export const memberPalette = ['#D2553F', '#2F6FB3', '#D99A1C', '#5E8A4E', '#8A5A9E', '#2E8A86'];
 
+/** Colors a member can choose (the defaults first): warm, distinct, readable with white text. */
+export const choosablePalette = [
+  ...memberPalette,
+  '#8A6A4F',
+  '#C4577A',
+  '#4F63C9',
+  '#6E7F2A',
+  '#B5602B',
+  '#46607A',
+];
+
 /** A light tint of a member color for backgrounds (mixes the color with white). */
 export function tint(hex: string, strength = 0.14): string {
   const n = hex.replace('#', '');
