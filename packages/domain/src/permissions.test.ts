@@ -42,6 +42,7 @@ describe('role permissions', () => {
       'reset.run',
       'meal.manage',
       'contact.manage',
+      'household.update',
     ] as const) {
       expect(can('adult', action)).toBe(true);
       expect(can('caregiver', action)).toBe(false);

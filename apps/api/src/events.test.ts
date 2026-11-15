@@ -156,6 +156,49 @@ describe.skipIf(!db)('Family Rhythm API', () => {
       );
     });
 
+    it('renames the household: owner or adult, versioned, audited without the name', async () => {
+      const patch = (body: unknown, token = adult) =>
+        request(base(), { method: 'PATCH', token, body });
+      const before = await json<{ household: { name: string; version: number } }>(
+        await request(base(), { token: owner }),
+      );
+      const v = before.household.version;
+      const res = await patch({ expectedVersion: v, name: '  The Riveras  ' });
+      expect(res.status).toBe(200);
+      expect((await json<{ household: unknown }>(res)).household).toEqual({
+        id: h.id,
+        name: 'The Riveras',
+        timezone: expect.any(String),
+        version: v + 1,
+      });
+      expect((await patch({ expectedVersion: v, name: 'Stale' }, owner)).status).toBe(409);
+      expect((await patch({ expectedVersion: v + 1, name: 'Ours' }, owner)).status).toBe(200);
+      for (const body of [
+        { expectedVersion: v + 2, name: '' },
+        { expectedVersion: v + 2, name: '   ' },
+        { expectedVersion: v + 2, name: 'x'.repeat(101) },
+        { expectedVersion: v + 2 },
+        { expectedVersion: v + 2, name: 'x', timezone: 'UTC' },
+      ]) {
+        expect((await patch(body)).status).toBe(422);
+      }
+      expect(
+        (await patch({ expectedVersion: v + 2, name: 'Sitter was here' }, caregiver)).status,
+      ).toBe(403);
+      const audit = await requireDb()
+        .selectFrom('app.audit_event')
+        .select(['action', 'payload'])
+        .where('household_id', '=', h.id)
+        .where('action', '=', 'household.updated')
+        .orderBy('id')
+        .execute();
+      expect(audit).toEqual([
+        { action: 'household.updated', payload: { fields: ['name'], version: v + 1 } },
+        { action: 'household.updated', payload: { fields: ['name'], version: v + 2 } },
+      ]);
+      expect(JSON.stringify(audit)).not.toContain('Riveras');
+    });
+
     it('never makes a child or pet the owner of work, only its subject', async () => {
       for (const ownerMemberId of [h.child.id, h.pet.id]) {
         const res = await call('/work-items', {

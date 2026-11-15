@@ -13,6 +13,8 @@ export const isCaredFor = (role: MemberRole): boolean =>
 
 export const ACTIONS = [
   'household.read',
+  /** Rename the household (first-time setup and later). */
+  'household.update',
   'member.invite',
   'member.remove',
   'member.add_child',
@@ -50,6 +52,7 @@ const GRANTS: Readonly<Record<MemberRole, readonly Action[]>> = {
   owner: ACTIONS,
   adult: [
     'household.read',
+    'household.update',
     'member.add_child',
     'member.add_pet',
     'member.update',

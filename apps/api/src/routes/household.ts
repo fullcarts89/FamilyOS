@@ -50,6 +50,10 @@ const UpdateMember = z
   })
   .strict();
 
+const UpdateHousehold = z
+  .object({ expectedVersion: z.number().int().min(1), name: z.string().trim().min(1).max(100) })
+  .strict();
+
 export const MEMBER_COLUMNS = [
   'id',
   'display_name as displayName',
@@ -82,6 +86,39 @@ export function householdRoutes(deps: Deps) {
       .orderBy('created_at')
       .execute();
     return c.json({ household, members, me: c.get('member') });
+  });
+
+  // Rename the household (owner or adult), versioned. The audit records that it changed, not
+  // the name.
+  app.patch('/', async (c) => {
+    authorize(c, 'household.update');
+    const body = await parseBody(c.req.raw, UpdateHousehold);
+    const trx = c.get('trx');
+    const me = c.get('member');
+    const current = await trx
+      .selectFrom('app.household')
+      .select(['version'])
+      .where('id', '=', me.householdId)
+      .forUpdate()
+      .executeTakeFirstOrThrow();
+    if (current.version !== body.expectedVersion) throw conflict();
+    const household = await trx
+      .updateTable('app.household')
+      .set({ name: body.name, version: current.version + 1, updated_at: now() })
+      .where('id', '=', me.householdId)
+      .where('version', '=', body.expectedVersion)
+      .returning(['id', 'name', 'timezone', 'version'])
+      .executeTakeFirstOrThrow();
+    await recordAudit(trx, {
+      householdId: me.householdId,
+      actorMemberId: me.id,
+      entityType: 'household',
+      entityId: me.householdId,
+      action: 'household.updated',
+      payload: { fields: ['name'], version: household.version },
+      requestId: c.get('requestId'),
+    });
+    return c.json({ household });
   });
 
   app.post('/invites', async (c) => {
