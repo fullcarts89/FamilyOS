@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, ArrowRight, Check, Plus, Utensils } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, StyleSheet, View, type ScrollView } from 'react-native';
@@ -514,10 +514,13 @@ export default function Reset() {
   const capture = useCapture();
   const { setFabHidden } = capture;
   const barShown = phone && !!data && step >= 0 && step < DONE;
-  useEffect(() => {
-    setFabHidden(barShown);
-    return () => setFabHidden(false);
-  }, [barShown, setFabHidden]);
+  // Only while this screen is the one showing: another tab opened on top brings the button back.
+  useFocusEffect(
+    useCallback(() => {
+      setFabHidden(barShown);
+      return () => setFabHidden(false);
+    }, [barShown, setFabHidden]),
+  );
 
   // ---------------------------------------------------------------------------------------------
   if (household?.role === 'caregiver') {
