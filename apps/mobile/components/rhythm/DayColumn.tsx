@@ -106,6 +106,7 @@ export function DayColumn({
           return (
             <View
               key={row.key}
+              role="listitem"
               style={styles.hourRow}
               aria-hidden
               importantForAccessibility="no-hide-descendants"
@@ -243,7 +244,10 @@ export function DayColumn({
                 </Text>
               </View>
               {awayLine && away ? (
-                <Text variant="meta" color={textShade(away.person.color, color.surface)}>
+                <Text
+                  variant="meta"
+                  color={textShade(away.person.color, lead ? tint(lead.color, 0.1) : color.surface)}
+                >
                   {awayLine}
                 </Text>
               ) : null}
@@ -323,7 +327,7 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: color.line2,
   },
-  rail: { position: 'absolute', bottom: 0, width: space[1], borderRadius: 2 },
+  rail: { position: 'absolute', bottom: 0, width: space[1] },
   hourBody: { flex: 1, justifyContent: 'center' },
   nowRow: { flexDirection: 'row', alignItems: 'center', minHeight: space[7] },
   nowPill: {

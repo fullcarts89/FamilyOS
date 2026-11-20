@@ -22,13 +22,39 @@ import { readableOn, shortTitle, textShade } from './today-model';
 
 /** Lane heads (avatar, name, a two-line note) on tablet and desktop. */
 const HEAD = 196;
+const HEAD_NARROW = 150;
 const HANDOFF_W = 240;
 const NONE = new Set<string>();
 /** A row in an adult's lane: tall enough to tap. */
 const ROW = touch;
 
+/** Muted text that still reads at 4.5:1 on a lane's fill. */
+const MUTED_ON_LANE = textShade(color.muted, color.lane);
+
+/**
+ * Handoff lines under a child's lane, left to right: the full line ("Theo drops June at Little
+ * Oaks") when it fits before the next one, else the short one ("Theo drops June off").
+ */
+function handoffPlacement<H extends { at: number; time: string; text: string; short: string }>(
+  labels: H[],
+  x: (m: number) => number,
+  track: number,
+): (H & { left: number; width: number })[] {
+  const sorted = [...labels].sort((a, b) => a.at - b.at);
+  const leftOf = (h: H, text: string) =>
+    Math.max(0, Math.min(x(h.at) + space[2], track - estimate(`${h.time}  ${text}`)));
+  return sorted.map((h, i) => {
+    const next = sorted[i + 1];
+    const limit = next ? leftOf(next, next.short) - space[3] : track;
+    const text =
+      [h.text, h.short].find((t) => leftOf(h, t) + estimate(`${h.time}  ${t}`) <= limit) ?? h.short;
+    const width = Math.min(track, estimate(`${h.time}  ${text}`) + space[2]);
+    return { ...h, text, left: leftOf(h, text), width };
+  });
+}
+
 /** Rough width of a label in the timeline's 12px semibold type, rounded up so nothing is cut. */
-const estimate = (text: string) => Math.ceil(text.length * 7.2);
+const estimate = (text: string) => Math.ceil(text.length * 6.4);
 
 /**
  * Where a block's words go: inside when they fit; else beside it (the time underneath when the
@@ -108,7 +134,8 @@ export function DayTimeline({
     [date, timeZone, lanes, handoffs, headsUps, people, compact, now, hidden],
   );
 
-  const head = compact ? 34 : HEAD;
+  // Narrow tablets give the lanes more of the width.
+  const head = compact ? 34 : width < 800 ? HEAD_NARROW : HEAD;
   const track = Math.max(0, width - head);
   const { from, to } = model.window;
   const x = (m: number) => ((Math.min(Math.max(m, from), to) - from) / (to - from)) * track;
@@ -391,7 +418,14 @@ export function DayTimeline({
                           {label.text}
                         </Text>
                         {label.sub ? (
-                          <Text variant="small" tone="muted" numberOfLines={1}>
+                          <Text
+                            variant="small"
+                            color={textShade(
+                              color.muted,
+                              b.imported ? color.surface : tint(c, 0.16),
+                            )}
+                            numberOfLines={1}
+                          >
                             {b.sub}
                           </Text>
                         ) : null}
@@ -455,14 +489,14 @@ export function DayTimeline({
                           <Text variant="small" numberOfLines={1} style={styles.blockText}>
                             {label.text}
                             {label.time === 'inline' ? (
-                              <Text variant="small" tone="muted">
+                              <Text variant="small" color={MUTED_ON_LANE}>
                                 {'  '}
                                 {b.time}
                               </Text>
                             ) : null}
                           </Text>
                           {label.time === 'below' ? (
-                            <Text variant="small" tone="muted" numberOfLines={1}>
+                            <Text variant="small" color={MUTED_ON_LANE} numberOfLines={1}>
                               {b.time}
                             </Text>
                           ) : null}
@@ -474,14 +508,11 @@ export function DayTimeline({
 
               {/* Handoff lines under a child's lane */}
               {!compact
-                ? model.handoffLabels.map((h) => (
+                ? handoffPlacement(model.handoffLabels, x, track).map((h) => (
                     <View
                       key={`hl${h.key}`}
                       pointerEvents="none"
-                      style={[
-                        styles.handoffLabel,
-                        { left: Math.min(x(h.at) + space[2], track - HANDOFF_W), top: h.top },
-                      ]}
+                      style={[styles.handoffLabel, { left: h.left, width: h.width, top: h.top }]}
                     >
                       <Text variant="small" numberOfLines={1} style={styles.handoffText}>
                         <Text variant="small" color={textShade(h.color)} style={styles.handoffTime}>
@@ -695,6 +726,7 @@ function buildModel({
     color: string;
     time: string;
     text: string;
+    short: string;
   }[] = [];
   const spans: { start: number; end: number }[] = [];
 
@@ -791,6 +823,9 @@ function buildModel({
       color: adult?.color ?? color.ink,
       time: timeOf(h.time, timeZone).replace(/am|pm/, ''),
       text: adult ? `${who} ${verb}` : `${who}: ${child.name}’s ${CARE_VERB[h.action]}`,
+      short: adult
+        ? `${who} ${h.action === 'drop_off' ? (adult.isMe ? 'drop' : 'drops') : adult.isMe ? 'pick' : 'picks'} ${child.name} ${h.action === 'drop_off' ? 'off' : 'up'}`
+        : `${child.name}’s ${CARE_VERB[h.action]}: nobody yet`,
     });
   }
 

@@ -177,7 +177,7 @@ export function WeekStrip({
             </Text>
           ))}
           {notes.length === 0 && care.length === 0 ? (
-            <Text variant="small" tone="faint">
+            <Text variant="small" tone="muted">
               Nothing planned
             </Text>
           ) : null}

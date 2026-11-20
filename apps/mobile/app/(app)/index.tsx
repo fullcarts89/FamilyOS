@@ -743,8 +743,9 @@ const styles = StyleSheet.create({
   colMain: { flex: 1.2, minWidth: 0 },
   colSide: { flex: 1, minWidth: 0 },
   cols: { marginTop: space[2] },
-  colsWide: { flexDirection: 'row', gap: space[7], marginTop: space[5] },
-  col: { flex: 1, minWidth: 0 },
+  colsWide: { flexDirection: 'row', flexWrap: 'wrap', gap: space[7], marginTop: space[5] },
+  // Tablets wrap to two columns rather than squeeze three.
+  col: { flexGrow: 1, flexBasis: 300, minWidth: 0 },
   tabs: {
     flexDirection: 'row',
     gap: space[2] - 2,

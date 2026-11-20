@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Avatar } from '../../design/Avatar';
 import type { PressState } from '../../design/Button';
 import { Text } from '../../design/Text';
-import { color } from '../../design/tokens';
+import { color, space, touch } from '../../design/tokens';
 import type { Activity } from '../../lib/api';
 import type { People } from '../../lib/people';
 
@@ -64,32 +64,33 @@ export function SinceLastLooked({
   limit?: number;
 }) {
   return (
-    <View>
+    <View role="list" aria-label="What changed since you last looked">
       {activity.slice(0, limit).map((a, i, all) => {
         const actor = people.byId(a.actorMemberId);
         const { who, rest } = activityLine(a, people);
         const link = a.entityType === 'work_item';
         return (
-          <Pressable
-            key={a.id}
-            accessibilityRole={link ? 'link' : undefined}
-            disabled={!link}
-            onPress={() => router.push({ pathname: '/item/[id]', params: { id: a.entityId } })}
-            style={(s: PressState) => [
-              styles.row,
-              i === all.length - 1 && styles.last,
-              link && { cursor: 'pointer' },
-              s.hovered && link && styles.hover,
-            ]}
-          >
-            <Avatar person={actor} size={24} />
-            <Text variant="body" style={styles.text}>
-              <Text variant="bodyStrong">{who}</Text> {rest}
-            </Text>
-            <Text variant="small" tone="faint">
-              {ago(a.at, now)}
-            </Text>
-          </Pressable>
+          <View key={a.id} role="listitem">
+            <Pressable
+              accessibilityRole={link ? 'link' : undefined}
+              disabled={!link}
+              onPress={() => router.push({ pathname: '/item/[id]', params: { id: a.entityId } })}
+              style={(s: PressState) => [
+                styles.row,
+                i === all.length - 1 && styles.last,
+                link && { cursor: 'pointer' },
+                s.hovered && link && styles.hover,
+              ]}
+            >
+              <Avatar person={actor} size={24} />
+              <Text variant="body" style={styles.text}>
+                <Text variant="bodyStrong">{who}</Text> {rest}
+              </Text>
+              <Text variant="small" tone="muted">
+                {ago(a.at, now)}
+              </Text>
+            </Pressable>
+          </View>
         );
       })}
     </View>
@@ -100,8 +101,9 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 11,
+    gap: space[3],
+    minHeight: touch,
+    paddingVertical: space[3],
     borderBottomWidth: 1,
     borderBottomColor: color.hairline,
   },
