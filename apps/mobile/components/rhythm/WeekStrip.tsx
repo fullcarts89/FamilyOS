@@ -4,7 +4,7 @@ import type { PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
 import { useLayout } from '../../design/layout';
 import { Text } from '../../design/Text';
-import { color, font, radius, tint } from '../../design/tokens';
+import { color, font, radius, space, tint } from '../../design/tokens';
 import type { Occurrence } from '../../lib/api';
 import { addDays, shortDate, weekdayName } from '../../lib/dates';
 import type { People, Person } from '../../lib/people';
@@ -68,7 +68,9 @@ export function WeekStrip({
           <Text variant="label" tone={isToday ? 'ink' : 'muted'}>
             {isToday ? 'Today' : weekdayName(d).slice(0, 3)}
           </Text>
-          <Text style={styles.num}>{Number(d.slice(8, 10))}</Text>
+          <Text variant="h3" style={styles.num}>
+            {Number(d.slice(8, 10))}
+          </Text>
         </View>
         <View style={styles.lanes} aria-hidden>
           {lanes.map((p) => {
@@ -158,7 +160,7 @@ export function WeekStrip({
                     ) : (
                       <View style={[styles.dot, { backgroundColor: adult?.color }]} />
                     )}
-                    <Text variant="small" style={styles.careText}>
+                    <Text variant="small">
                       {o.careAction === 'drop_off' ? 'Drop' : 'Pick'}{' '}
                       {timeOf(o.startsAt, timeZone).replace(/am|pm/, '')}
                     </Text>
@@ -201,13 +203,13 @@ export function WeekStrip({
 }
 
 const styles = StyleSheet.create({
-  grid: { flexDirection: 'row', gap: 10 },
-  phoneRow: { gap: 10, paddingRight: 16 },
+  grid: { flexDirection: 'row', gap: space[3] },
+  phoneRow: { gap: space[3], paddingRight: space[4] },
   day: {
     flex: 1,
     minWidth: 0,
-    gap: 10,
-    padding: 12,
+    gap: space[3],
+    padding: space[3],
     borderRadius: radius.lg,
     backgroundColor: color.surface,
     borderWidth: 1.5,
@@ -219,31 +221,24 @@ const styles = StyleSheet.create({
   clash: { borderStyle: 'dashed', borderColor: color.ink },
   hover: { borderColor: color.ink },
   dayHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
-  num: {
-    fontFamily: font.displayHeavy,
-    fontSize: 24,
-    lineHeight: 26,
-    color: color.ink,
-    letterSpacing: -0.4,
-  },
-  lanes: { gap: 4 },
+  num: { fontFamily: font.displayHeavy },
+  lanes: { gap: space[1] },
   lane: { height: 8, borderRadius: 4, backgroundColor: color.lane, overflow: 'hidden' },
   mini: { position: 'absolute', top: 0, bottom: 0, borderRadius: 3 },
   nowTick: { position: 'absolute', top: -2, bottom: -2, width: 2, backgroundColor: color.ink },
-  careRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  careRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1] },
   careChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    height: 22,
-    paddingHorizontal: 7,
+    gap: space[1],
+    minHeight: space[5] + 2,
+    paddingHorizontal: space[2],
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: color.hairline,
   },
   careProblem: { borderColor: color.ink, borderStyle: 'dashed' },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  careText: { fontSize: 11.5 },
-  notes: { gap: 3 },
+  notes: { gap: space[1] },
   noteTime: { fontFamily: font.uiBold, color: color.ink },
 });
