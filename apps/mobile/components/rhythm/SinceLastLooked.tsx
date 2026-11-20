@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Avatar } from '../../design/Avatar';
 import type { PressState } from '../../design/Button';
 import { Text } from '../../design/Text';
-import { color } from '../../design/tokens';
+import { color, space, touch } from '../../design/tokens';
 import type { Activity } from '../../lib/api';
 import type { People } from '../../lib/people';
 
@@ -101,8 +101,9 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 11,
+    gap: space[3],
+    minHeight: touch,
+    paddingVertical: space[3],
     borderBottomWidth: 1,
     borderBottomColor: color.hairline,
   },

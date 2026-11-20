@@ -7,7 +7,7 @@ import { Button, type PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
 import { FadeIn } from '../../design/motion';
 import { Text } from '../../design/Text';
-import { color, radius } from '../../design/tokens';
+import { color, radius, space } from '../../design/tokens';
 import type { Occurrence, WorkItem } from '../../lib/api';
 import { relativeDay } from '../../lib/dates';
 import type { People } from '../../lib/people';
@@ -134,7 +134,7 @@ function HeadsUpRow({
             .map((p) => (
               <Button
                 key={p.id}
-                size="sm"
+                size="md"
                 variant="primary"
                 title={p.isMe ? 'I’ll cover it' : `Ask ${p.name} to cover`}
                 busy={busy === p.id}
@@ -151,7 +151,7 @@ function HeadsUpRow({
         <>
           {me && !me.caredFor ? (
             <Button
-              size="sm"
+              size="md"
               title="I’ll take it"
               busy={busy === me.id}
               onPress={() => void cover(o, me.id)}
@@ -159,7 +159,7 @@ function HeadsUpRow({
           ) : null}
           {partner ? (
             <Button
-              size="sm"
+              size="md"
               variant="secondary"
               title={`Ask ${partner.name}`}
               busy={busy === partner.id}
@@ -182,20 +182,20 @@ function HeadsUpRow({
     actions = item ? (
       <>
         <Button
-          size="sm"
+          size="md"
           title={owner?.isMe || !owner ? 'Do it now' : 'Mark done'}
           onPress={() => onComplete(item)}
         />
         {owner?.isMe && people.partner ? (
           <Button
-            size="sm"
+            size="md"
             variant="secondary"
             title={`Hand to ${people.partner.name}`}
             onPress={() => onAssign(item, people.partner?.id ?? null)}
           />
         ) : !owner?.isMe && people.me ? (
           <Button
-            size="sm"
+            size="md"
             variant="secondary"
             title="I’ll take it"
             onPress={() => onAssign(item, people.me?.id ?? null)}
@@ -233,17 +233,17 @@ function HeadsUpRow({
 }
 
 const styles = StyleSheet.create({
-  list: { gap: 10 },
+  list: { gap: space[3] },
   row: {
     flexDirection: 'row',
-    gap: 12,
-    padding: 14,
+    gap: space[3],
+    padding: space[4],
     borderRadius: radius.lg,
     backgroundColor: color.surface,
     borderWidth: 1.5,
     borderColor: color.hairline,
   },
-  icon: { width: 22, paddingTop: 3, alignItems: 'center' },
-  body: { flex: 1, gap: 10 },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  icon: { width: space[6], paddingTop: space[1], alignItems: 'center' },
+  body: { flex: 1, gap: space[3] },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
 });

@@ -8,7 +8,7 @@ import { Hatch } from '../../design/Hatch';
 import { useLayout } from '../../design/layout';
 import { FadeIn } from '../../design/motion';
 import { Text } from '../../design/Text';
-import { color, radius } from '../../design/tokens';
+import { color, radius, space, touch } from '../../design/tokens';
 import { api, type ResetResponse } from '../../lib/api';
 import { addDays, dayOfWeek } from '../../lib/dates';
 import { useHousehold } from '../../lib/household';
@@ -155,28 +155,34 @@ const styles = StyleSheet.create({
   strip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: space[4],
     flexWrap: 'wrap',
-    paddingVertical: 10,
-    paddingLeft: 18,
-    paddingRight: 10,
+    paddingVertical: space[2],
+    paddingLeft: space[4],
+    paddingRight: space[2],
     borderRadius: radius.lg,
     backgroundColor: color.surface,
     borderWidth: 1.5,
     borderColor: color.hairline,
   },
-  stripPhone: { paddingLeft: 14, alignItems: 'flex-start', flexDirection: 'column', gap: 10 },
+  stripPhone: {
+    paddingLeft: space[4],
+    paddingVertical: space[3],
+    alignItems: 'flex-start',
+    flexDirection: 'column',
+    gap: space[3],
+  },
   pieces: {
     flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    columnGap: 22,
-    rowGap: 8,
+    columnGap: space[5],
+    rowGap: space[2],
     minWidth: 0,
   },
   piecesPhone: { flexDirection: 'column' },
-  piece: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  pieceText: { fontSize: 13.5 },
+  piece: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  pieceText: { flexShrink: 1 },
   tick: {
     width: 18,
     height: 18,
@@ -188,9 +194,9 @@ const styles = StyleSheet.create({
   link: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    minHeight: 40,
-    paddingHorizontal: 14,
+    gap: space[2],
+    minHeight: touch,
+    paddingHorizontal: space[4],
     borderRadius: radius.pill,
     cursor: 'pointer',
   },
