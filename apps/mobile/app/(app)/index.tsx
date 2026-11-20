@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { ArrowRight, ChevronDown, ChevronUp, Inbox, Plus } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text as Span, RefreshControl, StyleSheet, View } from 'react-native';
+import { DayColumn } from '../../components/rhythm/DayColumn';
 import { DayTimeline } from '../../components/rhythm/DayTimeline';
 import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet';
 import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
@@ -248,18 +249,30 @@ export default function Today() {
       </Pressable>
     ) : null;
 
+  // Phones read the whole day as one vertical timeline; tablet and desktop keep the lanes.
   const timeline = rhythm ? (
-    <DayTimeline
-      date={rhythm.date}
-      timeZone={timeZone}
-      lanes={rhythm.lanes}
-      handoffs={rhythm.handoffs}
-      headsUps={rhythm.headsUps}
-      people={people}
-      now={rhythm.date === rhythm.today ? now : null}
-      compact={phone}
-      onOpen={openOccurrence}
-    />
+    phone ? (
+      <DayColumn
+        date={rhythm.date}
+        timeZone={timeZone}
+        lanes={rhythm.lanes}
+        handoffs={rhythm.handoffs}
+        people={people}
+        now={rhythm.date === rhythm.today ? now : null}
+        onOpen={openOccurrence}
+      />
+    ) : (
+      <DayTimeline
+        date={rhythm.date}
+        timeZone={timeZone}
+        lanes={rhythm.lanes}
+        handoffs={rhythm.handoffs}
+        headsUps={rhythm.headsUps}
+        people={people}
+        now={rhythm.date === rhythm.today ? now : null}
+        onOpen={openOccurrence}
+      />
+    )
   ) : null;
 
   const nextUp =
@@ -564,7 +577,14 @@ function Tomorrow({
         Tomorrow · {weekdayName(tomorrow)}
       </Text>
       {entries.length ? (
-        <NextUp entries={entries} now={new Date(0)} timeZone={timeZone} limit={3} onOpen={onOpen} />
+        <NextUp
+          entries={entries}
+          now={new Date(0)}
+          timeZone={timeZone}
+          limit={3}
+          split={false}
+          onOpen={onOpen}
+        />
       ) : (
         <View style={styles.dayDone}>
           <Text variant="title">Nothing on the calendar tomorrow yet.</Text>

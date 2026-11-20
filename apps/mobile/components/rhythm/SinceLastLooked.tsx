@@ -64,32 +64,33 @@ export function SinceLastLooked({
   limit?: number;
 }) {
   return (
-    <View>
+    <View role="list" aria-label="Since you last looked">
       {activity.slice(0, limit).map((a, i, all) => {
         const actor = people.byId(a.actorMemberId);
         const { who, rest } = activityLine(a, people);
         const link = a.entityType === 'work_item';
         return (
-          <Pressable
-            key={a.id}
-            accessibilityRole={link ? 'link' : undefined}
-            disabled={!link}
-            onPress={() => router.push({ pathname: '/item/[id]', params: { id: a.entityId } })}
-            style={(s: PressState) => [
-              styles.row,
-              i === all.length - 1 && styles.last,
-              link && { cursor: 'pointer' },
-              s.hovered && link && styles.hover,
-            ]}
-          >
-            <Avatar person={actor} size={24} />
-            <Text variant="body" style={styles.text}>
-              <Text variant="bodyStrong">{who}</Text> {rest}
-            </Text>
-            <Text variant="small" tone="faint">
-              {ago(a.at, now)}
-            </Text>
-          </Pressable>
+          <View role="listitem" key={a.id}>
+            <Pressable
+              accessibilityRole={link ? 'link' : undefined}
+              disabled={!link}
+              onPress={() => router.push({ pathname: '/item/[id]', params: { id: a.entityId } })}
+              style={(s: PressState) => [
+                styles.row,
+                i === all.length - 1 && styles.last,
+                link && { cursor: 'pointer' },
+                s.hovered && link && styles.hover,
+              ]}
+            >
+              <Avatar person={actor} size={24} />
+              <Text variant="body" style={styles.text}>
+                <Text variant="bodyStrong">{who}</Text> {rest}
+              </Text>
+              <Text variant="small" tone="muted">
+                {ago(a.at, now)}
+              </Text>
+            </Pressable>
+          </View>
         );
       })}
     </View>

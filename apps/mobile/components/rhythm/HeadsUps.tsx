@@ -48,23 +48,25 @@ export function HeadsUps({
 }) {
   if (items.length === 0) return null;
   return (
-    <View style={styles.list}>
+    <View role="list" aria-label="Heads-ups" style={styles.list}>
       {items.map(({ date, headsUp }) => (
-        <FadeIn key={headsUp.id}>
-          <HeadsUpRow
-            date={date}
-            h={headsUp}
-            today={today}
-            timeZone={timeZone}
-            people={people}
-            occurrence={occurrence}
-            workItem={workItem}
-            onCover={onCover}
-            onOpen={onOpen}
-            onComplete={onComplete}
-            onAssign={onAssign}
-          />
-        </FadeIn>
+        <View role="listitem" key={headsUp.id}>
+          <FadeIn>
+            <HeadsUpRow
+              date={date}
+              h={headsUp}
+              today={today}
+              timeZone={timeZone}
+              people={people}
+              occurrence={occurrence}
+              workItem={workItem}
+              onCover={onCover}
+              onOpen={onOpen}
+              onComplete={onComplete}
+              onAssign={onAssign}
+            />
+          </FadeIn>
+        </View>
       ))}
     </View>
   );
