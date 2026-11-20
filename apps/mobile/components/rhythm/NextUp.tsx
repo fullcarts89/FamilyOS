@@ -1,13 +1,14 @@
 import { router } from 'expo-router';
-import { CalendarDays, Car, CircleCheck } from 'lucide-react-native';
+import { CalendarDays, Car, CircleCheck, Moon } from 'lucide-react-native';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { PressState } from '../../design/Button';
 import { Text } from '../../design/Text';
-import { color, font, radius } from '../../design/tokens';
+import { color, radius, shadow, space, touch } from '../../design/tokens';
 import type { Occurrence, RhythmLaneView, RhythmTaskView } from '../../lib/api';
 import type { People, Person } from '../../lib/people';
 import { CARE_VERB, rangeOf, timeOf } from '../../lib/rhythm';
 import { isOpen } from '../../lib/tasks';
+import { splitTonight, textShade } from './today-model';
 
 export interface NextEntry {
   key: string;
@@ -84,8 +85,10 @@ export function dayEntries(
 }
 
 /**
- * Phones: now and the next few things, so the day's responsibilities are visible without
- * scrolling a tall grid. Each row is the time, whose it is (their colors) and what it is.
+ * Now and the next few things, so the day's responsibilities are visible without scrolling a tall
+ * grid. Each row is the time, whose it is (their colors) and what it is. With `tonight`, things
+ * that start at or after 5pm household time read as one block under "Tonight": dinner, bath,
+ * bedtime and the evening handoffs. `only="tonight"` shows just that block (tablet and desktop).
  */
 export function NextUp({
   entries,
@@ -93,21 +96,70 @@ export function NextUp({
   timeZone,
   limit = 4,
   onOpen,
+  tonight: group = false,
+  only,
 }: {
   entries: NextEntry[];
   now: Date;
   timeZone: string;
   limit?: number;
   onOpen: (o: Occurrence) => void;
+  /** Group the evening under a "Tonight" heading. */
+  tonight?: boolean;
+  only?: 'tonight';
 }) {
   const t = now.getTime();
-  const upcoming = entries.filter(
-    (e) => new Date(e.endsAt).getTime() > t || new Date(e.startsAt).getTime() >= t,
-  );
-  const shown = upcoming.slice(0, limit);
+  const split = group || only ? splitTonight(entries, now, timeZone) : null;
+  const soon = only
+    ? []
+    : (
+        split?.soon ??
+        entries.filter(
+          (e) => new Date(e.endsAt).getTime() > t || new Date(e.startsAt).getTime() >= t,
+        )
+      ).slice(0, limit);
+  const evening = split?.tonight ?? [];
   return (
-    <View style={styles.list} accessibilityLabel="Next up today">
-      {shown.map((e, i) => {
+    <View style={styles.card}>
+      {soon.length ? (
+        <Rows label="Next up today" entries={soon} t={t} timeZone={timeZone} onOpen={onOpen} />
+      ) : null}
+      {evening.length ? (
+        <>
+          {!only ? (
+            <View style={[styles.tonightHead, soon.length > 0 && styles.tonightRule]}>
+              <Moon size={15} strokeWidth={2.4} color={color.ink} />
+              <Text variant="kicker" role="heading" aria-level={3}>
+                Tonight
+              </Text>
+              <Text variant="meta" tone="muted">
+                from 5pm
+              </Text>
+            </View>
+          ) : null}
+          <Rows label="Tonight" entries={evening} t={t} timeZone={timeZone} onOpen={onOpen} />
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function Rows({
+  label,
+  entries,
+  t,
+  timeZone,
+  onOpen,
+}: {
+  label: string;
+  entries: NextEntry[];
+  t: number;
+  timeZone: string;
+  onOpen: (o: Occurrence) => void;
+}) {
+  return (
+    <View role="list" aria-label={label}>
+      {entries.map((e, i) => {
         const started = new Date(e.startsAt).getTime() <= t;
         const time = timeOf(e.startsAt, timeZone);
         const Icon =
@@ -120,52 +172,55 @@ export function NextUp({
                 : null;
         const lead = e.people[0]?.color ?? color.ink;
         return (
-          <Pressable
+          <View
             key={e.key}
-            accessibilityRole="button"
-            accessibilityLabel={`${started ? 'Now' : time}: ${e.title}. ${e.sub}`}
-            onPress={() =>
-              e.occurrence
-                ? onOpen(e.occurrence)
-                : e.task && router.push({ pathname: '/item/[id]', params: { id: e.task.id } })
-            }
-            style={(s: PressState) => [
-              styles.row,
-              i === shown.length - 1 && styles.last,
-              s.pressed && styles.pressed,
-            ]}
+            role="listitem"
+            style={[styles.item, i === entries.length - 1 && styles.last]}
           >
-            <View style={styles.time}>
-              {started ? (
-                <View style={styles.nowTag}>
-                  <Text variant="small" color={color.onInk} style={styles.nowText}>
-                    Now
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${started ? 'Now' : time}: ${e.title}. ${e.sub}`}
+              onPress={() =>
+                e.occurrence
+                  ? onOpen(e.occurrence)
+                  : e.task && router.push({ pathname: '/item/[id]', params: { id: e.task.id } })
+              }
+              style={(s: PressState) => [styles.row, s.pressed && styles.pressed]}
+            >
+              <View style={styles.time}>
+                {started ? (
+                  <View style={styles.nowTag}>
+                    <Text variant="small" tone="onInk">
+                      Now
+                    </Text>
+                  </View>
+                ) : (
+                  <Text variant="h3" numberOfLines={1}>
+                    {time.replace(/am|pm/, '')}
+                    <Text variant="small" tone="muted">
+                      {time.slice(-2)}
+                    </Text>
+                  </Text>
+                )}
+              </View>
+              <View style={[styles.bar, { backgroundColor: lead }]}>
+                {e.people[1] ? (
+                  <View style={[styles.barHalf, { backgroundColor: e.people[1].color }]} />
+                ) : null}
+              </View>
+              <View style={styles.text}>
+                <View style={styles.titleRow}>
+                  {Icon ? <Icon size={15} strokeWidth={2.4} color={textShade(lead)} /> : null}
+                  <Text variant="title" style={styles.title}>
+                    {e.title}
                   </Text>
                 </View>
-              ) : (
-                <Text style={styles.clock} numberOfLines={1}>
-                  {time.replace(/am|pm/, '')}
-                  <Text style={styles.ampm}>{time.slice(-2)}</Text>
-                </Text>
-              )}
-            </View>
-            <View style={[styles.bar, { backgroundColor: lead }]}>
-              {e.people[1] ? (
-                <View style={[styles.barHalf, { backgroundColor: e.people[1].color }]} />
-              ) : null}
-            </View>
-            <View style={styles.text}>
-              <View style={styles.titleRow}>
-                {Icon ? <Icon size={14} strokeWidth={2.4} color={lead} /> : null}
-                <Text variant="title" numberOfLines={1} style={styles.title}>
-                  {e.title}
+                <Text variant="meta" tone="muted">
+                  {e.sub}
                 </Text>
               </View>
-              <Text variant="meta" tone="muted" numberOfLines={1}>
-                {e.sub}
-              </Text>
-            </View>
-          </Pressable>
+            </Pressable>
+          </View>
         );
       })}
     </View>
@@ -173,44 +228,41 @@ export function NextUp({
 }
 
 const styles = StyleSheet.create({
-  list: {
+  card: {
     borderRadius: radius.lg,
     backgroundColor: color.surface,
-    paddingHorizontal: 14,
-    boxShadow: '0px 1px 2px rgba(23, 32, 27, 0.05)',
+    paddingHorizontal: space[4],
+    boxShadow: shadow.card,
   },
+  item: { borderBottomWidth: 1, borderBottomColor: color.hairline },
+  last: { borderBottomWidth: 0 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    minHeight: 58,
-    paddingVertical: 9,
-    borderBottomWidth: 1,
-    borderBottomColor: color.hairline,
+    gap: space[3],
+    minHeight: touch + space[3],
+    paddingVertical: space[2],
   },
-  last: { borderBottomWidth: 0 },
   pressed: { opacity: 0.7 },
-  time: { width: 68 },
-  clock: {
-    fontFamily: font.display,
-    fontSize: 19,
-    lineHeight: 22,
-    color: color.ink,
-    letterSpacing: -0.3,
-  },
-  ampm: { fontFamily: font.uiBold, fontSize: 11, color: color.muted, letterSpacing: 0 },
+  time: { width: space[10] + space[1] },
   nowTag: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 9,
-    height: 22,
+    paddingHorizontal: space[2],
+    paddingVertical: 2,
     borderRadius: radius.pill,
     backgroundColor: color.ink,
-    justifyContent: 'center',
   },
-  nowText: { fontFamily: font.uiBold },
-  bar: { width: 4, alignSelf: 'stretch', borderRadius: 2, overflow: 'hidden' },
+  bar: { width: space[1], alignSelf: 'stretch', borderRadius: 2, overflow: 'hidden' },
   barHalf: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' },
-  text: { flex: 1, minWidth: 0, gap: 1 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  text: { flex: 1, minWidth: 0, gap: 2 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] - 2 },
   title: { flexShrink: 1 },
+  tonightHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    paddingTop: space[4],
+    paddingBottom: space[1],
+  },
+  tonightRule: { borderTopWidth: 2, borderTopColor: color.ink },
 });

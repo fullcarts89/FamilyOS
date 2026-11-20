@@ -1,11 +1,13 @@
 import { router } from 'expo-router';
 import { ArrowRight, ChevronDown, ChevronUp, Inbox, Plus } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, Text as Span, RefreshControl, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, Text as Span, RefreshControl, StyleSheet, View } from 'react-native';
+import { DayColumn } from '../../components/rhythm/DayColumn';
 import { DayTimeline } from '../../components/rhythm/DayTimeline';
 import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet';
 import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
 import { NextUp, dayEntries } from '../../components/rhythm/NextUp';
+import { splitTonight } from '../../components/rhythm/today-model';
 import { SinceLastLooked } from '../../components/rhythm/SinceLastLooked';
 import { WeekStrip } from '../../components/rhythm/WeekStrip';
 import { WeekPlanStrip } from '../../components/rhythm/WeekPlanStrip';
@@ -24,7 +26,7 @@ import { ErrorNotice } from '../../design/Notice';
 import { Page } from '../../design/Page';
 import { SectionHeader } from '../../design/Section';
 import { Text } from '../../design/Text';
-import { color, font, radius, shadow } from '../../design/tokens';
+import { color, font, radius, shadow, space, touch } from '../../design/tokens';
 import type { Occurrence, WorkItem } from '../../lib/api';
 import { SETUP_KEY } from '../../lib/acknowledgments';
 import { useCapture } from '../../lib/capture';
@@ -71,6 +73,23 @@ export default function Today() {
   const [refreshing, setRefreshing] = useState(false);
   // undefined until chosen: phones start on your own list.
   const [column, setColumn] = useState<string | null | undefined>(undefined);
+  // Lanes this viewer hid on the timeline (tablet and desktop): local to this device, never sent.
+  const hiddenKey = `familyos.today.hiddenLanes.${household?.memberId ?? ''}`;
+  const [hiddenLanes, setHiddenLanes] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    setHiddenLanes(new Set(readLocal(hiddenKey)));
+  }, [hiddenKey]);
+  const toggleLane = useCallback(
+    (id: string) =>
+      setHiddenLanes((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        writeLocal(hiddenKey, [...next]);
+        return next;
+      }),
+    [hiddenKey],
+  );
 
   const reloadSoon = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onChange = useCallback(
@@ -257,18 +276,53 @@ export default function Today() {
       headsUps={rhythm.headsUps}
       people={people}
       now={rhythm.date === rhythm.today ? now : null}
-      compact={phone}
+      hidden={hiddenLanes}
+      onToggleLane={toggleLane}
       onOpen={openOccurrence}
     />
   ) : null;
 
+  const dayColumn = rhythm ? (
+    <DayColumn
+      date={rhythm.date}
+      timeZone={timeZone}
+      entries={entries}
+      lanes={rhythm.lanes}
+      handoffs={rhythm.handoffs}
+      people={people}
+      now={rhythm.date === rhythm.today ? now : null}
+      onOpen={openOccurrence}
+    />
+  ) : null;
+
+  const ahead = entries.some((e) => new Date(e.endsAt).getTime() > now.getTime());
   const nextUp =
     rhythm && phone ? (
-      entries.some((e) => new Date(e.endsAt).getTime() > now.getTime()) ? (
-        <NextUp entries={entries} now={now} timeZone={timeZone} onOpen={openOccurrence} />
+      ahead ? (
+        <NextUp entries={entries} now={now} timeZone={timeZone} onOpen={openOccurrence} tonight />
       ) : (
         <Tomorrow occurrences={week?.occurrences ?? []} today={today} onOpen={openOccurrence} />
       )
+    ) : null;
+
+  // Tablet and desktop: the evening as one block beside the lanes.
+  const tonightBlock =
+    rhythm &&
+    !phone &&
+    rhythm.date === rhythm.today &&
+    splitTonight(entries, now, timeZone).tonight.length ? (
+      <View style={styles.block}>
+        <SectionHeader title="Tonight" sub="From 5pm: dinner, bath, bedtime and handoffs" />
+        <View style={styles.blockBody}>
+          <NextUp
+            entries={entries}
+            now={now}
+            timeZone={timeZone}
+            onOpen={openOccurrence}
+            only="tonight"
+          />
+        </View>
+      </View>
     ) : null;
 
   const headsUpBlock =
@@ -487,7 +541,7 @@ export default function Today() {
                   <ChevronDown size={16} color={color.ink} strokeWidth={2.4} />
                 )}
               </Pressable>
-              {wholeDay ? <View style={styles.compactDay}>{timeline}</View> : null}
+              {wholeDay ? <View style={styles.compactDay}>{dayColumn}</View> : null}
             </View>
           ) : (
             <View style={styles.timelineCard}>{timeline}</View>
@@ -508,10 +562,14 @@ export default function Today() {
           {desktop ? (
             <View style={styles.twoCols}>
               <View style={styles.colMain}>{headsUpBlock ?? sinceBlock}</View>
-              <View style={styles.colSide}>{headsUpBlock ? sinceBlock : null}</View>
+              <View style={styles.colSide}>
+                {tonightBlock}
+                {headsUpBlock ? sinceBlock : null}
+              </View>
             </View>
           ) : (
             <>
+              {tonightBlock}
               {headsUpBlock}
               {sinceBlock}
             </>
@@ -574,67 +632,81 @@ function Tomorrow({
   );
 }
 
+/** A small per-device value (web: localStorage). Native keeps it for the session only. */
+function readLocal(key: string): string[] {
+  if (Platform.OS !== 'web') return [];
+  try {
+    const raw = globalThis.localStorage?.getItem(key);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocal(key: string, value: string[]): void {
+  if (Platform.OS !== 'web') return;
+  try {
+    globalThis.localStorage?.setItem(key, JSON.stringify(value));
+  } catch {
+    // Private browsing or storage full: the choice lasts for this visit only.
+  }
+}
+
 const styles = StyleSheet.create({
-  header: { gap: 16 },
-  headerWide: { flexDirection: 'row', alignItems: 'flex-start', gap: 36 },
+  header: { gap: space[4] },
+  headerWide: { flexDirection: 'row', alignItems: 'flex-start', gap: space[7] + space[1] },
   clock: {
     fontFamily: font.displayHeavy,
     fontSize: 112,
     lineHeight: 112,
     letterSpacing: -3.9,
     color: color.ink,
-    marginTop: -6,
+    marginTop: -space[2] + 2,
   },
   clockDot: { fontFamily: font.displayHeavy },
-  headText: { flex: 1, gap: 6, minWidth: 0, paddingTop: 4 },
+  headText: { flex: 1, gap: space[2] - 2, minWidth: 0, paddingTop: space[1] },
   headline: {
     fontFamily: font.display,
     fontSize: 25,
     lineHeight: 31,
     letterSpacing: -0.4,
     color: color.ink,
-    marginTop: 6,
+    marginTop: space[2] - 2,
     maxWidth: 820,
   },
-  headlinePhone: { fontSize: 20, lineHeight: 25, marginTop: 4 },
+  headlinePhone: { fontSize: 20, lineHeight: 25, marginTop: space[1] },
   line: { maxWidth: 760, marginTop: 2 },
   timelineCard: {
-    marginTop: 34,
-    paddingTop: 22,
-    paddingBottom: 14,
-    paddingHorizontal: 20,
+    marginTop: space[7],
+    paddingTop: space[5],
+    paddingBottom: space[4],
+    paddingHorizontal: space[5],
     borderRadius: radius.xl,
     backgroundColor: color.surface,
     boxShadow: shadow.card,
   },
-  compactDay: {
-    marginTop: 6,
-    paddingTop: 16,
-    paddingBottom: 10,
-    paddingHorizontal: 10,
-    borderRadius: radius.lg,
-    backgroundColor: color.surface,
-  },
+  compactDay: { marginTop: space[2] },
   toggle: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    minHeight: 44,
+    gap: space[2] - 2,
+    minHeight: touch,
     alignSelf: 'flex-start',
   },
-  tomorrow: { gap: 8 },
+  tomorrow: { gap: space[2] },
   dayDone: {
-    gap: 4,
-    padding: 16,
+    gap: space[1],
+    padding: space[4],
     borderRadius: radius.lg,
     backgroundColor: color.surface,
   },
   capture: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    minHeight: 54,
-    paddingHorizontal: 18,
+    gap: space[3],
+    minHeight: touch + space[3],
+    paddingHorizontal: space[4],
     borderRadius: radius.lg,
     borderWidth: 1.5,
     borderColor: color.hairline,
@@ -643,19 +715,19 @@ const styles = StyleSheet.create({
   },
   captureText: { flex: 1 },
   kbd: {
-    paddingHorizontal: 7,
+    paddingHorizontal: space[2],
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: color.line2,
   },
   inbox: {
-    marginTop: 10,
+    marginTop: space[3],
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    minHeight: 48,
-    paddingHorizontal: 16,
+    gap: space[3],
+    minHeight: touch + space[1],
+    paddingHorizontal: space[4],
     borderRadius: radius.lg,
     borderWidth: 1.5,
     borderColor: color.ink,
@@ -663,26 +735,38 @@ const styles = StyleSheet.create({
     cursor: 'pointer',
   },
   inboxText: { flex: 1 },
-  block: { marginTop: 40 },
-  blockTight: { marginTop: 22 },
-  blockBody: { marginTop: 16 },
-  quiet: { paddingVertical: 14 },
-  twoCols: { flexDirection: 'row', gap: 48, alignItems: 'flex-start' },
+  block: { marginTop: space[8] },
+  blockTight: { marginTop: space[6] },
+  blockBody: { marginTop: space[4] },
+  quiet: { paddingVertical: space[3] },
+  twoCols: { flexDirection: 'row', gap: space[9], alignItems: 'flex-start' },
   colMain: { flex: 1.2, minWidth: 0 },
   colSide: { flex: 1, minWidth: 0 },
-  cols: { marginTop: 8 },
-  colsWide: { flexDirection: 'row', gap: 28, marginTop: 20 },
+  cols: { marginTop: space[2] },
+  colsWide: { flexDirection: 'row', gap: space[7], marginTop: space[5] },
   col: { flex: 1, minWidth: 0 },
-  tabs: { flexDirection: 'row', gap: 6, marginTop: 14, marginBottom: 4, flexWrap: 'wrap' },
+  tabs: {
+    flexDirection: 'row',
+    gap: space[2] - 2,
+    marginTop: space[3],
+    marginBottom: space[1],
+    flexWrap: 'wrap',
+  },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    height: 38,
-    paddingHorizontal: 12,
+    gap: space[2],
+    minHeight: touch,
+    paddingHorizontal: space[3],
     borderRadius: radius.pill,
   },
   tabOn: { backgroundColor: color.surface, boxShadow: shadow.raised },
-  more: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, marginTop: 4 },
-  link: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36 },
+  more: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2] - 2,
+    minHeight: touch,
+    marginTop: space[1],
+  },
+  link: { flexDirection: 'row', alignItems: 'center', gap: space[2] - 2, minHeight: touch },
 });

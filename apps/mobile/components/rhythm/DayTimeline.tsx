@@ -6,7 +6,7 @@ import { Avatar } from '../../design/Avatar';
 import type { PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
 import { Text } from '../../design/Text';
-import { color, font, radius, tint } from '../../design/tokens';
+import { color, font, radius, space, tint, touch } from '../../design/tokens';
 import type { HandoffView, Occurrence, RhythmLaneView } from '../../lib/api';
 import type { People, Person } from '../../lib/people';
 import {
@@ -18,6 +18,43 @@ import {
   spanOn,
   timeOf,
 } from '../../lib/rhythm';
+import { readableOn, shortTitle, textShade } from './today-model';
+
+/** Lane heads (avatar, name, a two-line note) on tablet and desktop. */
+const HEAD = 196;
+const HANDOFF_W = 240;
+const NONE = new Set<string>();
+/** A row in an adult's lane: tall enough to tap. */
+const ROW = touch;
+
+/** Rough width of a label in the timeline's 12px semibold type, rounded up so nothing is cut. */
+const estimate = (text: string) => Math.ceil(text.length * 7.2);
+
+/**
+ * Where a block's words go: inside when they fit; else beside it (the time underneath when the
+ * row is tall enough); else the title before its colon; else nothing (the block still names
+ * itself to a screen reader and opens on tap). Never an ellipsis in the middle of a word.
+ */
+function placeLabel(
+  b: Pick<Block, 'label' | 'time' | 'sub' | 'height' | 'care'>,
+  width: number,
+  room: number,
+): { where: 'in' | 'out'; text: string; time: 'inline' | 'below' | null; sub: boolean } | null {
+  const inner = width - space[4] - (b.care ? 22 : 0);
+  const tall = b.height >= 40;
+  const candidates = b.care ? [b.label] : [b.label, shortTitle(b.label)];
+  for (const text of candidates) {
+    if (estimate(text) <= inner)
+      return { where: 'in', text, time: null, sub: tall && estimate(b.sub) <= inner };
+    if (b.care) continue;
+    if (tall && estimate(text) <= room && estimate(b.time) <= room)
+      return { where: 'out', text, time: 'below', sub: false };
+    if (estimate(`${text}  ${b.time}`) <= room)
+      return { where: 'out', text, time: 'inline', sub: false };
+    if (estimate(text) <= room) return { where: 'out', text, time: null, sub: false };
+  }
+  return null;
+}
 
 /**
  * The day as lanes across time (direction C): a lane per adult, and for each child or pet where
@@ -34,6 +71,8 @@ export function DayTimeline({
   people,
   now,
   compact,
+  hidden,
+  onToggleLane,
   onOpen,
 }: {
   date: string;
@@ -45,6 +84,9 @@ export function DayTimeline({
   /** The current instant when `date` is today. */
   now: Date | null;
   compact?: boolean;
+  /** Lanes this viewer hid (member ids); the chips above the lanes show or hide them. */
+  hidden?: Set<string>;
+  onToggleLane?: (memberId: string) => void;
   onOpen: (o: Occurrence) => void;
 }) {
   const [width, setWidth] = useState(0);
@@ -52,11 +94,21 @@ export function DayTimeline({
 
   const model = useMemo(
     () =>
-      buildModel({ date, timeZone, lanes, handoffs, headsUps, people, compact: !!compact, now }),
-    [date, timeZone, lanes, handoffs, headsUps, people, compact, now],
+      buildModel({
+        date,
+        timeZone,
+        lanes,
+        handoffs,
+        headsUps,
+        people,
+        compact: !!compact,
+        now,
+        hidden: hidden ?? NONE,
+      }),
+    [date, timeZone, lanes, handoffs, headsUps, people, compact, now, hidden],
   );
 
-  const head = compact ? 34 : 176;
+  const head = compact ? 34 : HEAD;
   const track = Math.max(0, width - head);
   const { from, to } = model.window;
   const x = (m: number) => ((Math.min(Math.max(m, from), to) - from) / (to - from)) * track;
@@ -65,20 +117,74 @@ export function DayTimeline({
   const step = compact ? 180 : 60;
   for (let m = Math.ceil(from / step) * step; m <= to; m += step) hours.push(m);
 
+  // Free track to the right of a block in its row, before the next block (or the edge).
+  const roomAfter = (b: Block, right: number) =>
+    model.blocks
+      .filter((o) => o.top === b.top && o.key !== b.key && o.start >= b.end)
+      .reduce((m, o) => Math.min(m, x(o.start)), track) -
+    right -
+    space[3];
+
   return (
     <View onLayout={onLayout} accessibilityLabel={`The day’s rhythm, ${model.window.label}`}>
-      {width > 0 ? (
+      {!compact && onToggleLane ? (
+        <View style={styles.chips} role="group" aria-label="Show or hide a lane">
+          {model.all.map((p) => {
+            const shown = !hidden?.has(p.id);
+            const name = p.isMe ? 'You' : p.name;
+            return (
+              <Pressable
+                key={p.id}
+                role="switch"
+                aria-checked={shown}
+                accessibilityLabel={`${p.isMe ? 'Your' : `${p.name}’s`} lane`}
+                onPress={() => onToggleLane(p.id)}
+                style={(s: PressState) => [
+                  styles.chip,
+                  shown
+                    ? { backgroundColor: tint(p.color, 0.16), borderColor: p.color }
+                    : styles.chipOff,
+                  (s.hovered || s.focused) && styles.chipHover,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.chipDot,
+                    shown ? { backgroundColor: p.color } : { borderColor: p.color, borderWidth: 2 },
+                  ]}
+                />
+                <Text variant="label" tone={shown ? 'ink' : 'muted'}>
+                  {name}
+                </Text>
+                {shown ? null : (
+                  <Text variant="small" tone="muted">
+                    hidden
+                  </Text>
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+      {width > 0 && model.lanes.length === 0 ? (
+        <View style={styles.allHidden}>
+          <Text variant="body" tone="muted">
+            Every lane is hidden. Tap a name above to bring it back.
+          </Text>
+        </View>
+      ) : width > 0 ? (
         <View>
           {/* Hour axis */}
           <View style={[styles.axis, { marginLeft: head, height: compact ? 16 : 22 }]}>
             {hours.map((m, i) => {
-              const near = nowMin !== null && Math.abs(nowMin - m) < (compact ? 50 : 26);
+              // Keep hour labels clear of the now pill (about 48px wide) by pixels, not minutes.
+              const near = nowMin !== null && Math.abs(x(nowMin) - x(m)) < (compact ? 30 : 46);
               if (near) return null;
               return (
                 <Text
                   key={m}
                   variant="small"
-                  tone="faint"
+                  tone="muted"
                   style={[
                     styles.hour,
                     compact && styles.hourCompact,
@@ -103,11 +209,11 @@ export function DayTimeline({
                   <Avatar person={lane.person} size={compact ? 22 : 30} />
                   {!compact ? (
                     <View style={styles.headText}>
-                      <Text variant="h3" style={styles.headName} numberOfLines={1}>
+                      <Text variant="title" style={styles.headName} numberOfLines={1}>
                         {lane.person.isMe ? 'You' : lane.person.name}
                       </Text>
                       {lane.sub ? (
-                        <Text variant="small" tone="muted" numberOfLines={1}>
+                        <Text variant="small" tone="muted" numberOfLines={2}>
                           {lane.sub}
                         </Text>
                       ) : null}
@@ -124,7 +230,7 @@ export function DayTimeline({
                   key={lane.person.id}
                   style={[
                     styles.lane,
-                    { top: lane.top, height: lane.height, borderRadius: compact ? 7 : 12 },
+                    { top: lane.top, height: lane.height, borderRadius: compact ? 7 : radius.md },
                   ]}
                 />
               ))}
@@ -156,6 +262,13 @@ export function DayTimeline({
                 const w = x(s.end) - x(s.start);
                 const by = s.with.length === 1 ? people.byId(s.with[0]) : null;
                 const away = s.away;
+                // A handoff marker sits at the segment's start: start the words after it.
+                const marker = model.blocks
+                  .filter((b) => b.top >= s.top && b.top < s.top + s.height)
+                  .filter((b) => b.start <= s.start + 5 && b.end > s.start - 5)
+                  .reduce((m, b) => Math.max(m, x(Math.max(b.end, b.start + 15)) - x(s.start)), 0);
+                const lead = marker > 0 ? Math.max(18, marker) + space[2] : space[2];
+                const fits = estimate(s.label) + lead + space[2] <= w;
                 return (
                   <View
                     key={`seg${i}`}
@@ -164,21 +277,22 @@ export function DayTimeline({
                       {
                         left: x(s.start) + 1,
                         width: Math.max(2, w - 2),
-                        top: s.top + 4,
-                        height: s.height - 8,
+                        top: s.top + space[1],
+                        height: s.height - space[2],
+                        paddingLeft: lead,
                         backgroundColor: away ? s.color : tint(by?.color ?? s.color, 0.16),
                         borderColor: away ? s.color : tint(by?.color ?? s.color, 0.55),
                         borderStyle: away ? 'solid' : 'dashed',
-                        borderRadius: compact ? 5 : 8,
+                        borderRadius: compact ? 5 : radius.sm,
                       },
                     ]}
                   >
-                    {w > (compact ? 52 : 70) ? (
+                    {!compact && fits ? (
                       <Text
                         variant="small"
                         numberOfLines={1}
-                        color={away ? color.onInk : color.ink}
-                        style={[styles.segText, compact && styles.tiny]}
+                        color={away ? readableOn(s.color) : color.ink}
+                        style={styles.segText}
                       >
                         {s.label}
                       </Text>
@@ -204,12 +318,12 @@ export function DayTimeline({
                 />
               ))}
 
-              {/* Events in each lane */}
+              {/* Events in each lane: the words inside when they fit, else beside, never cut */}
               {model.blocks.map((b) => {
                 const left = x(b.start);
                 const w = Math.max(compact ? 8 : 18, x(b.end) - left);
-                const roomy = w >= Math.min(220, b.label.length * 6.6 + (b.care ? 40 : 22));
                 const c = b.color;
+                const label = compact ? null : placeLabel(b, w, roomAfter(b, left + w));
                 return (
                   <Pressable
                     key={b.key}
@@ -223,7 +337,7 @@ export function DayTimeline({
                         width: w,
                         top: b.top,
                         height: b.height,
-                        borderRadius: compact ? 5 : 8,
+                        borderRadius: compact ? 5 : radius.sm,
                       },
                       b.care
                         ? { backgroundColor: c, borderColor: c }
@@ -239,7 +353,7 @@ export function DayTimeline({
                               borderLeftColor: c,
                               borderLeftWidth: 3,
                             },
-                      s.hovered && { transform: [{ translateY: -1 }] },
+                      (s.hovered || s.focused) && styles.blockHover,
                     ]}
                   >
                     {b.conflict ? (
@@ -247,52 +361,37 @@ export function DayTimeline({
                         <Hatch
                           width={w}
                           height={b.height}
-                          radius={compact ? 5 : 8}
+                          radius={compact ? 5 : radius.sm}
                           stroke={c}
                           background="transparent"
                           outline={false}
                         />
                       </View>
                     ) : null}
-                    {!b.care &&
-                    !compact &&
-                    w < Math.min(220, b.label.length * 6.6 + 22) ? null : b.care ? (
+                    {b.care ? (
                       <View style={styles.glyph}>
-                        <Car size={compact ? 11 : 15} strokeWidth={2.4} color={color.onInk} />
-                        {!compact && roomy ? (
+                        <Car size={compact ? 11 : 15} strokeWidth={2.4} color={readableOn(c)} />
+                        {label?.where === 'in' ? (
                           <Text
                             variant="small"
-                            color={color.onInk}
+                            color={readableOn(c)}
                             numberOfLines={1}
                             style={styles.careText}
                           >
-                            {b.label}
+                            {label.text}
                           </Text>
                         ) : null}
                       </View>
-                    ) : !compact || w > 56 ? (
+                    ) : label?.where === 'in' ? (
                       <View style={styles.blockInner}>
-                        {b.imported && !compact && w > 60 ? (
-                          <CalendarDays size={12} color={c} strokeWidth={2.2} />
+                        {b.imported && w > 60 ? (
+                          <CalendarDays size={12} color={textShade(c)} strokeWidth={2.2} />
                         ) : null}
-                        <Text
-                          variant="small"
-                          numberOfLines={1}
-                          style={[
-                            styles.blockText,
-                            compact && styles.tiny,
-                            !roomy && styles.blockTextTight,
-                          ]}
-                        >
-                          {b.label}
+                        <Text variant="small" numberOfLines={1} style={styles.blockText}>
+                          {label.text}
                         </Text>
-                        {!compact && roomy && b.height >= 40 ? (
-                          <Text
-                            variant="small"
-                            tone="muted"
-                            numberOfLines={1}
-                            style={styles.blockSub}
-                          >
+                        {label.sub ? (
+                          <Text variant="small" tone="muted" numberOfLines={1}>
                             {b.sub}
                           </Text>
                         ) : null}
@@ -301,66 +400,6 @@ export function DayTimeline({
                   </Pressable>
                 );
               })}
-
-              {/* Labels beside blocks too short to hold them */}
-              {!compact
-                ? model.blocks.map((b) => {
-                    const left = x(b.start);
-                    const w = Math.max(18, x(b.end) - left);
-                    const roomy = w >= Math.min(220, b.label.length * 6.6 + (b.care ? 40 : 22));
-                    if (roomy || b.care) return null;
-                    const next = model.blocks
-                      .filter((o) => o.top === b.top && o.start >= b.end)
-                      .reduce((m, o) => Math.min(m, x(o.start)), track);
-                    const room = next - (left + w) - 10;
-                    if (room < 40) return null;
-                    return (
-                      <View
-                        key={`out${b.key}`}
-                        pointerEvents="none"
-                        style={[
-                          styles.outside,
-                          {
-                            left: left + w + 6,
-                            top: b.top,
-                            height: b.height,
-                            width: Math.min(room, 200),
-                          },
-                        ]}
-                      >
-                        <Text variant="small" numberOfLines={1} style={styles.blockText}>
-                          {b.label}
-                          <Text variant="small" tone="muted">
-                            {'  '}
-                            {b.time}
-                          </Text>
-                        </Text>
-                      </View>
-                    );
-                  })
-                : null}
-
-              {/* Handoff lines under a child's lane */}
-              {!compact
-                ? model.handoffLabels.map((h) => (
-                    <View
-                      key={`hl${h.key}`}
-                      pointerEvents="none"
-                      style={[
-                        styles.handoffLabel,
-                        { left: Math.min(x(h.at) + 8, track - 230), top: h.top },
-                      ]}
-                    >
-                      <Text variant="small" numberOfLines={1}>
-                        <Text variant="small" color={h.color} style={styles.handoffTime}>
-                          {h.time}
-                        </Text>
-                        {'  '}
-                        {h.text}
-                      </Text>
-                    </View>
-                  ))
-                : null}
 
               {/* What's past is quieter; the now-line marks the present */}
               {nowMin !== null && nowMin > from ? (
@@ -389,6 +428,71 @@ export function DayTimeline({
                   </View>
                 </View>
               ) : null}
+              {/* Labels beside blocks too short to hold them */}
+              {!compact
+                ? model.blocks.map((b) => {
+                    if (b.care) return null;
+                    const left = x(b.start);
+                    const w = Math.max(18, x(b.end) - left);
+                    const room = roomAfter(b, left + w);
+                    const label = placeLabel(b, w, room);
+                    if (label?.where !== 'out') return null;
+                    return (
+                      <View
+                        key={`out${b.key}`}
+                        pointerEvents="none"
+                        style={[
+                          styles.outside,
+                          {
+                            left: left + w + space[2] - 2,
+                            top: b.top,
+                            height: b.height,
+                            width: room,
+                          },
+                        ]}
+                      >
+                        <View style={styles.outsideText}>
+                          <Text variant="small" numberOfLines={1} style={styles.blockText}>
+                            {label.text}
+                            {label.time === 'inline' ? (
+                              <Text variant="small" tone="muted">
+                                {'  '}
+                                {b.time}
+                              </Text>
+                            ) : null}
+                          </Text>
+                          {label.time === 'below' ? (
+                            <Text variant="small" tone="muted" numberOfLines={1}>
+                              {b.time}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    );
+                  })
+                : null}
+
+              {/* Handoff lines under a child's lane */}
+              {!compact
+                ? model.handoffLabels.map((h) => (
+                    <View
+                      key={`hl${h.key}`}
+                      pointerEvents="none"
+                      style={[
+                        styles.handoffLabel,
+                        { left: Math.min(x(h.at) + space[2], track - HANDOFF_W), top: h.top },
+                      ]}
+                    >
+                      <Text variant="small" numberOfLines={1} style={styles.handoffText}>
+                        <Text variant="small" color={textShade(h.color)} style={styles.handoffTime}>
+                          {h.time}
+                        </Text>
+                        {'  '}
+                        {h.text}
+                      </Text>
+                    </View>
+                  ))
+                : null}
             </View>
           </View>
 
@@ -468,6 +572,7 @@ function buildModel({
   people,
   compact,
   now,
+  hidden,
 }: {
   date: string;
   timeZone: string;
@@ -477,6 +582,7 @@ function buildModel({
   people: People;
   compact: boolean;
   now: Date | null;
+  hidden: Set<string>;
 }) {
   const adultIds = new Set(people.all.filter((p) => !p.caredFor).map((p) => p.id));
   const span = (o: Occurrence) => spanOn(o, date, timeZone);
@@ -533,16 +639,37 @@ function buildModel({
     conflictKeys.set(h.memberId, set);
   }
 
-  const adultH = compact ? 26 : 54;
-  const caredH = compact ? 22 : 38;
-  const gap = compact ? 5 : 12;
-  const labelRoom = compact ? 0 : 18;
+  // Each lane's own events, in rows when they overlap (a lane grows a row rather than squeeze).
+  const placeLane = (lane: RhythmLaneView) => {
+    const own = lane.occurrences.filter((o) => timed(o) && !isTogether(o));
+    const rows: number[] = [];
+    const placed = own
+      .map((o) => ({ o, ...span(o) }))
+      .sort((a, b) => a.start - b.start)
+      .map((p) => {
+        let r = rows.findIndex((end) => end <= p.start);
+        if (r === -1) {
+          r = rows.length;
+          rows.push(p.end);
+        } else rows[r] = p.end;
+        return { ...p, row: r };
+      });
+    return { placed, n: Math.max(1, rows.length) };
+  };
+
+  const pad = compact ? 3 : space[1];
+  const caredH = compact ? 22 : touch;
+  const gap = compact ? 5 : space[3];
+  const labelRoom = compact ? 0 : space[5];
+  const visible = ordered.filter((o) => !hidden.has(o.person.id));
   let y = 0;
-  const laneModels = ordered.map(({ lane, person }) => {
+  const laneModels = visible.map(({ lane, person }) => {
     const hasHandoffs = handoffs.some((h) => h.careMemberId === person.id);
-    const height = lane.caredFor ? caredH : adultH;
+    const layout = placeLane(lane);
+    const adultH = compact ? 26 : pad * 2 + layout.n * ROW + (layout.n - 1) * 2;
+    const height = lane.caredFor ? caredH : Math.max(compact ? 26 : touch + space[3], adultH);
     const gapAfter = gap + (lane.caredFor && hasHandoffs ? labelRoom : 0);
-    const model = { lane, person, top: y, height, gapAfter, sub: '' };
+    const model = { lane, person, top: y, height, gapAfter, sub: '', layout };
     y += height + gapAfter;
     return model;
   });
@@ -596,22 +723,8 @@ function buildModel({
         });
       }
     }
-    // Blocks, laid out in rows when they overlap.
-    const own = lane.occurrences.filter((o) => timed(o) && !isTogether(o));
-    const rows: number[] = [];
-    const placed = own
-      .map((o) => ({ o, ...span(o) }))
-      .sort((a, b) => a.start - b.start)
-      .map((p) => {
-        let r = rows.findIndex((end) => end <= p.start);
-        if (r === -1) {
-          r = rows.length;
-          rows.push(p.end);
-        } else rows[r] = p.end;
-        return { ...p, row: r };
-      });
-    const n = Math.max(1, rows.length);
-    const pad = compact ? 3 : 6;
+    // Blocks, laid out in the lane's rows.
+    const { placed, n } = lm.layout;
     const inner = lm.height - pad * 2;
     for (const p of placed) {
       const o = p.o;
@@ -628,14 +741,14 @@ function buildModel({
         care && child && o.careAction
           ? `${o.careAction === 'drop_off' ? 'Drop-off' : 'Pickup'}`
           : o.title;
-      const rh = inner / n;
+      const rh = (inner - (n - 1) * 2) / n;
       blocks.push({
         key: `${person.id}:${o.key}`,
         o,
         start: p.start,
         end: p.end > p.start ? p.end : p.start + 15,
-        top: lm.top + pad + p.row * rh,
-        height: rh - (n > 1 ? 2 : 0),
+        top: lm.top + pad + p.row * (rh + 2),
+        height: rh,
         color: shade,
         label,
         time: timeOf(o.startsAt, timeZone),
@@ -686,8 +799,12 @@ function buildModel({
     if (lm.person.role === 'pet') lm.sub = lm.person.species ?? 'Pet';
     else if (lm.lane.caredFor) {
       const away = lm.lane.segments.find((s) => s.location.kind === 'away');
+      const t = now?.getTime() ?? -Infinity;
+      const place = away?.location.kind === 'away' ? (away.location.place ?? 'Away') : '';
       lm.sub = away
-        ? `${away.location.kind === 'away' ? (away.location.place ?? 'Away') : ''} ${rangeOf(away.startsAt, away.endsAt, timeZone)}`
+        ? new Date(away.startsAt).getTime() <= t && new Date(away.endsAt).getTime() > t
+          ? `At ${place} until ${timeOf(away.endsAt, timeZone)}`
+          : `${place}, ${rangeOf(away.startsAt, away.endsAt, timeZone)}`
         : (lm.person.note?.split('·')[0]?.trim() ?? '');
     } else {
       const after = now ? now.getTime() : -Infinity;
@@ -695,7 +812,7 @@ function buildModel({
         .filter((o) => timed(o) && new Date(o.startsAt).getTime() > after)
         .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
       lm.sub = next
-        ? `Next: ${next.careAction ? (next.careAction === 'drop_off' ? 'drop-off' : 'pickup') : next.title} ${timeOf(next.startsAt, timeZone)}`
+        ? `Next: ${next.careAction ? (next.careAction === 'drop_off' ? 'drop-off' : 'pickup') : shortTitle(next.title)}, ${timeOf(next.startsAt, timeZone)}`
         : lm.lane.occurrences.some(timed)
           ? now
             ? 'Nothing else today'
@@ -705,7 +822,8 @@ function buildModel({
   }
 
   for (const t of together) spans.push(t);
-  for (const s of segments) if (s.end - s.start < 23 * 60) spans.push(s);
+  // Where a child is away sets the day's bounds; being home overnight doesn't.
+  for (const s of segments) if (s.away && s.end - s.start < 23 * 60) spans.push(s);
   // Late at night the window stretches so the now-line stays on it.
   if (now) {
     const n = localParts(now, timeZone);
@@ -713,6 +831,7 @@ function buildModel({
   }
   const w = dayWindow(spans);
   return {
+    all: ordered.map((o) => o.person),
     lanes: laneModels,
     height,
     blocks,
@@ -725,20 +844,40 @@ function buildModel({
 }
 
 const styles = StyleSheet.create({
-  axis: { position: 'relative' },
-  hour: { position: 'absolute', top: 0, width: 60, textAlign: 'center', fontFamily: font.uiSemi },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2], marginBottom: space[4] },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    minHeight: touch,
+    paddingHorizontal: space[4],
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    cursor: 'pointer',
+  },
+  chipOff: { backgroundColor: color.surface, borderColor: color.line2, borderStyle: 'dashed' },
+  chipHover: { transform: [{ translateY: -1 }] },
+  chipDot: { width: space[3], height: space[3], borderRadius: radius.pill },
+  allHidden: {
+    paddingVertical: space[6],
+    alignItems: 'center',
+    borderRadius: radius.md,
+    backgroundColor: color.ground,
+  },
+  axis: { position: 'relative', marginBottom: space[1] },
+  hour: { position: 'absolute', top: 0, width: 60, textAlign: 'center' },
   hourCompact: { fontSize: 10.5 },
   noon: { color: color.ink },
   body: { flexDirection: 'row' },
-  headRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingRight: 10 },
+  headRow: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingRight: space[3] },
   headText: { flex: 1, minWidth: 0 },
-  headName: { fontSize: 16, lineHeight: 20 },
+  headName: { fontFamily: font.display },
   lane: { position: 'absolute', left: 0, right: 0, backgroundColor: color.lane },
   grid: { position: 'absolute', top: 0, width: 1, backgroundColor: 'rgba(23,32,27,0.05)' },
   band: {
     position: 'absolute',
-    top: -4,
-    borderRadius: 10,
+    top: -space[1],
+    borderRadius: radius.sm,
     borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: color.line2,
@@ -750,12 +889,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderWidth: 1.5,
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    paddingRight: space[2],
     overflow: 'hidden',
   },
-  segText: { fontFamily: font.uiBold, fontSize: 12 },
+  segText: { fontFamily: font.uiBold },
   tiny: { fontSize: 10, lineHeight: 12 },
-  bridge: { position: 'absolute', width: 4, borderRadius: 2 },
+  bridge: { position: 'absolute', width: space[1], borderRadius: 2 },
   block: {
     position: 'absolute',
     borderWidth: 1.5,
@@ -763,47 +902,53 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     cursor: 'pointer',
   },
+  blockHover: { transform: [{ translateY: -1 }] },
   glyph: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 4,
+    gap: space[2] - 2,
+    paddingHorizontal: space[1],
   },
   careText: { fontFamily: font.uiBold },
-  blockInner: { paddingHorizontal: 7, gap: 1, flexDirection: 'column' },
-  blockText: { fontFamily: font.uiBold, fontSize: 12.5, color: color.ink },
-  blockTextTight: { fontSize: 11.5 },
-  blockSub: { fontSize: 11.5 },
-  outside: { position: 'absolute', justifyContent: 'center' },
-  handoffLabel: { position: 'absolute', width: 230, height: 16, justifyContent: 'center' },
+  blockInner: { paddingHorizontal: space[2] - 1, gap: 1, flexDirection: 'column' },
+  blockText: { fontFamily: font.uiBold, color: color.ink },
+  outside: { position: 'absolute', justifyContent: 'center', alignItems: 'flex-start' },
+  outsideText: { backgroundColor: color.lane, paddingRight: space[1], borderRadius: 4 },
+  handoffText: { backgroundColor: color.surface, paddingRight: space[1] },
+  handoffLabel: {
+    position: 'absolute',
+    width: HANDOFF_W,
+    height: space[4],
+    justifyContent: 'center',
+  },
   handoffTime: { fontFamily: font.uiBold },
   past: {
     position: 'absolute',
     left: 0,
-    top: -4,
+    top: -space[1],
     backgroundColor: 'rgba(255,255,255,0.38)',
   },
   now: {
     position: 'absolute',
-    top: -14,
+    top: -space[4] + 2,
     width: 2,
     backgroundColor: color.ink,
     alignItems: 'center',
   },
   nowPill: {
     position: 'absolute',
-    top: -10,
-    paddingHorizontal: 7,
-    height: 20,
+    top: -space[3] + 2,
+    paddingHorizontal: space[2],
+    height: space[5],
     borderRadius: radius.pill,
     backgroundColor: color.ink,
     justifyContent: 'center',
-    minWidth: 44,
+    minWidth: touch,
     alignItems: 'center',
   },
   nowPillCompact: { height: 16, minWidth: 34, paddingHorizontal: 4, top: -4 },
-  nowText: { fontFamily: font.uiBold, fontSize: 11.5 },
-  foot: { height: 22, marginTop: 10, position: 'relative' },
+  nowText: { fontFamily: font.uiBold },
+  foot: { marginTop: space[3], position: 'relative' },
   footText: { position: 'absolute', width: 200, textAlign: 'center' },
 });
