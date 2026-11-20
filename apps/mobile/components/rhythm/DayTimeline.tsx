@@ -97,7 +97,10 @@ export function DayTimeline({
   const x = (m: number) => ((Math.min(Math.max(m, from), to) - from) / (to - from)) * track;
   const nowMin = now ? localParts(now, timeZone).minutes : null;
   const hours: number[] = [];
-  for (let m = Math.ceil(from / 60) * 60; m <= to; m += 60) hours.push(m);
+  // Every hour where there's room for its label, else every second or third hour.
+  const perHour = track / Math.max(1, (to - from) / 60);
+  const step = perHour >= 36 ? 60 : perHour >= 18 ? 120 : 180;
+  for (let m = Math.ceil(from / step) * step; m <= to; m += step) hours.push(m);
   const nowLabel = timeOf(now?.toISOString() ?? '', timeZone).replace(/am|pm/, '');
 
   // Where each block's label goes: inside when it fits, else beside it, never cut mid-word.
@@ -121,6 +124,22 @@ export function DayTimeline({
     if (outFit) return { b, left, w, inside: null, outside: { ...outFit, room } };
     return { b, left, w, inside: null, outside: null };
   });
+
+  // Handoff lines under a child's lane: the full sentence where it fits before the next one,
+  // else the short form ("Theo drops off"); each starts at its handoff, or ends at the track's end.
+  const handoffPlaced = [...model.handoffLabels]
+    .sort((a, b) => a.top - b.top || a.at - b.at)
+    .map((h, i, all) => {
+      const next = all[i + 1];
+      const nextLeft = next && next.top === h.top ? x(next.at) + space[2] : track;
+      const width = (t: string) => (h.time.length + 2 + t.length) * CHAR;
+      const left0 = x(h.at) + space[2];
+      const room = nextLeft - left0 - space[3];
+      const label = width(h.text) <= room ? h.text : h.short;
+      const w = width(label);
+      const left = Math.max(0, Math.min(left0, nextLeft - space[3] - w));
+      return { ...h, label, left, width: Math.min(w + space[2], track - left) };
+    });
 
   return (
     <View onLayout={onLayout} accessibilityLabel={`The day’s rhythm, ${model.window.label}`}>
@@ -431,21 +450,18 @@ export function DayTimeline({
               })}
 
               {/* Handoff lines under a child's lane */}
-              {model.handoffLabels.map((h) => (
+              {handoffPlaced.map((h) => (
                 <View
                   key={`hl${h.key}`}
                   pointerEvents="none"
-                  style={[
-                    styles.handoffLabel,
-                    { left: Math.min(x(h.at) + space[2], track - 260), top: h.top },
-                  ]}
+                  style={[styles.handoffLabel, { left: h.left, top: h.top, width: h.width }]}
                 >
                   <Text variant="small" numberOfLines={1}>
                     <Text variant="small" color={readableOn(h.color)} style={styles.handoffTime}>
                       {h.time}
                     </Text>
                     {'  '}
-                    {h.text}
+                    {h.label}
                   </Text>
                 </View>
               ))}
@@ -631,6 +647,8 @@ function buildModel({
     color: string;
     time: string;
     text: string;
+    /** The short form when the sentence has no room: "Theo drops off". */
+    short: string;
   }[] = [];
   const spans: { start: number; end: number }[] = [];
 
@@ -741,6 +759,9 @@ function buildModel({
       color: adult?.color ?? color.ink,
       time: timeOf(h.time, timeZone).replace(/am|pm/, ''),
       text: adult ? `${who} ${verb}` : `${who}: ${child.name}’s ${CARE_VERB[h.action]}`,
+      short: adult
+        ? `${who} ${h.action === 'drop_off' ? (adult.isMe ? 'drop off' : 'drops off') : adult.isMe ? 'pick up' : 'picks up'}`
+        : `Nobody yet`,
     });
   }
 
@@ -859,7 +880,7 @@ const styles = StyleSheet.create({
   blockTitle: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
   blockText: { fontFamily: font.uiBold, color: color.ink, flexShrink: 1 },
   outside: { position: 'absolute', justifyContent: 'center' },
-  handoffLabel: { position: 'absolute', width: 260, height: 16, justifyContent: 'center' },
+  handoffLabel: { position: 'absolute', height: 16, justifyContent: 'center' },
   handoffTime: { fontFamily: font.uiBold },
   past: {
     position: 'absolute',
