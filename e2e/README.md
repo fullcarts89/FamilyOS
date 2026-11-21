@@ -89,10 +89,22 @@ In CI, run the **E2E** workflow by hand with *Record* on; the GIFs are an artifa
 | `isolation.spec.ts` | a second household's owner sees nothing of the Riveras in the app; their API calls get 404 |
 | `return-home.spec.ts` | Theo completes something on his device; Maya returns to Today and reads it in "Since you last looked" |
 | `planning.spec.ts` | the full Weekly Reset (loose ends kept, June's handoffs asked of Theo and accepted on his phone with the board updating, dinners, the commit, open decisions marked); the chapter title taking the focus, 44px steps, readable badges; the plan's notes and open decisions on Today and dinners on the Week; dinner and grocery confirmations; a decision settled by Theo's vote, acknowledged once; groceries checked, unchecked, seen on Theo's phone, cleared; a contact added, searched and shown with its linked task; a contact linked from a task (picked, then a new one added inline), with Call and Text on the task; the Monarch CSV import (`fixtures/monarch-budget.csv`) with a transactions export refused first |
+| `sync.spec.ts` | two adults: Theo's change reaches Maya's open Today and Tasks within a minute (`page.clock`); an open Today reloads at local midnight; both tick the same task and the second sees “Already done by Theo”, no error |
+| `platform.spec.ts` | offline keeps the tab bar and the last data with an offline note, then recovers; a routed 500 says it's not your connection; a 3 s delay shows a skeleton within 300 ms; a corrupted session lands on sign-in; capture saves once (three Enters, a lost answer retried); a failed undo says so; Reduce Motion: no translate, scale or fade frame on toast, sheet or celebration; nothing under the + button or the bar at 390×844; every control on Today and Tasks takes a 44×44 tap; the keyboard journey; shortcuts off |
+| `welcome.spec.ts` | an invited adult sees one welcome screen after joining, once |
+| `a11y.spec.ts` | axe-core over every main screen and the capture sheet, desktop and phone; fails on critical or serious; all findings in `e2e/.cache/axe/<project>.json` |
 
 The journeys hold under any time of day: they never depend on what "now" is beyond what the seed
 makes relative to today. One exception is skipped with a reason: Thursday after 5:30pm, when
 that day's pickup clash has already passed.
+
+## Accessibility gate
+
+`a11y.spec.ts` injects axe-core (a dev dependency of this package only; MPL-2.0) into each screen
+and runs the WCAG 2.2 A/AA rules plus axe's best practices. Run it alone with
+`pnpm e2e journeys/a11y.spec.ts`. Label-in-name findings are re-checked the way WCAG 2.5.3 means
+them (`support/a11y.ts`): react-native-web renders each line as its own `<div>`, which axe reads
+run together, and avatar initials and key hints are marked decorative.
 
 ## Hooks and findings for the app
 

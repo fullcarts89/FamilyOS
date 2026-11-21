@@ -1,5 +1,13 @@
 import type { Locator, Page } from '@playwright/test';
-import { movingFrames, overlaps, recordFrames, tapTargets, type Box } from '../support/a11y';
+import { writeFileSync } from 'node:fs';
+import {
+  movingFrames,
+  overlaps,
+  recordFrames,
+  recordedFrames,
+  tapTargets,
+  type Box,
+} from '../support/a11y';
 import { MAYA } from '../support/env';
 import { expect, greeting, test, toast, type AppDriver } from '../support/fixtures';
 
@@ -225,7 +233,14 @@ test.describe('Reduce Motion', () => {
     await page.screenshot({ path: test.info().outputPath('reduced-motion.png') });
     await page.waitForTimeout(500);
 
-    expect(await movingFrames(page), 'frames with a translate, scale or fade').toEqual([]);
+    const samples = await recordedFrames(page);
+    const moving = await movingFrames(page);
+    writeFileSync(
+      test.info().outputPath('reduced-motion-frames.json'),
+      JSON.stringify({ samples, moving }, null, 2),
+    );
+    expect(samples, 'the recorder saw the toast, sheet and card').toBeGreaterThan(0);
+    expect(moving, 'frames with a translate, scale or fade').toEqual([]);
   });
 
   test('without Reduce Motion the same sheet does move (the check can see motion)', async ({

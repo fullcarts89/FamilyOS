@@ -190,6 +190,11 @@ export async function recordFrames(page: Page): Promise<void> {
   });
 }
 
+/** How many frame samples were recorded (a check that the recorder saw the elements at all). */
+export async function recordedFrames(page: Page): Promise<number> {
+  return page.evaluate(() => (window as unknown as { __frames: unknown[] }).__frames.length);
+}
+
 /** Stops recording; returns the frames where something moved, scaled or was part-transparent. */
 export async function movingFrames(
   page: Page,

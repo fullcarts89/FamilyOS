@@ -361,7 +361,12 @@ export function DayTimeline({
                   <Pressable
                     key={b.key}
                     accessibilityRole="button"
-                    accessibilityLabel={`${b.a11y}`}
+                    // A shortened title inside the block is said first, as shown (label in name).
+                    accessibilityLabel={
+                      label?.where === 'in' && !b.care && (label.text !== b.label || label.sub)
+                        ? `${label.text}${label.sub ? `, ${b.sub}` : ''}. ${b.a11y}`
+                        : b.a11y
+                    }
                     onPress={() => onOpen(b.o)}
                     style={(s: PressState) => [
                       styles.block,
