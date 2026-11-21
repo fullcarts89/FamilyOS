@@ -1,7 +1,8 @@
 import { Temporal } from 'temporal-polyfill';
 import { startOfLocalDay, type CareAction, type EventOccurrence } from './events';
 import { isAssignableRole, isCaredFor, type MemberRole } from './permissions';
-import { localDueDate } from './today';
+import { timeBlock, type TimeBlock } from './time-block';
+import { dueThrough, localDueDate } from './today';
 import type { WorkItemStatus } from './work-item';
 
 /**
@@ -27,9 +28,14 @@ export interface RhythmTask {
   subjectMemberId: string | null;
   dueOn: string | null;
   dueAt: string | null;
+  /** With dueAt: how long it takes, in minutes (a time block). */
+  durationMinutes?: number | null;
   /** Set on routine occurrences. */
   recurrenceRuleId: string | null;
 }
+
+/** A task with a time that day, with its block from start to end when it has a length. */
+export type RhythmTimedTask<T = RhythmTask> = T & { block: TimeBlock | null };
 
 /**
  * An open household decision with a due date. Decisions don't exist yet (Weekly Reset
@@ -94,7 +100,7 @@ export interface RhythmLane<T, O extends EventOccurrence = EventOccurrence> {
   /** Children and pets with handoffs that day; empty otherwise. */
   segments: LocationSegment[];
   /** Adults: tasks they own. Children and pets: tasks about them. */
-  tasks: { timed: T[]; dueToday: T[] };
+  tasks: { timed: RhythmTimedTask<T>[]; dueToday: T[] };
 }
 
 export type HeadsUp =
@@ -153,7 +159,7 @@ export interface RhythmSummary {
   dueToday: number;
   /** Tasks due that day already done. */
   doneToday: number;
-  /** Open tasks, routine occurrences included, due before today. */
+  /** Open tasks, routine occurrences included, due before today (time blocks: ended before it). */
   overdue: number;
   byMember: {
     memberId: string;
@@ -323,11 +329,14 @@ export function buildRhythm<T extends RhythmTask, O extends EventOccurrence = Ev
 
   // Tasks for the day, by owner (adults) and by subject (children and pets).
   const shown = input.tasks.filter((t) => !NOT_SHOWN.includes(t.status));
-  const timedToday = shown.filter(
-    (t) => t.dueAt !== null && localDueDate(t, timeZone)?.toString() === date,
-  );
+  // Timed tasks carry their block (start to end) when they have a length, so no screen works it
+  // out again.
+  const timedToday = shown
+    .filter((t) => t.dueAt !== null && localDueDate(t, timeZone)?.toString() === date)
+    .map((t) => ({ ...t, block: timeBlock(t) }));
   const allDayToday = shown.filter((t) => t.dueOn === date);
-  const byDueAt = (a: T, b: T) => cmp(a.dueAt ?? '', b.dueAt ?? '') || a.id.localeCompare(b.id);
+  const byDueAt = <U extends T>(a: U, b: U) =>
+    cmp(a.dueAt ?? '', b.dueAt ?? '') || a.id.localeCompare(b.id);
   const byTitle = (a: T, b: T) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
 
   const lanes: RhythmLane<T, O>[] = members.map((m) => {
@@ -406,11 +415,12 @@ export function buildRhythm<T extends RhythmTask, O extends EventOccurrence = Ev
     });
   }
 
-  // (b) A routine occurrence still open after its day.
+  // (b) A routine occurrence still open after its day (a time block: after the day it ends on).
   for (const t of input.tasks) {
     if (t.recurrenceRuleId === null || OPEN_EXCLUDED.includes(t.status)) continue;
     const due = localDueDate(t, timeZone)?.toString();
-    if (!due || due >= today) continue;
+    const through = dueThrough(t, timeZone)?.toString();
+    if (!due || !through || through >= today) continue;
     headsUps.push({
       id: `overdue_routine:${t.id}`,
       type: 'overdue_routine',
@@ -478,7 +488,7 @@ export function buildRhythm<T extends RhythmTask, O extends EventOccurrence = Ev
     doneToday: dayTasks.filter((t) => DONE_STATUSES.includes(t.status)).length,
     overdue: input.tasks.filter((t) => {
       if (!isOpen(t)) return false;
-      const due = localDueDate(t, timeZone)?.toString();
+      const due = dueThrough(t, timeZone)?.toString();
       return due !== undefined && due < today;
     }).length,
     byMember: lanes.map((lane) => ({

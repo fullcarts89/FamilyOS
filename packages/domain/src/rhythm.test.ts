@@ -365,6 +365,57 @@ describe('tasks for the day', () => {
   });
 });
 
+describe('time blocks', () => {
+  it('gives a timed task with a length its block, and leaves the rest as moments', () => {
+    const tasks = [
+      task('walk', {
+        title: 'Walk Biscuit',
+        ownerMemberId: 'maya',
+        dueAt: at('17:30'),
+        durationMinutes: 30,
+      }),
+      task('call', { ownerMemberId: 'maya', dueAt: at('09:00') }),
+      task('shared', { dueAt: at('12:00'), durationMinutes: 60 }),
+    ];
+    const view = rhythm([], { tasks });
+    const timed = view.lanes.find((l) => l.memberId === 'maya')?.tasks.timed ?? [];
+    expect(timed.map((t) => [t.id, t.block])).toEqual([
+      ['call', null],
+      ['walk', { startsAt: at('17:30'), endsAt: at('18:00'), minutes: 30 }],
+    ]);
+    // Nobody's yet: still a block, in the unassigned list.
+    expect(view.unassignedTasks).toEqual([
+      expect.objectContaining({ id: 'shared', block: expect.objectContaining({ minutes: 60 }) }),
+    ]);
+  });
+
+  it('counts a block that runs past midnight as overdue only after the day it ends on', () => {
+    // Wednesday 23:30 for an hour: it ends 00:30 on Thursday.
+    const night = task('night', {
+      ownerMemberId: 'theo',
+      recurrenceRuleId: 'r',
+      dueAt: at('23:30', '2026-11-18'),
+      durationMinutes: 60,
+    });
+    // Wednesday 21:00 for an hour: over on Wednesday.
+    const evening = task('evening', {
+      ownerMemberId: 'theo',
+      recurrenceRuleId: 'r2',
+      dueAt: at('21:00', '2026-11-18'),
+      durationMinutes: 60,
+    });
+    const thursday = rhythm([], { tasks: [night, evening] });
+    expect(thursday.summary.overdue).toBe(1);
+    expect(thursday.headsUps.map((h) => h.id)).toEqual(['overdue_routine:evening']);
+    const friday = rhythm([], { tasks: [night, evening], date: '2026-11-20' });
+    expect(friday.summary.overdue).toBe(2);
+    expect(friday.headsUps.map((h) => h.id).sort()).toEqual([
+      'overdue_routine:evening',
+      'overdue_routine:night',
+    ]);
+  });
+});
+
 describe('summary', () => {
   it('counts what the day holds, per member, without scoring anyone', () => {
     const dentist = event('dentist', {

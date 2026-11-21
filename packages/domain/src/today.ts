@@ -1,4 +1,5 @@
 import { Temporal } from 'temporal-polyfill';
+import { timeBlock } from './time-block';
 import type { WorkItemStatus } from './work-item';
 
 /**
@@ -14,6 +15,8 @@ export interface TodayItem {
   dueOn: string | null;
   /** Timed due instant, ISO 8601. */
   dueAt: string | null;
+  /** With dueAt: how long it takes (a time block), in minutes. */
+  durationMinutes?: number | null;
   updatedAt: string;
 }
 
@@ -55,9 +58,28 @@ export function localDueDate(
   return null;
 }
 
+/**
+ * The last local date something is due on, for deciding when it's late: its due date, or for a
+ * time block, the date its block ends on (its last minute). Lateness is by the day everywhere
+ * (late once that day is over), so a block that runs past midnight is late only once the day it
+ * ends on is over: never while it is still under way.
+ */
+export function dueThrough(
+  item: Pick<TodayItem, 'dueOn' | 'dueAt' | 'durationMinutes'>,
+  timeZone: string,
+): Temporal.PlainDate | null {
+  const block = item.dueOn ? null : timeBlock(item);
+  if (!block) return localDueDate(item, timeZone);
+  return Temporal.Instant.from(block.endsAt)
+    .subtract({ milliseconds: 1 })
+    .toZonedDateTimeISO(timeZone)
+    .toPlainDate();
+}
+
+/** Open, and the last day it was due on is before `today`. */
 export function isOverdue(item: TodayItem, today: Temporal.PlainDate, timeZone: string): boolean {
   if (NOT_OPEN.includes(item.status)) return false;
-  const due = localDueDate(item, timeZone);
+  const due = dueThrough(item, timeZone);
   return due !== null && Temporal.PlainDate.compare(due, today) < 0;
 }
 
@@ -102,6 +124,8 @@ export function buildToday<T extends TodayItem>({
 
     const mine = item.ownerMemberId === memberId;
     const dueDate = due(item);
+    // A block that started yesterday and is still under way counts as today's.
+    const through = dueThrough(item, timeZone);
     const overdue = isOverdue(item, today, timeZone);
     // A missed item nobody owns needs every adult's attention (WF-02: missed → needs attention).
     if (
@@ -111,7 +135,8 @@ export function buildToday<T extends TodayItem>({
       view.needsYou.push(item);
     } else if (
       dueDate &&
-      Temporal.PlainDate.compare(dueDate, today) >= 0 &&
+      through &&
+      Temporal.PlainDate.compare(through, today) >= 0 &&
       Temporal.PlainDate.compare(dueDate, weekEnd) <= 0
     ) {
       view.thisWeek.push(item);
