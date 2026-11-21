@@ -18,7 +18,7 @@ import {
   useCelebrate,
 } from '../../../design/motion';
 import { EmptyState } from '../../../design/EmptyState';
-import { ErrorNotice } from '../../../design/Notice';
+import { ErrorNotice, Notice } from '../../../design/Notice';
 import { Page } from '../../../design/Page';
 import { RoundCheckbox } from '../../../design/RoundCheckbox';
 import { SectionHeader } from '../../../design/Section';
@@ -29,6 +29,7 @@ import {
   api,
   ApiRequestError,
   errorMessage,
+  failureKind,
   type Comment,
   type ItemDetail,
   type TodayResponse,
@@ -106,6 +107,12 @@ export default function ItemScreen() {
   const [moreStatus, setMoreStatus] = useState(false);
   const [subtask, setSubtask] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // The other adult saved the title or notes while this person was editing: both versions kept.
+  const [conflict, setConflict] = useState<{
+    changes: Record<string, unknown>;
+    theirs: WorkItem;
+    by: string;
+  } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
@@ -223,7 +230,9 @@ export default function ItemScreen() {
       if (success) toast.show(success);
       changed();
     } catch (caught) {
-      setError(errorMessage(caught));
+      // Changed first on another device: show theirs, in words (no error, nothing to retry).
+      if (failureKind(caught) === 'conflict') await actions.settleConflict(item, 'change');
+      else setError(errorMessage(caught));
     }
     await load();
   };
@@ -247,11 +256,52 @@ export default function ItemScreen() {
     void load();
   };
 
-  const saveText = () => {
+  const saveText = async (base: WorkItem = item) => {
     const changes: Record<string, unknown> = {};
-    if (title.trim() && title.trim() !== item.title) changes.title = title.trim();
-    if ((notes || null) !== (item.description || null)) changes.description = notes || null;
-    if (Object.keys(changes).length) void run(() => actions.patch(item, changes), 'Saved');
+    if (title.trim() && title.trim() !== base.title) changes.title = title.trim();
+    if ((notes || null) !== (base.description || null)) changes.description = notes || null;
+    if (!Object.keys(changes).length) return;
+    setError(null);
+    try {
+      await actions.patch(base, changes);
+      setConflict(null);
+      toast.show('Saved');
+      changed();
+      await load();
+    } catch (caught) {
+      if (failureKind(caught) !== 'conflict') {
+        setError(errorMessage(caught));
+        return;
+      }
+      // Keep this person's draft on screen; show what the other adult saved; let them choose.
+      const fresh = await api<ItemDetail>(`/households/${hid}/work-items/${base.id}`).catch(
+        () => null,
+      );
+      if (!fresh) {
+        setError('This was changed on another device. Pull down to refresh, then edit again.');
+        return;
+      }
+      setDetail(fresh);
+      const actor = people.byId(fresh.timeline.at(-1)?.actorMemberId ?? null);
+      setConflict({
+        changes,
+        theirs: fresh.item,
+        by: actor ? (actor.isMe ? 'You, on another device,' : actor.name) : 'Someone else',
+      });
+    }
+  };
+
+  const keepMine = () => {
+    if (!conflict) return;
+    const theirs = conflict.theirs;
+    setConflict(null);
+    void saveText(theirs);
+  };
+  const useTheirs = () => {
+    if (!conflict) return;
+    setTitle(conflict.theirs.title);
+    setNotes(conflict.theirs.description ?? '');
+    setConflict(null);
   };
 
   const kicker =
@@ -302,11 +352,11 @@ export default function ItemScreen() {
             onChangeText={setTitle}
             onBlur={() => {
               setEditing(false);
-              saveText();
+              void saveText();
             }}
             onSubmitEditing={() => {
               setEditing(false);
-              saveText();
+              void saveText();
             }}
             autoFocus
             accessibilityLabel="Title"
@@ -438,7 +488,7 @@ export default function ItemScreen() {
       <TextInput
         value={notes}
         onChangeText={setNotes}
-        onBlur={saveText}
+        onBlur={() => void saveText()}
         multiline
         placeholder="Add details: numbers, links, what was agreed…"
         placeholderTextColor={color.faint}
@@ -588,7 +638,7 @@ export default function ItemScreen() {
               />
             ))}
             <Chip
-              label="Either of us"
+              label="Shared"
               leading={<Either size={18} />}
               selected={item.ownerMemberId === null}
               onPress={() => item.ownerMemberId !== null && void actions.assign(item, null)}
@@ -727,6 +777,23 @@ export default function ItemScreen() {
     <Page maxWidth={1180}>
       <FadeIn>
         {headline}
+        {conflict ? (
+          <View style={styles.block}>
+            <Notice
+              message={`${conflict.by} changed ${'title' in conflict.changes ? 'the title' : 'the notes'} while you were editing. Theirs: “${
+                'title' in conflict.changes
+                  ? conflict.theirs.title
+                  : (conflict.theirs.description ?? '').slice(0, 120) || 'no notes'
+              }”. Yours is still here.`}
+              action={
+                <View style={styles.chips}>
+                  <Button title="Keep mine" size="sm" onPress={keepMine} />
+                  <Button title="Use theirs" size="sm" variant="secondary" onPress={useTheirs} />
+                </View>
+              }
+            />
+          </View>
+        ) : null}
         {error ? (
           <View style={styles.block}>
             <ErrorNotice message={error} onRetry={load} />

@@ -5,7 +5,15 @@ import { hapticsAvailable, useHaptics } from '../design/motion/haptics';
 import { requestWidgetRefresh } from '../native/WidgetSync';
 import { useToast } from '../design/Toast';
 import type { MissedTurns } from '../components/tasks/lists';
-import { api, errorMessage, type Routine, type WorkItem } from './api';
+import { isDone } from '../components/tasks/rules';
+import {
+  api,
+  errorMessage,
+  failureKind,
+  type ItemDetail,
+  type Routine,
+  type WorkItem,
+} from './api';
 import { useHousehold } from './household';
 import { usePeople, type Person } from './people';
 
@@ -39,9 +47,14 @@ export function todayClearMilestone(today: string, me: Person): Milestone {
   };
 }
 
+/** What the person meant to do, so a "someone got there first" message can say it plainly. */
+type Intent = 'complete' | 'reopen' | 'assign' | 'reschedule' | 'change';
+
 /**
  * Task moves, optimistic: the screen changes at once (`onChange` with the expected item), the
- * request follows, and the API's item (its new version) replaces it. A failed request rolls back
+ * request follows, and the API's item (its new version) replaces it. When the other adult changed
+ * it first (a version conflict), their version is loaded and shown with a neutral line ("Already
+ * done by Theo"), never an error and never a retry of the stale change. Other failures roll back
  * with a plain message and a way to try again. A press gets a light selection tick at once; the
  * success haptic, the toast and `onConfirmed` (milestones) only follow a write the server confirmed.
  */
@@ -75,12 +88,59 @@ export function useTaskActions(
     [base, onChange],
   );
 
+  /**
+   * Someone else changed `item` first: show their version and say who, in words that fit what
+   * this person was doing. Returns their item (null when it couldn't be read: rolled back).
+   */
+  const settleConflict = useCallback(
+    async (item: WorkItem, intent: Intent): Promise<WorkItem | null> => {
+      const detail = await api<ItemDetail>(`${base}/${item.id}`).catch(() => null);
+      if (!detail) {
+        onChange(item);
+        toast.show(`“${item.title}” was changed on another device.`, {
+          detail: 'Pull down to refresh and see the latest.',
+        });
+        return null;
+      }
+      const theirs = detail.item;
+      onChange(theirs);
+      requestWidgetRefresh();
+      const done = isDone(theirs);
+      const actorId =
+        (done ? theirs.completedByMemberId : null) ?? detail.timeline.at(-1)?.actorMemberId ?? null;
+      const who = people.byId(actorId);
+      const by = who ? (who.isMe ? 'you, on another device' : who.name) : 'someone else';
+      const message =
+        intent === 'complete' && done
+          ? `Already done by ${by}: ${item.title}`
+          : intent === 'reopen' && !done
+            ? `Already reopened by ${by}: ${item.title}`
+            : `Changed first by ${by}: ${item.title}`;
+      toast.show(message, {
+        detail: intent === 'complete' && done ? 'Nothing more to do.' : 'Here’s their version.',
+      });
+      return theirs;
+    },
+    [base, onChange, people, toast],
+  );
+
+  /** For a follow-up write (an undo): a conflict shows their version; anything else, the reason. */
+  const failFor = useCallback(
+    (item: WorkItem) => async (caught: unknown) => {
+      if (failureKind(caught) === 'conflict') {
+        await settleConflict(item, 'change');
+        return;
+      }
+      toast.show(errorMessage(caught), { error: true });
+    },
+    [settleConflict, toast],
+  );
   const fail = useCallback(
     (caught: unknown) => toast.show(errorMessage(caught), { error: true }),
     [toast],
   );
 
-  /** Show the change now; send it; roll back with a friendly message if it fails. */
+  /** Show the change now; send it; settle a conflict, or roll back with a friendly message. */
   const optimistic = useCallback(
     async (
       item: WorkItem,
@@ -88,6 +148,7 @@ export function useTaskActions(
       body: Record<string, unknown>,
       failure: string,
       retry: () => void,
+      intent: Intent,
     ): Promise<WorkItem | null> => {
       onChange({ ...item, ...preview });
       try {
@@ -96,16 +157,23 @@ export function useTaskActions(
         requestWidgetRefresh();
         return saved;
       } catch (caught) {
+        if (failureKind(caught) === 'conflict') {
+          await settleConflict(item, intent);
+          return null;
+        }
         onChange(item);
+        // "Try again" only where trying again can work: the network or the server.
+        const kind = failureKind(caught);
+        const retryable = kind === 'offline' || kind === 'timeout' || kind === 'server';
         toast.show(failure, {
           error: true,
           detail: errorMessage(caught),
-          action: { label: 'Try again', run: retry },
+          ...(retryable && { action: { label: 'Try again', run: retry } }),
         });
         return null;
       }
     },
-    [onChange, patch, toast],
+    [onChange, patch, toast, settleConflict],
   );
 
   const complete = useCallback(
@@ -117,16 +185,18 @@ export function useTaskActions(
         { status: 'verified_complete', confirmed: true },
         `Couldn’t mark “${item.title}” done.`,
         () => void complete(item),
+        'complete',
       );
       if (!done) return;
       haptics.light();
       toast.show(`Done: ${item.title}`, {
         // Undo puts it back exactly as it was before (the API remembers the earlier status).
-        undo: () => patch(done, { undoComplete: true }).then(() => requestWidgetRefresh(), fail),
+        undo: () =>
+          patch(done, { undoComplete: true }).then(() => requestWidgetRefresh(), failFor(done)),
       });
       onConfirmed?.({ kind: 'completed', before: item, after: done });
     },
-    [pressed, haptics, optimistic, people.me, toast, patch, fail, onConfirmed],
+    [pressed, haptics, optimistic, people.me, toast, patch, failFor, onConfirmed],
   );
 
   const reopen = useCallback(
@@ -137,6 +207,7 @@ export function useTaskActions(
         { status: 'in_progress' },
         `Couldn’t reopen “${item.title}”.`,
         () => void reopen(item),
+        'reopen',
       );
       if (back) toast.show(`Reopened: ${item.title}`);
     },
@@ -153,12 +224,13 @@ export function useTaskActions(
         { ownerMemberId },
         `Couldn’t move “${item.title}”.`,
         () => void assign(item, ownerMemberId),
+        'assign',
       );
       if (!moved) return;
       // Acknowledge what the move means, in words; never a score.
       const [message, detail]: [string, string | undefined] =
         ownerMemberId === null
-          ? [`Up for grabs: ${item.title}`, 'Either of you can take it.']
+          ? [`Shared: ${item.title}`, 'Either of you can take it.']
           : who?.isMe && !before
             ? [`Yours now: ${item.title}`, 'One less thing for both of you.']
             : who?.isMe && before
@@ -167,11 +239,12 @@ export function useTaskActions(
       haptics.light();
       toast.show(message, {
         detail,
-        undo: () => patch(moved, { ownerMemberId: item.ownerMemberId }).then(() => undefined, fail),
+        undo: () =>
+          patch(moved, { ownerMemberId: item.ownerMemberId }).then(() => undefined, failFor(moved)),
       });
       onConfirmed?.({ kind: 'assigned', before: item, after: moved });
     },
-    [people, optimistic, haptics, toast, patch, fail, onConfirmed],
+    [people, optimistic, haptics, toast, patch, failFor, onConfirmed],
   );
 
   /** Move the due day (overdue next steps: "Do it today", "Move to tomorrow"). */
@@ -183,6 +256,7 @@ export function useTaskActions(
         { dueOn },
         `Couldn’t move “${item.title}”.`,
         () => void reschedule(item, dueOn, label),
+        'reschedule',
       );
       if (!moved) return;
       haptics.light();
@@ -190,11 +264,11 @@ export function useTaskActions(
         undo: () =>
           patch(moved, item.dueAt ? { dueAt: item.dueAt } : { dueOn: item.dueOn }).then(
             () => undefined,
-            fail,
+            failFor(moved),
           ),
       });
     },
-    [optimistic, haptics, toast, patch, fail],
+    [optimistic, haptics, toast, patch, failFor],
   );
 
   /**
@@ -251,5 +325,5 @@ export function useTaskActions(
     [pressed, household, base, haptics, toast],
   );
 
-  return { complete, reopen, assign, reschedule, catchUp, patch, fail };
+  return { complete, reopen, assign, reschedule, catchUp, patch, fail, settleConflict };
 }
