@@ -125,10 +125,9 @@ test.describe('Two adults: covering for each other, and the Weekly Reset in step
     expect((await read())?.cover).toBeNull();
     expect((await read())?.memberIds).toContain(mayaApi.memberId);
 
-    // Maya comes back to Today: Theo can't make it, and the clash is hers to sort again.
-    await app.nav(maya, 'Week');
-    await app.nav(maya, 'Today');
-    await expect(clashHeadsUp(maya)).toContainText('Theo can’t make it');
+    // Maya's Today, open all along, notices within seconds: Theo can't make it, and the clash
+    // is hers to sort again.
+    await expect(clashHeadsUp(maya)).toContainText('Theo can’t make it', { timeout: 15_000 });
     await expect(maya.getByRole('button', { name: 'Ask Theo to cover' })).toBeVisible();
     await expect(maya.getByText('can’t make it: Daycare pickup')).toBeVisible();
   });

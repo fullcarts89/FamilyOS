@@ -1,7 +1,7 @@
 import type { HeadsUp } from '@familyos/domain';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Car, Hourglass, Repeat2, Vote } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Button, type PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
@@ -16,6 +16,7 @@ import { useHousehold } from '../../lib/household';
 import type { People } from '../../lib/people';
 import { CARE_VERB, timeOf } from '../../lib/rhythm';
 import {
+  requestsKey,
   requestView,
   waitingWords,
   type CoverRequest,
@@ -72,16 +73,40 @@ export function HeadsUps({
   const meId = people.me?.id;
 
   // Without the lists from the screen, ask for them whenever the heads-ups reload.
+  const known = useRef<string | null>(null);
   useEffect(() => {
     if (given || !household) return;
     let alive = true;
     api<CoverRequestLists>(`/households/${household.id}/cover-requests`)
-      .then((r) => alive && setLoaded(r))
+      .then((r) => {
+        if (!alive) return;
+        known.current = requestsKey(r);
+        setLoaded(r);
+      })
       .catch(() => undefined);
     return () => {
       alive = false;
     };
   }, [given, household, items]);
+
+  // While this screen is open, notice the other adult's answer (or a new ask) within seconds:
+  // when what's waiting changes, every visible screen reloads, so the row says what happened.
+  useFocusEffect(
+    useCallback(() => {
+      if (given || !household) return;
+      const timer = setInterval(() => {
+        api<CoverRequestLists>(`/households/${household.id}/cover-requests`)
+          .then((r) => {
+            const key = requestsKey(r);
+            if (known.current !== null && key !== known.current) changed();
+            known.current = key;
+            setLoaded(r);
+          })
+          .catch(() => undefined);
+      }, REQUESTS_REFRESH_MS);
+      return () => clearInterval(timer);
+    }, [given, household, changed]),
+  );
 
   // Requests you made that are no longer waiting: was it a no?
   useEffect(() => {
@@ -145,6 +170,9 @@ export function HeadsUps({
 }
 
 const dayWord = (date: string, today: string) => relativeDay(date, today, { late: false });
+
+/** How often an open Today checks whether a request was answered (or a new one came in). */
+const REQUESTS_REFRESH_MS = 8000;
 
 /** "Thu 5:30pm", "Today 5:30pm". */
 const shortWhen = (o: Occurrence, today: string, timeZone: string) => {

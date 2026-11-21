@@ -12,6 +12,7 @@ import {
   notesSaved,
   notesTyped,
   planFacts,
+  requestsKey,
   requestView,
   restoreOccurrence,
   STALE_CODES,
@@ -171,6 +172,17 @@ describe('cover requests (only the asked adult’s yes hands a handoff over)', (
       expect(STALE_CODES.has(code)).toBe(true);
     }
     expect(STALE_CODES.has('request_failed')).toBe(false);
+  });
+
+  it('notices when what’s waiting changes (asked, or answered)', () => {
+    const empty = { askedOfMe: [], askedByMe: [] };
+    const one = { askedOfMe: [], askedByMe: [request()] };
+    expect(requestsKey(empty)).toBe('');
+    expect(requestsKey(one)).not.toBe(requestsKey(empty));
+    // The same requests in another order are the same.
+    const two = { askedOfMe: [request({ id: 'r2' })], askedByMe: [request()] };
+    const swapped = { askedOfMe: [request()], askedByMe: [request({ id: 'r2' })] };
+    expect(requestsKey(two)).toBe(requestsKey(swapped));
   });
 
   it('finds the asked adult’s decline in the activity feed', () => {

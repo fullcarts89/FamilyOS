@@ -55,6 +55,14 @@ export function requestView(
   return { kind: 'others', request };
 }
 
+/** What's waiting, as one comparable value: it changes when a request is made or answered. */
+export function requestsKey(lists: CoverRequestLists): string {
+  return [...lists.askedOfMe, ...lists.askedByMe]
+    .map((r) => `${r.id}:${r.version}`)
+    .sort()
+    .join(',');
+}
+
 /** "Asked Theo · waiting": wherever an occurrence would say it needs someone. */
 export const waitingWords = (name: string) => `Asked ${name} · waiting`;
 
