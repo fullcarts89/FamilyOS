@@ -9,15 +9,7 @@ import { expect, greeting, test } from '../support/fixtures';
  * Serious findings that remain on purpose, each with its owner and reason. Anything else that is
  * serious or critical fails the gate. Keep this list short and remove entries as they are fixed.
  */
-const KNOWN: { screen: string; id: string; node: RegExp; reason: string }[] = [
-  {
-    screen: 'Household',
-    id: 'label-content-name-mismatch',
-    node: /aria-label="[^"]+, (Owner|Adult|Child|Pet|Caregiver), edit"/,
-    reason:
-      'member rows show the species and a note (“Biscuit · Dog”) but keep the “Name, Role, edit” names that household.spec.ts selects by (Reset worker’s journey)',
-  },
-];
+const KNOWN: { screen: string; id: string; node: RegExp; reason: string }[] = [];
 
 /**
  * The accessibility gate: axe-core (WCAG 2.2 A/AA and best practices) over every main screen on

@@ -41,7 +41,7 @@ test.describe('Household: pets and invites', () => {
     // Pepper is listed with the household's pets, after a reload.
     await app.nav(maya, 'Household');
     await maya.reload();
-    await expect(maya.getByRole('button', { name: 'Pepper, Pet, edit' })).toBeVisible();
+    await expect(maya.getByRole('button', { name: 'Pepper, Cat, edit' })).toBeVisible();
   });
 
   test('an invited adult joins with a password in a fresh browser, then signs in', async ({

@@ -145,11 +145,17 @@ export default function HouseholdScreen() {
 
   const memberRow = (p: Person, i: number, all: Person[]) => {
     const mayEdit = p.caredFor || p.isMe || household.role === 'owner';
+    // What the row shows under the name: the role (a pet's species), and their note.
+    const detail = [p.role === 'pet' ? (p.species ?? 'Pet') : ROLE_LABEL[p.role], p.note].filter(
+      Boolean,
+    );
     return (
       <Pressable
         key={p.id}
         accessibilityRole={mayEdit ? 'button' : undefined}
-        accessibilityLabel={`${p.name}, ${ROLE_LABEL[p.role]}${mayEdit ? ', edit' : ''}`}
+        // The name says what the row shows, in the same order ("Biscuit, Dog, Flea meds on the
+        // 1st"), then what a tap does.
+        accessibilityLabel={`${[p.name, ...(p.isMe ? ['you'] : []), ...detail].join(', ')}${mayEdit ? ', edit' : ''}`}
         disabled={!mayEdit}
         onPress={() => setMemberSheet({ mode: 'edit', person: p })}
         style={(s: PressState) => [
@@ -169,9 +175,7 @@ export default function HouseholdScreen() {
             ) : null}
           </Text>
           <Text variant="meta" tone="muted" numberOfLines={1}>
-            {[p.role === 'pet' ? (p.species ?? 'Pet') : ROLE_LABEL[p.role], p.note]
-              .filter(Boolean)
-              .join(' · ')}
+            {detail.join(' · ')}
           </Text>
         </View>
         <View style={[styles.swatch, { backgroundColor: p.color }]} aria-hidden />
