@@ -6,6 +6,7 @@ import {
   awayRails,
   awayWords,
   byStart,
+  clashes,
   contrast,
   lateWords,
   railRows,
@@ -334,5 +335,30 @@ describe('all-day events', () => {
     expect(
       allDayOn([closed, trip, tomorrow, skipped, timed, closed], DATE, TZ).map((o) => o.title),
     ).toEqual(['Grandma visits', 'School closed']);
+  });
+});
+
+describe('a clashing handoff', () => {
+  it('names what it clashes with, on the handoff and on the other event', () => {
+    const map = clashes(
+      [
+        {
+          id: 'c1',
+          type: 'handoff_conflict',
+          memberId: MAYA.id,
+          occurrenceKey: 'Pickup',
+          eventId: 'e1',
+          conflictingOccurrenceKey: 'Quarterly planning',
+          conflictingEventId: 'e2',
+          time: at(17, 30),
+          text: '',
+        },
+        { id: 'd', type: 'decision_due', decisionId: 'x', dueOn: DATE, text: '' },
+      ],
+      DAY,
+    );
+    expect(map.get('Pickup')).toEqual({ with: 'Quarterly planning', handoff: true });
+    expect(map.get('Quarterly planning')).toEqual({ with: 'Pickup', handoff: false });
+    expect(map.size).toBe(2);
   });
 });

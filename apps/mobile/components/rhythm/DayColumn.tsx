@@ -1,16 +1,19 @@
+import type { HeadsUp } from '@familyos/domain';
 import { router } from 'expo-router';
 import { CalendarDays, Car, CircleCheck } from 'lucide-react-native';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { PressState } from '../../design/Button';
+import { Hatch } from '../../design/Hatch';
 import { Text } from '../../design/Text';
-import { color, radius, space, tint, touch } from '../../design/tokens';
+import { color, font, radius, space, tint, touch } from '../../design/tokens';
 import type { HandoffView, Occurrence, RhythmLaneView } from '../../lib/api';
 import type { People, Person } from '../../lib/people';
 import { timeOf } from '../../lib/rhythm';
 import type { NextEntry } from './NextUp';
 import {
   awayRails,
+  clashes,
   handoffByKey,
   minutesLabel,
   railRows,
@@ -31,7 +34,8 @@ const MARK = 16;
  * Phones: the whole day as one vertical timeline. An hour ruler runs down the side; every item is a
  * marker in its member's color on one continuous line; drop-offs and pickups say who does them;
  * a child away from home (daycare) is a rail beside the line from drop-off to pickup; the now-line
- * marks the present. Ordered rather than to scale, so nothing is squeezed or cut off.
+ * marks the present; a handoff that clashes with something else of the same adult's is hatched and
+ * says what it clashes with. Ordered rather than to scale, so nothing is squeezed or cut off.
  */
 export function DayColumn({
   date,
@@ -39,6 +43,7 @@ export function DayColumn({
   entries,
   lanes,
   handoffs,
+  headsUps = [],
   people,
   now,
   onOpen,
@@ -48,6 +53,8 @@ export function DayColumn({
   entries: NextEntry[];
   lanes: RhythmLaneView[];
   handoffs: HandoffView[];
+  /** The day's heads-ups: handoff clashes are hatched. */
+  headsUps?: HeadsUp[];
   people: People;
   /** The current instant when `date` is today. */
   now: Date | null;
@@ -67,6 +74,7 @@ export function DayColumn({
       );
   }, [lanes, date, timeZone, people, rows]);
   const byKey = useMemo(() => handoffByKey(handoffs), [handoffs]);
+  const clash = useMemo(() => clashes(headsUps, entries), [headsUps, entries]);
   const nowIndex = rows.findIndex((r) => r.kind === 'now');
 
   return (
@@ -172,6 +180,7 @@ export function DayColumn({
                 ? CalendarDays
                 : null;
         const markColor = lead?.color ?? color.ink;
+        const clashing = clash.get(e.key);
         const awayLine = away
           ? `${away.person.name} at ${away.place} until ${minutesLabel(away.end)}`
           : null;
@@ -204,6 +213,7 @@ export function DayColumn({
                 row.ongoing ? 'Now' : time,
                 e.title,
                 e.sub,
+                clashing ? `clashes with ${clashing.with}` : null,
                 awayLine,
                 row.past ? (e.kind === 'task' ? 'was due earlier' : 'earlier today') : null,
               ]
@@ -220,10 +230,12 @@ export function DayColumn({
                   ? { backgroundColor: tint(lead.color, 0.1), borderColor: tint(lead.color, 0.45) }
                   : null,
                 nobody && styles.cardNobody,
+                clashing?.handoff && styles.cardClash,
                 (s.hovered || s.focused) && styles.cardHover,
                 s.pressed && styles.pressed,
               ]}
             >
+              {clashing?.handoff ? <HatchFill stroke={markColor} /> : null}
               <View style={styles.titleRow}>
                 {Icon ? (
                   <Icon size={15} strokeWidth={2.4} color={readableOn(markColor, color.surface)} />
@@ -244,6 +256,11 @@ export function DayColumn({
                   {e.sub}
                 </Text>
               </View>
+              {clashing ? (
+                <Text variant="meta" tone="ink" style={styles.clashText}>
+                  Clashes with {clashing.with}
+                </Text>
+              ) : null}
               {awayLine && away ? (
                 <Text
                   variant="meta"
@@ -259,6 +276,38 @@ export function DayColumn({
           </View>
         );
       })}
+    </View>
+  );
+}
+
+/** Hatching behind a clashing handoff's card, sized to it once laid out. */
+function HatchFill({ stroke }: { stroke: string }) {
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  return (
+    <View
+      testID="clash-hatch"
+      pointerEvents="none"
+      style={StyleSheet.absoluteFill}
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        setSize((p) =>
+          p.width === Math.round(width) && p.height === Math.round(height)
+            ? p
+            : { width: Math.round(width), height: Math.round(height) },
+        );
+      }}
+    >
+      {size.width > 0 ? (
+        <Hatch
+          width={size.width}
+          height={size.height}
+          radius={radius.md}
+          stroke={stroke}
+          background="transparent"
+          outline={false}
+          strokeOpacity={0.35}
+        />
+      ) : null}
     </View>
   );
 }
@@ -389,6 +438,8 @@ const styles = StyleSheet.create({
     cursor: 'pointer',
   },
   cardNobody: { borderColor: color.ink, borderStyle: 'dashed' },
+  cardClash: { borderColor: color.ink, overflow: 'hidden' },
+  clashText: { fontFamily: font.uiBold },
   cardHover: { borderColor: color.line2 },
   pressed: { opacity: 0.7 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] - 2 },

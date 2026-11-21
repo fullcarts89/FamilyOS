@@ -377,3 +377,70 @@ test.describe('Today: back after days away', () => {
     await expect(maya.getByText('4 missed')).toHaveCount(0);
   });
 });
+
+test.describe('Today: the day on a phone', () => {
+  test('a clashing handoff is hatched and says what it clashes with; the first block stays short', async ({
+    app,
+    mayaApi,
+  }) => {
+    const [today, june] = await Promise.all([mayaApi.today(), mayaApi.member('June')]);
+    const events = `/households/${mayaApi.householdId}/events`;
+    // Maya picks June up from swimming at 4pm, but her work call runs 3:45–4:30.
+    for (const body of [
+      {
+        title: 'Swim pickup',
+        kind: 'childcare',
+        startsAt: householdTime(today, '16:00').toISOString(),
+        endsAt: householdTime(today, '16:20').toISOString(),
+        memberIds: [mayaApi.memberId, june.id],
+        careMemberId: june.id,
+        careAction: 'pick_up',
+        carePlace: 'Dishman Pool',
+      },
+      {
+        title: 'Work call',
+        kind: 'work',
+        startsAt: householdTime(today, '15:45').toISOString(),
+        endsAt: householdTime(today, '16:30').toISOString(),
+        memberIds: [mayaApi.memberId],
+      },
+    ]) {
+      expect((await mayaApi.request(events, { method: 'POST', body })).status).toBe(201);
+    }
+    const maya = await app.as(MAYA.email);
+    await maya.clock.install({ time: householdTime(today, '07:45') });
+    await maya.reload();
+    await expect(greeting(maya, 'Maya')).toBeVisible();
+
+    if (!app.phone) {
+      // Desktop: the lanes mark it.
+      await expect(
+        maya.getByRole('button', { name: /^Work call, .*overlaps a handoff$/ }),
+      ).toBeVisible();
+      return;
+    }
+    // The first block: at most 6 rows (3 next, 3 tonight, then "N more tonight").
+    const nextRows = await maya
+      .getByRole('list', { name: 'Next up today' })
+      .getByRole('listitem')
+      .count();
+    const tonightRows = await maya
+      .getByRole('list', { name: 'Tonight' })
+      .getByRole('listitem')
+      .count();
+    expect(nextRows).toBeLessThanOrEqual(3);
+    expect(tonightRows).toBeLessThanOrEqual(3);
+    expect(nextRows + tonightRows).toBeLessThanOrEqual(6);
+
+    await maya.getByRole('button', { name: 'See the whole day' }).click();
+    const day = maya.getByRole('list', { name: 'The whole day, hour by hour' });
+    const pickup = day.getByRole('button', { name: /You pick June up\..*clashes with Work call/ });
+    await expect(pickup).toBeVisible();
+    await expect(pickup.getByTestId('clash-hatch')).toBeVisible();
+    await expect(pickup.getByText('Clashes with Work call')).toBeVisible();
+    // The other side of the clash says so too (not hatched: it isn't a handoff).
+    await expect(
+      day.getByRole('button', { name: /Work call\..*clashes with You pick June up/ }),
+    ).toBeVisible();
+  });
+});

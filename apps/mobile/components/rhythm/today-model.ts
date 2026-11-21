@@ -1,4 +1,4 @@
-import { localInstant, startOfLocalDay } from '@familyos/domain';
+import { localInstant, startOfLocalDay, type HeadsUp } from '@familyos/domain';
 import type { Activity, HandoffView, Occurrence, RhythmLaneView } from '../../lib/api';
 import { addDays, clock, daysBetween } from '../../lib/dates';
 import type { People } from '../../lib/people';
@@ -298,6 +298,28 @@ export function railRows(rows: DayRow[], rail: AwayRail): { first: number; last:
       }
   if (first === -1 || last === -1 || last < first) return null;
   return { first, last };
+}
+
+/**
+ * Handoffs that clash with another of the same adult's events, and those events: by entry key,
+ * what it clashes with ("Work call", "June’s pickup"). `handoff` marks the handoff itself.
+ */
+export function clashes(
+  headsUps: HeadsUp[],
+  entries: Pick<NextEntry, 'key' | 'title'>[],
+): Map<string, { with: string; handoff: boolean }> {
+  const title = new Map(entries.map((e) => [e.key, e.title]));
+  const out = new Map<string, { with: string; handoff: boolean }>();
+  for (const h of headsUps) {
+    if (h.type !== 'handoff_conflict') continue;
+    const other = title.get(h.conflictingOccurrenceKey);
+    const handoff = title.get(h.occurrenceKey);
+    if (other && !out.get(h.occurrenceKey)?.handoff)
+      out.set(h.occurrenceKey, { with: other, handoff: true });
+    if (handoff && !out.has(h.conflictingOccurrenceKey))
+      out.set(h.conflictingOccurrenceKey, { with: handoff, handoff: false });
+  }
+  return out;
 }
 
 /** Handoffs on a day by the occurrence they belong to (who does them is on the handoff). */

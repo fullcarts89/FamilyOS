@@ -367,6 +367,7 @@ export default function Today() {
       entries={entries}
       lanes={rhythm.lanes}
       handoffs={rhythm.handoffs}
+      headsUps={rhythm.headsUps}
       people={people}
       now={rhythm.date === rhythm.today ? now : null}
       onOpen={openOccurrence}
@@ -648,6 +649,12 @@ export default function Today() {
               <View style={styles.colMain}>{headsUpBlock ?? sinceBlock}</View>
               <View style={styles.colSide}>{headsUpBlock ? sinceBlock : null}</View>
             </View>
+          ) : activity?.length ? (
+            // What the other adult changed comes first when there is some, well above the lists.
+            <>
+              {sinceBlock}
+              {headsUpBlock}
+            </>
           ) : (
             <>
               {headsUpBlock}
