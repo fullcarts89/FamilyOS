@@ -25,7 +25,7 @@ function requireDb() {
 
 // Monday 2026-11-16, 07:00 in Los Angeles.
 const NOW = new Date('2026-11-16T15:00:00Z');
-const SECRET = 'private-0123456789abcdef';
+const SECRET = 'private-0123456789abcdef'; // gitleaks:allow
 const google = readFileSync(
   new URL('../../../packages/calendar/src/fixtures/google.ics', import.meta.url),
   'utf8',
