@@ -3,11 +3,14 @@
 # the migrations on origin/main (what production runs) → a realistic household → fingerprint →
 # every newer migration → proves each pre-existing row is unchanged. Drops the database after.
 # Run before applying new migrations to production:  bash scripts/ops/upgrade-rehearsal.sh
+# REHEARSAL_SERVER_URL points it at another Postgres server (no database name; the login needs
+# CREATEDB), for example postgresql://postgres:postgres@127.0.0.1:55460. Default: the local stack.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 DB=familyos_upgrade_rehearsal
-ADMIN=postgresql://postgres:postgres@127.0.0.1:55322/postgres
-URL=postgresql://postgres:postgres@127.0.0.1:55322/$DB
+SERVER=${REHEARSAL_SERVER_URL:-postgresql://postgres:postgres@127.0.0.1:55322}
+ADMIN=$SERVER/postgres
+URL=$SERVER/$DB
 q() { psql "$URL" -v ON_ERROR_STOP=1 -qAt "$@"; }
 
 psql "$ADMIN" -qc "drop database if exists $DB" -c "create database $DB"
