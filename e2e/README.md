@@ -63,7 +63,8 @@ project:
 | `complete-a-task-{desktop,phone}.gif` | tasks.spec.ts: complete, then undo |
 | `complete-pet-care-routine-*.gif` | routines.spec.ts: Biscuit's flea meds |
 | `take-off-partners-plate-*.gif` | tasks.spec.ts: "Taken off Theo's plate" |
-| `resolve-childcare-conflict-*.gif` | rhythm.spec.ts: "Ask Theo to cover", "Pickup covered" |
+| `resolve-childcare-conflict-*.gif` | rhythm.spec.ts: Theo accepts Maya's request to cover the pickup |
+| `ask-to-cover-accepted-*.gif` | two-adults.spec.ts: Theo, on his own phone, accepts |
 | `complete-project-milestone-*.gif` | tasks.spec.ts: "Halfway through Hall bathroom renovation" |
 | `return-home-after-plan-changed-*.gif` | return-home.spec.ts: "Since you last looked" |
 | `weekly-reset-full-session-*.gif` | planning.spec.ts: opening to “Your week has a plan” |
@@ -82,11 +83,12 @@ In CI, run the **E2E** workflow by hand with *Record* on; the GIFs are an artifa
 | `capture.spec.ts` | "Call the plumber tomorrow @theo #reno": preview, saved as Theo's, due tomorrow, a step of the renovation |
 | `tasks.spec.ts` | complete + undo restores status/owner/due; "I'll take it"; take it off Theo's plate; project halfway milestone |
 | `routines.spec.ts` | Biscuit's monthly flea meds done, next turn the 1st of the following month |
-| `rhythm.spec.ts` | Thursday's pickup clash resolved from Today ("Ask Theo to cover") and covered on the Week; a weekly event with a pickup handoff, this week and next |
+| `rhythm.spec.ts` | Thursday's pickup clash resolved from Today: "Ask Theo to cover" leaves it Maya's ("Asked Theo · waiting") until Theo accepts in his own browser, then it's covered on the Week; a weekly event with a pickup handoff, this week and next |
+| `two-adults.spec.ts` | two browsers, Maya and Theo: a request to cover accepted, declined ("Theo can't make it") and taken back; an ordinary pickup's request on Theo's Today; covering for the other is never direct (API 422, the Reset asks, the plan commits with it open); a vote and the commit on the other screen within 5 s; notes kept on leaving, and a stale save showing both versions |
 | `household.spec.ts` | add a pet, then its monthly care routine; invite an adult, claim with a password in a fresh browser, sign out and in; the link works once |
 | `isolation.spec.ts` | a second household's owner sees nothing of the Riveras in the app; their API calls get 404 |
 | `return-home.spec.ts` | Theo completes something on his device; Maya returns to Today and reads it in "Since you last looked" |
-| `planning.spec.ts` | the full Weekly Reset (loose ends kept, June's week covered with the board updating, dinners, the commit, open decisions marked); a decision settled by Theo's vote, acknowledged once; groceries checked, unchecked, seen on Theo's phone, cleared; a contact added, searched and shown with its linked task; a contact linked from a task (picked, then a new one added inline), with Call and Text on the task; the Monarch CSV import (`fixtures/monarch-budget.csv`) with a transactions export refused first |
+| `planning.spec.ts` | the full Weekly Reset (loose ends kept, June's handoffs asked of Theo and accepted on his phone with the board updating, dinners, the commit, open decisions marked); the chapter title taking the focus, 44px steps, readable badges; the plan's notes and open decisions on Today and dinners on the Week; dinner and grocery confirmations; a decision settled by Theo's vote, acknowledged once; groceries checked, unchecked, seen on Theo's phone, cleared; a contact added, searched and shown with its linked task; a contact linked from a task (picked, then a new one added inline), with Call and Text on the task; the Monarch CSV import (`fixtures/monarch-budget.csv`) with a transactions export refused first |
 
 The journeys hold under any time of day: they never depend on what "now" is beyond what the seed
 makes relative to today. One exception is skipped with a reason: Thursday after 5:30pm, when
