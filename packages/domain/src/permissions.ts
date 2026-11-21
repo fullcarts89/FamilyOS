@@ -6,6 +6,17 @@
 export const MEMBER_ROLES = ['owner', 'adult', 'caregiver', 'child'] as const;
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 
+/**
+ * The roles that hold an account, so can own tasks and take routine turns. An allow-list on
+ * purpose: a role this code doesn't know (a newer release adds pets, for example) is never
+ * treated as an adult if the app is rolled back.
+ */
+export const ASSIGNABLE_ROLES = ['owner', 'adult', 'caregiver'] as const;
+
+/** True only for a role in ASSIGNABLE_ROLES. Takes any string, since the database may know more. */
+export const isAssignableRole = (role: string): boolean =>
+  (ASSIGNABLE_ROLES as readonly string[]).includes(role);
+
 export const ACTIONS = [
   'household.read',
   'member.invite',

@@ -1,4 +1,4 @@
-import { dueOptions } from '@familyos/domain';
+import { dueOptions, isAssignableRole } from '@familyos/domain';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Chip, ListScreen } from '../components/items';
@@ -26,7 +26,7 @@ export default function Capture() {
   }, [household]);
 
   if (!household) return null;
-  const assignable = members.filter((m) => m.role !== 'child');
+  const assignable = members.filter((m) => isAssignableRole(m.role));
 
   const save = async (inbox: boolean) => {
     setBusy(true);

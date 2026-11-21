@@ -9,7 +9,14 @@ import { useHousehold } from '../lib/household';
 import { goBack } from '../lib/navigation';
 import { useTheme } from '../lib/theme';
 
-const ROLE_LABEL = { owner: 'Owner', adult: 'Adult', caregiver: 'Caregiver', child: 'Child' };
+const ROLE_LABEL: Record<string, string> = {
+  owner: 'Owner',
+  adult: 'Adult',
+  caregiver: 'Caregiver',
+  child: 'Child',
+};
+// A role this version doesn't know (a newer release's pets, say) gets a neutral word, never "Adult".
+const roleLabel = (role: string) => ROLE_LABEL[role] ?? 'Member';
 
 // Household members and invites (PRD WF-05). Invites have no email of their own yet: the owner
 // gets a one-time link here and sends it however they like.
@@ -83,7 +90,7 @@ export default function HouseholdScreen() {
       <Section title="Members">
         {members.map((m) => (
           <Body key={m.id}>
-            {m.displayName} · {ROLE_LABEL[m.role]}
+            {m.displayName} · {roleLabel(m.role)}
           </Body>
         ))}
       </Section>
@@ -134,7 +141,7 @@ export default function HouseholdScreen() {
           {pending.map((i) => (
             <View key={i.id} style={styles.pending}>
               <Body>
-                {i.email} · {ROLE_LABEL[i.role]}
+                {i.email} · {roleLabel(i.role)}
               </Body>
               <Chip label="Cancel invite" selected={false} onPress={() => revoke(i.id)} />
             </View>

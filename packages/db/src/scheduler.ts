@@ -1,4 +1,5 @@
 import {
+  ASSIGNABLE_ROLES,
   addDays,
   dueAfterCompletion,
   isCalendarRule,
@@ -41,7 +42,7 @@ async function assignableMembers(db: Db, householdId: string): Promise<Set<strin
     .select('id')
     .where('household_id', '=', householdId)
     .where('status', '=', 'active')
-    .where('role', '!=', 'child')
+    .where('role', 'in', ASSIGNABLE_ROLES)
     .execute();
   return new Set(rows.map((r) => r.id));
 }

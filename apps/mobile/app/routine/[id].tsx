@@ -1,4 +1,4 @@
-import { formatDue } from '@familyos/domain';
+import { formatDue, isAssignableRole } from '@familyos/domain';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -169,7 +169,7 @@ export default function RoutineScreen() {
       {!routine.ended && routine.rotation.length === 0 && (
         <Section title="Who does it" row>
           {members
-            .filter((m) => m.role !== 'child')
+            .filter((m) => isAssignableRole(m.role))
             .map((m) => (
               <Chip
                 key={m.id}
