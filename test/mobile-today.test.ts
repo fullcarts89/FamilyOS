@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { NextEntry } from '../apps/mobile/components/rhythm/NextUp';
-import type { Activity } from '../apps/mobile/lib/api';
+import type { Activity, Occurrence } from '../apps/mobile/lib/api';
 import {
+  allDayOn,
   awayRails,
   awayWords,
   byStart,
@@ -298,5 +299,40 @@ describe('back after days away', () => {
         needYou: 0,
       }),
     ).toBe('While you were away: nothing needs you.');
+  });
+});
+
+describe('all-day events', () => {
+  const allDay = (
+    key: string,
+    title: string,
+    from: string,
+    to: string,
+    extra: Partial<Occurrence> = {},
+  ) =>
+    ({
+      key,
+      title,
+      allDay: true,
+      skipped: false,
+      startsAt: from,
+      endsAt: to,
+      memberIds: [],
+      ...extra,
+    }) as Occurrence;
+  // Local midnights in Los Angeles (UTC-8).
+  const day = (d: string) => `${d}T08:00:00.000Z`;
+
+  it('lists today’s all-day events once each, including one that spans several days', () => {
+    const closed = allDay('closed', 'School closed', day('2026-11-19'), day('2026-11-20'));
+    const trip = allDay('trip', 'Grandma visits', day('2026-11-18'), day('2026-11-22'));
+    const tomorrow = allDay('tmrw', 'Tomorrow thing', day('2026-11-20'), day('2026-11-21'));
+    const skipped = allDay('skip', 'Skipped', day('2026-11-19'), day('2026-11-20'), {
+      skipped: true,
+    });
+    const timed = { ...closed, key: 'timed', allDay: false };
+    expect(
+      allDayOn([closed, trip, tomorrow, skipped, timed, closed], DATE, TZ).map((o) => o.title),
+    ).toEqual(['Grandma visits', 'School closed']);
   });
 });

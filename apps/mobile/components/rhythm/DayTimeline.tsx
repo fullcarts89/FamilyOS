@@ -18,6 +18,7 @@ import {
   spanOn,
   timeOf,
 } from '../../lib/rhythm';
+import { AllDay } from './AllDay';
 import { readableOn, shortTitle, solidFill, textOn, textShade } from './today-model';
 
 /** Lane heads (avatar, name, a two-line note) on tablet and desktop. */
@@ -99,6 +100,7 @@ export function DayTimeline({
   hidden,
   onToggleLane,
   onOpen,
+  allDay = [],
 }: {
   date: string;
   timeZone: string;
@@ -112,6 +114,8 @@ export function DayTimeline({
   hidden?: Set<string>;
   onToggleLane?: (memberId: string) => void;
   onOpen: (o: Occurrence) => void;
+  /** The day's all-day events: a compact band above the lanes. */
+  allDay?: Occurrence[];
 }) {
   const [width, setWidth] = useState(0);
   const onLayout = (e: LayoutChangeEvent) => setWidth(Math.round(e.nativeEvent.layout.width));
@@ -188,6 +192,11 @@ export function DayTimeline({
               </Pressable>
             );
           })}
+        </View>
+      ) : null}
+      {width > 0 && allDay.length > 0 ? (
+        <View style={{ marginLeft: head }}>
+          <AllDay events={allDay} people={people} onOpen={onOpen} variant="band" />
         </View>
       ) : null}
       {width > 0 && model.lanes.length === 0 ? (

@@ -1,5 +1,5 @@
 import { localInstant, startOfLocalDay } from '@familyos/domain';
-import type { Activity, HandoffView, RhythmLaneView } from '../../lib/api';
+import type { Activity, HandoffView, Occurrence, RhythmLaneView } from '../../lib/api';
 import { addDays, clock, daysBetween } from '../../lib/dates';
 import type { People } from '../../lib/people';
 import { hourMark, localParts, spanOn } from '../../lib/rhythm';
@@ -376,4 +376,21 @@ export function awayWords({
   const need =
     needYou === 0 ? 'nothing needs you' : `${needYou} need${needYou === 1 ? 's' : ''} you`;
   return `While you were away: ${done.length ? `${done.join(', ')}; ` : ''}${need}.`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// All-day events
+
+/** Today's all-day events (school closed, a holiday), once each, in title order. */
+export function allDayOn(occurrences: Occurrence[], date: string, timeZone: string): Occurrence[] {
+  const dayStart = startOfLocalDay(date, timeZone).epochMilliseconds;
+  const dayEnd = startOfLocalDay(addDays(date, 1), timeZone).epochMilliseconds;
+  const seen = new Map<string, Occurrence>();
+  for (const o of occurrences) {
+    if (!o.allDay || o.skipped || seen.has(o.key)) continue;
+    const s = new Date(o.startsAt).getTime();
+    const e = new Date(o.endsAt).getTime();
+    if (s < dayEnd && e > dayStart) seen.set(o.key, o);
+  }
+  return [...seen.values()].sort((a, b) => a.title.localeCompare(b.title));
 }

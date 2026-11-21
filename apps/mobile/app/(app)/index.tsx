@@ -2,12 +2,13 @@ import { router } from 'expo-router';
 import { ArrowRight, ChevronDown, ChevronUp, Inbox, Plus } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, Text as Span, RefreshControl, StyleSheet, View } from 'react-native';
+import { AllDay } from '../../components/rhythm/AllDay';
 import { DayColumn } from '../../components/rhythm/DayColumn';
 import { DayTimeline } from '../../components/rhythm/DayTimeline';
 import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet';
 import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
 import { NextUp, dayEntries } from '../../components/rhythm/NextUp';
-import type { LateCounts } from '../../components/rhythm/today-model';
+import { allDayOn, type LateCounts } from '../../components/rhythm/today-model';
 import { WhileAway } from '../../components/rhythm/WhileAway';
 import { SinceLastLooked } from '../../components/rhythm/SinceLastLooked';
 import { WeekStrip } from '../../components/rhythm/WeekStrip';
@@ -139,6 +140,18 @@ export default function Today() {
   const entries = useMemo(
     () => (rhythm ? dayEntries(rhythm.lanes, people, timeZone) : []),
     [rhythm, people, timeZone],
+  );
+  // All-day events ("School closed") never sit on the timed lines: they get their own band.
+  const allDay = useMemo(
+    () =>
+      rhythm
+        ? allDayOn(
+            [...rhythm.lanes.flatMap((l) => l.occurrences), ...(week?.occurrences ?? [])],
+            rhythm.date,
+            timeZone,
+          )
+        : [],
+    [rhythm, week, timeZone],
   );
   const occurrences = useMemo(() => {
     const map = new Map<string, Occurrence>();
@@ -343,6 +356,7 @@ export default function Today() {
       hidden={hiddenLanes}
       onToggleLane={toggleLane}
       onOpen={openOccurrence}
+      allDay={allDay}
     />
   ) : null;
 
@@ -588,6 +602,11 @@ export default function Today() {
         <FadeIn>
           {phone ? (
             <View style={styles.blockTight}>
+              {allDay.length > 0 ? (
+                <View style={styles.allDay}>
+                  <AllDay events={allDay} people={people} onOpen={openOccurrence} variant="lines" />
+                </View>
+              ) : null}
               {nextUp}
               <Pressable
                 accessibilityRole="button"
@@ -735,6 +754,7 @@ const styles = StyleSheet.create({
   headText: { flex: 1, gap: space[2] - 2, minWidth: 0, paddingTop: space[1] },
   headSide: { width: 400, flexShrink: 0 },
   stack: { gap: space[4] },
+  allDay: { marginBottom: space[4] },
   headline: {
     fontFamily: font.display,
     fontSize: 25,

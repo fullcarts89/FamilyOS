@@ -279,6 +279,29 @@ test.describe('Today: your own things first', () => {
       .toBe(true);
     expect((await api.item('Call the vet')).dueOn).toBeNull();
   });
+
+  test('an all-day event shows on Today, with whose it is', async ({ app, mayaApi }) => {
+    const [today, june] = await Promise.all([mayaApi.today(), mayaApi.member('June')]);
+    const res = await mayaApi.request(`/households/${mayaApi.householdId}/events`, {
+      method: 'POST',
+      body: {
+        title: 'School closed',
+        allDay: true,
+        startsOn: today,
+        endsOn: today,
+        memberIds: [june.id],
+      },
+    });
+    expect(res.status).toBe(201);
+    const maya = await app.as(MAYA.email);
+    const event = maya.getByRole('button', { name: 'All day: School closed, June' });
+    await expect(event).toBeVisible();
+    await expect(maya.getByRole('list', { name: 'All day today' })).toBeVisible();
+    if (app.phone) expect(await fullyOnScreen(maya, event, true)).toBe(true);
+    // It opens like any event.
+    await event.click();
+    await expect(maya.getByRole('dialog').getByText('School closed').first()).toBeVisible();
+  });
 });
 
 test.describe('Today: back after days away', () => {
