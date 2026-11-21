@@ -350,70 +350,72 @@ function BlockRow({
   const done = isDone(task);
   const fill = tint(c, 0.16);
   return (
-    <FadeOut leaving={settling === 'leaving'}>
-      <View role="listitem" style={styles.itemRow}>
-        <View style={styles.ruler}>
-          <Text variant="meta" tone={past ? 'muted' : 'ink'} style={styles.itemTime} aria-hidden>
-            {time}
-          </Text>
-        </View>
-        <View style={styles.track}>
-          {line}
-          {rails}
-          <Marker people={entry.people} care={false} nobody={false} hollow={past} fallback={c} />
-        </View>
-        <View style={[styles.block, { backgroundColor: fill, borderLeftColor: c }]}>
-          <View style={styles.blockCheck}>
-            <RoundCheckbox
-              checked={done}
-              waiting={!done && !canTick(task)}
-              color={c}
-              size={22}
-              label={`${done ? 'Reopen' : 'Complete'} ${task.title}, ${range}`}
-              onPress={() => (done ? onReopen?.(task) : onComplete?.(task))}
-              disabled={done ? !onReopen : !onComplete}
-            />
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={[
-              ongoing ? 'Now' : time,
-              entry.title,
-              entry.sub,
-              done ? 'done' : past ? 'was due earlier' : null,
-            ]
-              .filter(Boolean)
-              .join('. ')}
-            onPress={() => router.push({ pathname: '/item/[id]', params: { id: task.id } })}
-            style={(s: PressState) => [
-              styles.blockPress,
-              (s.hovered || s.focused) && styles.blockHover,
-              s.pressed && styles.pressed,
-            ]}
-          >
-            <Text
-              variant="title"
-              color={done ? textShade(color.muted, fill) : color.ink}
-              style={[styles.title, done && styles.struck]}
-            >
-              {entry.title}
+    <View role="listitem">
+      <FadeOut leaving={settling === 'leaving'}>
+        <View style={styles.itemRow}>
+          <View style={styles.ruler}>
+            <Text variant="meta" tone={past ? 'muted' : 'ink'} style={styles.itemTime} aria-hidden>
+              {time}
             </Text>
-            <View style={styles.subRow}>
-              {ongoing && !done ? (
-                <View style={styles.nowTag}>
-                  <Text variant="small" tone="onInk" style={styles.nowText}>
-                    Now
-                  </Text>
-                </View>
-              ) : null}
-              <Text variant="meta" color={textShade(color.muted, fill)} style={styles.title}>
-                {entry.sub}
-              </Text>
+          </View>
+          <View style={styles.track}>
+            {line}
+            {rails}
+            <Marker people={entry.people} care={false} nobody={false} hollow={past} fallback={c} />
+          </View>
+          <View style={[styles.block, { backgroundColor: fill, borderLeftColor: c }]}>
+            <View style={styles.blockCheck}>
+              <RoundCheckbox
+                checked={done}
+                waiting={!done && !canTick(task)}
+                color={c}
+                size={22}
+                label={`${done ? 'Reopen' : 'Complete'} ${task.title}, ${range}`}
+                onPress={() => (done ? onReopen?.(task) : onComplete?.(task))}
+                disabled={done ? !onReopen : !onComplete}
+              />
             </View>
-          </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={[
+                ongoing ? 'Now' : time,
+                entry.title,
+                entry.sub,
+                done ? 'done' : past ? 'was due earlier' : null,
+              ]
+                .filter(Boolean)
+                .join('. ')}
+              onPress={() => router.push({ pathname: '/item/[id]', params: { id: task.id } })}
+              style={(s: PressState) => [
+                styles.blockPress,
+                (s.hovered || s.focused) && styles.blockHover,
+                s.pressed && styles.pressed,
+              ]}
+            >
+              <Text
+                variant="title"
+                color={done ? textShade(color.muted, fill) : color.ink}
+                style={[styles.title, done && styles.struck]}
+              >
+                {entry.title}
+              </Text>
+              <View style={styles.subRow}>
+                {ongoing && !done ? (
+                  <View style={styles.nowTag}>
+                    <Text variant="small" tone="onInk" style={styles.nowText}>
+                      Now
+                    </Text>
+                  </View>
+                ) : null}
+                <Text variant="meta" color={textShade(color.muted, fill)} style={styles.title}>
+                  {entry.sub}
+                </Text>
+              </View>
+            </Pressable>
+          </View>
         </View>
-      </View>
-    </FadeOut>
+      </FadeOut>
+    </View>
   );
 }
 

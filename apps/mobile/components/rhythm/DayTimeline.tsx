@@ -708,9 +708,7 @@ function TaskBlock({
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={
-          label && label !== b.label ? `${label}. ${b.a11y}` : `${b.a11y}${done ? ', done' : ''}`
-        }
+        accessibilityLabel={`${b.a11y}${done ? ', done' : ''}`}
         onPress={() => router.push({ pathname: '/item/[id]', params: { id: task.id } })}
         style={(s: PressState) => [
           StyleSheet.absoluteFill,
@@ -955,7 +953,8 @@ function buildModel({
           label: `${t.title} · ${range}`,
           time: '',
           sub: '',
-          a11y: `${t.title}, ${range}, ${person.isMe ? 'yours' : `${person.name}’s`}. Open it`,
+          // Starts with the words it shows (the full label; shorter ones are its prefixes).
+          a11y: `${t.title} · ${range}, ${person.isMe ? 'yours' : `${person.name}’s`}. Open it`,
           care: false,
           imported: false,
           conflict: false,
