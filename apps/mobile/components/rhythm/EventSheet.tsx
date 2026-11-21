@@ -234,12 +234,15 @@ function OccurrenceView({
     .map((id) => people.byId(id))
     .filter((p): p is Person => !!p);
   const coverOptions = people.adults.filter((p) => !adults.some((a) => a.id === p.id));
-  const exception = series?.exceptions.find((e) => e.date === o.date);
+  // This one is covered or skipped: from the series once it's loaded, from the occurrence
+  // itself before that (so a covered one never offers an ask the server would refuse).
+  const exception =
+    series?.exceptions.find((e) => e.date === o.date)?.kind ?? (o.cover ? 'cover' : null);
   // Undoing a cover hands the occurrence back to whoever usually has it: only they do that
   // (from their own phone), so nobody gets a handoff they didn't say yes to.
   const usual = o.cover?.replacedMemberIds.find((id) => !people.byId(id)?.caredFor) ?? null;
   const canRestore =
-    exception?.kind === 'skip' || !usual || usual === people.me?.id || !people.byId(usual);
+    exception === 'skip' || !usual || usual === people.me?.id || !people.byId(usual);
   const asked = request.kind === 'none' ? null : people.byId(request.request.askedMemberId);
   const asker = request.kind === 'none' ? null : people.byId(request.request.askedByMemberId);
   const noFrom = request.kind === 'none' ? people.byId(declinedBy(o)) : null;
@@ -342,7 +345,7 @@ function OccurrenceView({
             {exception ? (
               canRestore ? (
                 <Button
-                  title={exception.kind === 'skip' ? 'Put it back' : 'Back to the usual'}
+                  title={exception === 'skip' ? 'Put it back' : 'Back to the usual'}
                   variant="secondary"
                   size="sm"
                   busy={busy === 'restore'}
