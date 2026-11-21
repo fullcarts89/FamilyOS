@@ -72,6 +72,7 @@ export function sendNotifications(
               partnerContext: data.partnerContext,
               log: data.logs.get(recipient.memberId) ?? [],
               lastSeenAt: recipient.lastSeenAt,
+              coverRequests: data.coverRequests,
             }).map((planned) => ({ recipient, planned })),
           );
           const logged = await claimNotifications(

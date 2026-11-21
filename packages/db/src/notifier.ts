@@ -4,6 +4,7 @@ import {
   expandEvents,
   isCaredFor,
   localDateOf,
+  occurrenceOf,
   startOfLocalDay,
   MAX_EVENT_DAYS,
   type EventOccurrence,
@@ -12,6 +13,7 @@ import {
   type NotificationLogEntry,
   type NotificationSettings,
   type NotifierAuditRow,
+  type NotifierCoverRequest,
   type NotifierItem,
   type PartnerContext,
   type RhythmMember,
@@ -51,6 +53,8 @@ export interface HouseholdNotificationData {
   audit: NotifierAuditRow[];
   partnerContext: PartnerContext;
   logs: Map<string, NotificationLogEntry[]>;
+  /** Requests made or answered in the last day, about care events. */
+  coverRequests: NotifierCoverRequest[];
 }
 
 /** Audit actions that can be a partner change (packages/domain/src/notifications.ts). */
@@ -421,6 +425,89 @@ export async function loadNotificationData(
     ),
   };
 
+  // Cover requests made or answered lately, with what and when (care events only: the notifier
+  // sees no others, and then names neither).
+  const since = new Date(now.getTime() - AUDIT_HOURS * 3600 * 1000);
+  const requestRows = await db
+    .selectFrom('app.cover_request')
+    .select([
+      'id',
+      'event_id',
+      'occurrence_date',
+      'asked_member_id',
+      'asked_by_member_id',
+      'status',
+      'created_at',
+      'responded_at',
+    ])
+    .where('household_id', '=', householdId)
+    .where((eb) =>
+      eb.or([
+        eb.and([eb('status', '=', 'pending'), eb('created_at', '>=', since)]),
+        eb.and([eb('status', 'in', ['accepted', 'declined']), eb('responded_at', '>=', since)]),
+      ]),
+    )
+    .orderBy('created_at')
+    .limit(200)
+    .execute();
+  const requestEventIds = [...new Set(requestRows.map((r) => r.event_id))];
+  const requestEvents = requestEventIds.length
+    ? await db
+        .selectFrom('app.event')
+        .select([
+          'id',
+          'kind',
+          'starts_at',
+          'ends_at',
+          'all_day',
+          'timezone',
+          'recurrence',
+          'recurs_until',
+          'care_member_id',
+          'care_action',
+          'care_place',
+        ])
+        .where('household_id', '=', householdId)
+        .where('id', 'in', requestEventIds)
+        .execute()
+    : [];
+  const coverRequests = requestRows.map((r): NotifierCoverRequest => {
+    const e = requestEvents.find((x) => x.id === r.event_id);
+    const occurrence = e
+      ? occurrenceOf(
+          {
+            id: e.id,
+            title: '',
+            kind: e.kind,
+            startsAt: iso(e.starts_at),
+            endsAt: iso(e.ends_at),
+            allDay: e.all_day,
+            timezone: e.timezone,
+            recurrence: e.recurrence,
+            recursUntil: e.recurs_until,
+            memberIds: [],
+            careMemberId: e.care_member_id,
+            careAction: e.care_action,
+            carePlace: e.care_place,
+            exceptions: [],
+          },
+          r.occurrence_date,
+        )
+      : null;
+    return {
+      id: r.id,
+      askedMemberId: r.asked_member_id,
+      askedByMemberId: r.asked_by_member_id,
+      status: r.status,
+      date: r.occurrence_date,
+      createdAt: iso(r.created_at),
+      respondedAt: r.responded_at === null ? null : iso(r.responded_at),
+      careMemberId: e?.care_member_id ?? null,
+      careAction: e?.care_action ?? null,
+      startsAt: occurrence?.startsAt ?? null,
+    };
+  });
+
   const logRows = await db
     .selectFrom('app.notification_log')
     .select(['member_id', 'kind', 'dedupe_key', 'sent_at'])
@@ -449,6 +536,7 @@ export async function loadNotificationData(
     audit,
     partnerContext,
     logs,
+    coverRequests,
   };
 }
 

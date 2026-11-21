@@ -38,6 +38,7 @@ describe.skipIf(!db)('API security (G1)', () => {
   let bEventId: string;
   let aEventId: string;
   let bCalendarId: string;
+  let bCoverRequestId: string;
   let bContactId: string;
   let bDecisionId: string;
   let bOptionId: string;
@@ -88,6 +89,20 @@ describe.skipIf(!db)('API security (G1)', () => {
           url_nonce: Buffer.alloc(12, 2),
           url_hint: 'calendar.example.test/…',
           created_by_member_id: b.adult.id,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow()
+    ).id;
+    // B's adult has asked B's owner to cover Tuesday's drop-off.
+    bCoverRequestId = (
+      await requireDb()
+        .insertInto('app.cover_request')
+        .values({
+          household_id: b.id,
+          event_id: bEventId,
+          occurrence_date: '2026-11-17',
+          asked_member_id: b.owner.id,
+          asked_by_member_id: b.adult.id,
         })
         .returning('id')
         .executeTakeFirstOrThrow()
@@ -291,6 +306,11 @@ describe.skipIf(!db)('API security (G1)', () => {
             .executeTakeFirstOrThrow()
         ).contact_id,
       },
+      coverRequest: await requireDb()
+        .selectFrom('app.cover_request')
+        .select(['status', 'version', 'responded_at'])
+        .where('id', '=', bCoverRequestId)
+        .executeTakeFirstOrThrow(),
       calendar: await requireDb()
         .selectFrom('app.calendar_source')
         .select(['label', 'member_id', 'version', 'status', 'last_synced_at'])
@@ -395,6 +415,22 @@ describe.skipIf(!db)('API security (G1)', () => {
         { action: 'cover', memberId: a.adult.id },
       ],
       ['DELETE', `/households/${a.id}/events/${bEventId}/occurrences/2026-11-16`],
+      // Cover requests: asking, listing, answering and cancelling B's.
+      [
+        'POST',
+        `/households/${b.id}/events/${bEventId}/occurrences/2026-11-16/cover-requests`,
+        { memberId: b.owner.id },
+      ],
+      [
+        'POST',
+        `/households/${a.id}/events/${bEventId}/occurrences/2026-11-16/cover-requests`,
+        { memberId: a.adult.id },
+      ],
+      ['GET', `/households/${b.id}/cover-requests`],
+      ...(['accept', 'decline', 'cancel'] as const).flatMap((verb): [string, string][] => [
+        ['POST', `/households/${b.id}/cover-requests/${bCoverRequestId}/${verb}`],
+        ['POST', `/households/${a.id}/cover-requests/${bCoverRequestId}/${verb}`],
+      ]),
       // Calendar subscriptions.
       ['GET', `/households/${b.id}/calendars`],
       [

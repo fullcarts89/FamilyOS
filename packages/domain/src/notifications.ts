@@ -18,6 +18,8 @@ import type { WorkItemStatus } from './work-item';
  * - partner changes, at most one batch an hour: took something off your plate, completed
  *   something of yours, covered your handoff, settled a decision you voted on.
  * - Weekly Reset reminder at a chosen weekly time, only while that week isn't planned.
+ * - cover requests: the adult asked to cover a handoff hears about it, and the adult who asked
+ *   hears the answer (behind the handoff reminders switch, waiting out quiet hours).
  *
  * Quiet hours (22:00–06:00 unless the member changes them) are always respected. A check-in,
  * Weekly Reset reminder or partner batch that falls in them waits for their end. A handoff
@@ -34,6 +36,8 @@ export const NOTIFICATION_KINDS = [
   'handoff_reminder',
   'partner_changes',
   'weekly_reset_reminder',
+  'cover_request',
+  'cover_response',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
@@ -78,6 +82,8 @@ export const HANDOFF_MIN_NOTICE_MINUTES = 5;
 export const PARTNER_BATCH_MINUTES = 60;
 /** How far back partner changes are collected after the last batch (a night's quiet hours). */
 export const PARTNER_LOOKBACK_HOURS = 24;
+/** A cover request or answer older than this (the worker was down) isn't announced. */
+export const COVER_NOTICE_HOURS = 24;
 
 const MINUTE_MS = 60_000;
 
@@ -291,6 +297,26 @@ export function partnerBatchCursor(dedupeKey: string): bigint | null {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Cover requests
+// ---------------------------------------------------------------------------------------------
+
+/** A request to cover one occurrence, as the notifier reads it. */
+export interface NotifierCoverRequest {
+  id: string;
+  askedMemberId: string;
+  askedByMemberId: string;
+  status: 'pending' | 'accepted' | 'declined' | 'cancelled';
+  /** The occurrence's local date. */
+  date: string;
+  createdAt: string;
+  respondedAt: string | null;
+  /** What and when, when the notifier can see the event (a care handoff); else null. */
+  careMemberId: string | null;
+  careAction: CareAction | null;
+  startsAt: string | null;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Planning what's due for one member
 // ---------------------------------------------------------------------------------------------
 
@@ -323,6 +349,8 @@ export interface NotificationPlanInput {
   log: readonly NotificationLogEntry[];
   /** When the member last looked at the app: their first partner batch starts there. */
   lastSeenAt?: string | null;
+  /** The household's recent cover requests and answers. */
+  coverRequests?: readonly NotifierCoverRequest[];
 }
 
 export interface PlannedNotification {
@@ -537,6 +565,57 @@ export function planNotifications(input: NotificationPlanInput): PlannedNotifica
     }
   }
 
+  // Cover requests: to the adult asked, and the answer to the adult who asked. Behind the
+  // handoff reminders switch; they wait out quiet hours.
+  if (settings.handoffReminders && !inQuietHours(now, timeZone, quiet)) {
+    const recent = (at: string) =>
+      !before(Temporal.Instant.from(at), plusMinutes(now, -COVER_NOTICE_HOURS * 60));
+    const ahead = (r: NotifierCoverRequest) =>
+      r.startsAt === null || before(now, Temporal.Instant.from(r.startsAt));
+    const what = (r: NotifierCoverRequest) => {
+      const day = formatDay(r.date);
+      if (r.careMemberId === null) return `A handoff on ${day}.`;
+      const label = careLabel(r.careMemberId, r.careAction, nameOf, true);
+      const time = r.startsAt ? ` at ${formatClock(r.startsAt, timeZone)}` : '';
+      return `${capitalize(label)} on ${day}${time}.`;
+    };
+    for (const r of input.coverRequests ?? []) {
+      if (r.status === 'pending' && r.askedMemberId === memberId) {
+        const dedupeKey = `cover_request:${r.id}`;
+        if (logged.has(dedupeKey) || !recent(r.createdAt) || !ahead(r)) continue;
+        planned.push({
+          kind: 'cover_request',
+          dedupeKey,
+          send: true,
+          urgent: false,
+          message: generic
+            ? { title: 'Cover request', body: 'You’ve been asked to cover a handoff.' }
+            : { title: `${nameOf(r.askedByMemberId)} asked you to cover`, body: what(r) },
+        });
+      } else if (
+        (r.status === 'accepted' || r.status === 'declined') &&
+        r.askedByMemberId === memberId &&
+        r.respondedAt !== null
+      ) {
+        const dedupeKey = `cover_response:${r.id}`;
+        if (logged.has(dedupeKey) || !recent(r.respondedAt) || !ahead(r)) continue;
+        const accepted = r.status === 'accepted';
+        planned.push({
+          kind: 'cover_response',
+          dedupeKey,
+          send: true,
+          urgent: false,
+          message: generic
+            ? { title: 'Cover request', body: 'Your request to cover a handoff has an answer.' }
+            : {
+                title: `${nameOf(r.askedMemberId)} ${accepted ? 'will cover' : 'can’t cover'}`,
+                body: accepted ? what(r) : `${what(r)} It’s still yours.`,
+              },
+        });
+      }
+    }
+  }
+
   return planned;
 }
 
@@ -597,7 +676,9 @@ function changeSentence(change: PartnerChange, nameOf: (id: string) => string): 
   }
 }
 
-const capitalize = (s: string) => `${s[0]?.toUpperCase() ?? ''}${s.slice(1)}`;
+function capitalize(s: string) {
+  return `${s[0]?.toUpperCase() ?? ''}${s.slice(1)}`;
+}
 
 /** One sentence per change, the first three, then how many more. */
 function partnerMessage(

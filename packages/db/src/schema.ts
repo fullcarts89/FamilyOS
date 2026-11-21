@@ -250,6 +250,22 @@ export interface EventExceptionTable {
   created_at: Timestamp;
 }
 
+export type CoverRequestStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
+
+/** Asking another adult to cover one occurrence; the cover exists only once they accept. */
+export interface CoverRequestTable {
+  id: Generated<string>;
+  household_id: string;
+  event_id: string;
+  occurrence_date: LocalDate;
+  asked_member_id: string;
+  asked_by_member_id: string;
+  status: Generated<CoverRequestStatus>;
+  created_at: Timestamp;
+  responded_at: Timestamp | null;
+  version: Generated<number>;
+}
+
 export interface NotificationPrefs {
   morning_checkin?: boolean;
   handoff_reminders?: boolean;
@@ -288,7 +304,12 @@ export interface DevicePushTokenTable {
 }
 
 export type NotificationLogKind =
-  'morning_checkin' | 'handoff_reminder' | 'partner_changes' | 'weekly_reset_reminder';
+  | 'morning_checkin'
+  | 'handoff_reminder'
+  | 'partner_changes'
+  | 'weekly_reset_reminder'
+  | 'cover_request'
+  | 'cover_response';
 export type NotificationLogStatus = 'pending' | 'sent' | 'failed' | 'skipped';
 
 export interface NotificationLogTable {
@@ -460,6 +481,7 @@ export interface Database {
   'app.event': EventTable;
   'app.event_member': EventMemberTable;
   'app.event_exception': EventExceptionTable;
+  'app.cover_request': CoverRequestTable;
   'app.calendar_source': CalendarSourceTable;
   'app.member_state': MemberStateTable;
   'app.member_acknowledgment': MemberAcknowledgmentTable;

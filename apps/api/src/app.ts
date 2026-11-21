@@ -14,6 +14,7 @@ import { exportRoutes } from './routes/export';
 import { todayRoutes } from './routes/today';
 import { routineRoutes } from './routes/routines';
 import { eventRoutes } from './routes/events';
+import { coverRequestRoutes } from './routes/cover-requests';
 import { rhythmRoutes } from './routes/rhythm';
 import { calendarFetchRoutes, calendarRoutes } from './routes/calendars';
 import { meRoutes } from './routes/me';
@@ -117,6 +118,7 @@ export function createApp(deps: Deps) {
   household.route('/work-items', workItemRoutes(deps));
   household.route('/routines', routineRoutes(deps));
   household.route('/events', eventRoutes(deps));
+  household.route('/cover-requests', coverRequestRoutes(deps));
   household.route('/calendars', calendarRoutes());
   household.route('/me', meRoutes(deps));
   household.route('/', activityRoutes(deps));

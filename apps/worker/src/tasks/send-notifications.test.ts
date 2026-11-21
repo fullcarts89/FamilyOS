@@ -34,6 +34,7 @@ const ADULT_OLD_PHONE = 'ExponentPushToken[adultoldphone000000000]';
 describe.skipIf(!url)('send_notifications', () => {
   let db: Kysely<Database>;
   let h: SeededHousehold;
+  let dropOffId: string;
   let itemId: string;
   const sender = new FakeSender();
   let clock = new Date('2026-11-16T15:30:00Z'); // Monday 07:30 in Los Angeles.
@@ -59,7 +60,7 @@ describe.skipIf(!url)('send_notifications', () => {
       .set({ timezone: 'America/Los_Angeles' })
       .where('id', '=', h.id)
       .execute();
-    await seedEvent(db, h, {
+    dropOffId = await seedEvent(db, h, {
       title: 'Daycare drop-off',
       startsAt: '2026-11-16T16:15:00Z',
       endsAt: '2026-11-16T16:35:00Z',
@@ -256,6 +257,64 @@ describe.skipIf(!url)('send_notifications', () => {
     clock = new Date('2026-11-17T15:50:00Z');
     await task()({}, helpers);
     expect(sender.sent.length).toBe(sentBefore);
+  });
+
+  it('tells the adult asked to cover, then the asker their answer', async () => {
+    // Monday 07:55: the owner asks the adult to take the 08:15 drop-off.
+    clock = new Date('2026-11-16T15:55:00Z');
+    const { id } = await db
+      .insertInto('app.cover_request')
+      .values({
+        household_id: h.id,
+        event_id: dropOffId,
+        occurrence_date: '2026-11-16',
+        asked_member_id: h.adult.id,
+        asked_by_member_id: h.owner.id,
+        created_at: new Date('2026-11-16T15:54:00Z'),
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const before = sender.sent.length;
+    await task()({}, helpers);
+    expect(sender.sent.length).toBe(before + 1);
+    // The adult keeps the defaults: generic text (their old phone was forgotten earlier).
+    expect(lastBatch().map((m) => [m.to, m.data.kind, m.title, m.body])).toEqual([
+      [ADULT_PHONE, 'cover_request', 'Cover request', 'You’ve been asked to cover a handoff.'],
+    ]);
+
+    // They accept: the owner (who shows details) hears so, and the adult now gets the reminder.
+    clock = new Date('2026-11-16T16:00:00Z');
+    await db
+      .insertInto('app.event_exception')
+      .values({
+        household_id: h.id,
+        event_id: dropOffId,
+        occurrence_date: '2026-11-16',
+        kind: 'cover',
+        cover_member_id: h.adult.id,
+        created_by_member_id: h.adult.id,
+      })
+      .execute();
+    await db
+      .updateTable('app.cover_request')
+      .set({ status: 'accepted', responded_at: new Date('2026-11-16T15:58:00Z'), version: 2 })
+      .where('id', '=', id)
+      .execute();
+    await task()({}, helpers);
+    const batch = lastBatch().map((m) => [m.to, m.data.kind, m.title, m.body]);
+    expect(batch).toContainEqual([
+      OWNER_PHONE,
+      'cover_response',
+      'Worker Notify Adult will cover',
+      'Worker Notify Child’s drop-off on Mon, Nov 16 at 8:15 AM.',
+    ]);
+    expect(batch).toContainEqual([
+      ADULT_PHONE,
+      'handoff_reminder',
+      'Handoff soon',
+      'You have a handoff in 15 minutes.',
+    ]);
+    expect(batch.filter((m) => m[1] === 'cover_request')).toEqual([]);
   });
 
   it('logs counts only: no text, titles or tokens', () => {

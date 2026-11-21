@@ -504,7 +504,8 @@ describe.skipIf(!db)('Family Rhythm API', () => {
       const date = '2026-11-19';
       const occ = (body: unknown, d = date, token = owner) =>
         call(`/events/${pickUpId}/occurrences/${d}`, { method: 'POST', body, token });
-      const covered = await occ({ action: 'cover', memberId: h.adult.id });
+      // Covering it yourself is immediate (asking someone else is a cover request).
+      const covered = await occ({ action: 'cover', memberId: h.adult.id }, date, adult);
       expect(covered.status).toBe(200);
       expect((await json<{ occurrence: Occurrence }>(covered)).occurrence).toMatchObject({
         key: `${pickUpId}:${date}`,
@@ -534,9 +535,13 @@ describe.skipIf(!db)('Family Rhythm API', () => {
       expect((await occ({ action: 'skip' }, '2026-11-21')).status).toBe(404); // Saturday
       expect((await occ({ action: 'skip' }, '2026-02-30')).status).toBe(404);
       expect((await occ({ action: 'skip' }, date, caregiver)).status).toBe(403);
-      // Caregivers can cover (they're adults), when an adult records it.
-      expect((await occ({ action: 'cover', memberId: h.caregiver.id })).status).toBe(200);
-      await call(`/events/${pickUpId}/occurrences/${date}`, { method: 'DELETE' });
+      // Handing it to another adult (a caregiver too) needs their acceptance.
+      expect(await json(await occ({ action: 'cover', memberId: h.caregiver.id }))).toEqual({
+        error: 'use_request',
+      });
+      expect(await json(await occ({ action: 'cover', memberId: h.adult.id }))).toEqual({
+        error: 'use_request',
+      });
     });
 
     it('builds the rhythm for a day with handoffs and heads-ups', async () => {
@@ -590,9 +595,10 @@ describe.skipIf(!db)('Family Rhythm API', () => {
       expect(view.headsUps[0]?.text).toContain('“Quarterly planning”');
       expect(JSON.stringify(view.headsUps)).not.toContain('PRIVATE NOTE');
 
-      // Covering the pickup resolves the conflict.
+      // The adult covering the pickup themselves resolves the conflict.
       await call(`/events/${pickUpId}/occurrences/${date}`, {
         method: 'POST',
+        token: adult,
         body: { action: 'cover', memberId: h.adult.id },
       });
       const after = await json<{ headsUps: { type: string }[] }>(

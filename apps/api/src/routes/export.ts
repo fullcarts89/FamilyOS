@@ -200,6 +200,21 @@ export function exportRoutes() {
       .where('household_id', '=', householdId)
       .orderBy('created_at')
       .execute();
+    const coverRequests = await trx
+      .selectFrom('app.cover_request')
+      .select([
+        'id',
+        'event_id as eventId',
+        'occurrence_date as occurrenceDate',
+        'asked_member_id as askedMemberId',
+        'asked_by_member_id as askedByMemberId',
+        'status',
+        'created_at as createdAt',
+        'responded_at as respondedAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
     const contacts = await trx
       .selectFrom('app.contact')
       .select([
@@ -347,6 +362,7 @@ export function exportRoutes() {
       events,
       eventMembers,
       eventExceptions,
+      coverRequests,
       contacts,
       decisions,
       decisionOptions,

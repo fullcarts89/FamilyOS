@@ -15,6 +15,9 @@ const SOURCE_ACTIONS = [
   'work_item.accepted',
   'routine.turns_swapped',
   'event.occurrence_covered',
+  'event.cover_requested',
+  'event.cover_accepted',
+  'event.cover_declined',
   'member.child_added',
   'member.pet_added',
   'member.joined',
@@ -28,7 +31,17 @@ export type ActivityAction =
   | 'routine.swapped'
   | 'project.completed'
   | 'event.covered'
+  | 'event.cover_requested'
+  | 'event.cover_accepted'
+  | 'event.cover_declined'
   | 'member.added';
+
+/** Cover request audit actions and the activity line each becomes. */
+const COVER_ACTIONS: Readonly<Record<string, ActivityAction>> = {
+  'event.cover_requested': 'event.cover_requested',
+  'event.cover_accepted': 'event.cover_accepted',
+  'event.cover_declined': 'event.cover_declined',
+};
 
 const Since = z.iso.datetime({ offset: true });
 
@@ -36,7 +49,8 @@ const str = (value: unknown) => (typeof value === 'string' ? value : null);
 
 /**
  * What the household did recently (GET /activity?since=ISO): completions, assignments, turns
- * swapped, covers and new members, newest first, from the audit trail. Titles come from the
+ * swapped, covers and cover requests (asked, accepted, declined), and new members, newest
+ * first, from the audit trail. Titles come from the
  * items as they are now, read under the caller's row-level security, so a private item's
  * activity never shows to anyone who can't see the item. Nothing is taken from audit payloads
  * except IDs and statuses. The caller's own actions are left out unless `includeMine=true`.
@@ -150,6 +164,13 @@ export function activityRoutes(deps: Deps) {
         action = 'event.covered';
         title = event.title;
         memberId = str(payload.coverMemberId);
+      } else if (row.entity_type === 'event' && COVER_ACTIONS[row.action]) {
+        const event = events.find((e) => e.id === row.entity_id);
+        if (!event) continue;
+        action = COVER_ACTIONS[row.action] ?? null;
+        title = event.title;
+        // Who was asked.
+        memberId = str(payload.askedMemberId);
       } else if (row.entity_type === 'member') {
         const member = members.find((m) => m.id === row.entity_id);
         if (!member) continue;

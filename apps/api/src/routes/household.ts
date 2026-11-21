@@ -8,6 +8,7 @@ import type { AppEnv, Deps } from '../http/env';
 import { ApiError, conflict, forbidden, notFound } from '../http/errors';
 import { parseBody, uuidParam } from '../http/validation';
 import { hashToken, newInviteToken } from '../tokens';
+import { cancelRequestsOf } from './cover-requests';
 
 const INVITE_LIFETIME_MS = 48 * 60 * 60 * 1000;
 
@@ -321,6 +322,8 @@ export function householdRoutes(deps: Deps) {
     if (result.numUpdatedRows === 0n) throw notFound();
     // Their phones get nothing more from this household, and the tokens aren't kept.
     await sql`select app.forget_removed_member_devices(${memberId}::uuid)`.execute(trx);
+    // Nobody waits on an answer from them, or gives one to them.
+    await cancelRequestsOf(trx, me, c.get('requestId'), memberId, now());
     // Their open invites, if any, stop working too.
     await trx
       .updateTable('app.invite')

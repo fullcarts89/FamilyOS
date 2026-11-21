@@ -27,6 +27,13 @@ import { authorize } from '../http/authorize';
 import type { AppEnv, CurrentMember, Deps } from '../http/env';
 import { ApiError, conflict, notFound } from '../http/errors';
 import { parseBody, uuidParam } from '../http/validation';
+import {
+  myCoverRequests,
+  pendingCoverRequests,
+  requestCover,
+  settlePendingRequest,
+  type CoverRequestView,
+} from './cover-requests';
 
 const Uuid = z.uuid();
 const LocalDate = z.iso.date();
@@ -84,6 +91,8 @@ const UpdateEvent = z
   })
   .strict();
 
+const AskToCover = z.object({ memberId: Uuid }).strict();
+
 const OccurrenceAction = z
   .object({ action: z.enum(['skip', 'cover']), memberId: Uuid.optional() })
   .strict()
@@ -124,6 +133,8 @@ export interface StoredSeries extends EventSeries {
   version: number;
   createdAt: string;
   updatedAt: string;
+  /** Requests still waiting for an answer, one per occurrence at most. */
+  coverRequests: CoverRequestView[];
 }
 
 /**
@@ -177,6 +188,7 @@ export async function loadSeries(
     .where('event_id', 'in', ids)
     .orderBy('occurrence_date')
     .execute();
+  const requests = await pendingCoverRequests(trx, householdId, ids);
   const calendarIds = [
     ...new Set(rows.flatMap((r) => (r.source_calendar_id ? [r.source_calendar_id] : []))),
   ];
@@ -218,6 +230,7 @@ export async function loadSeries(
     version: r.version,
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
+    coverRequests: requests.filter((q) => q.eventId === r.id),
   }));
 }
 
@@ -250,6 +263,8 @@ export function occurrenceView(occurrence: EventOccurrence, series: StoredSeries
     version: series.version,
     readOnly: series.source !== null,
     source: series.source,
+    /** Someone was asked to cover this one and hasn't answered: nothing has changed yet. */
+    coverRequest: series.coverRequests.find((r) => r.date === occurrence.date) ?? null,
   };
 }
 
@@ -280,6 +295,7 @@ function seriesView(s: StoredSeries) {
     careAction: s.careAction,
     carePlace: s.carePlace,
     exceptions: s.exceptions,
+    coverRequests: s.coverRequests,
     readOnly: s.source !== null,
     source: s.source,
     createdByMemberId: s.createdByMemberId,
@@ -428,7 +444,15 @@ export function eventRoutes(deps: Deps) {
       const s = byId.get(o.eventId);
       return s ? [occurrenceView(o, s)] : [];
     });
-    return c.json({ from: from.data, to: to.data, timezone: timeZone, occurrences });
+    // Today and the Week load this: what the caller has been asked, and is waiting on.
+    const coverRequests = await myCoverRequests(trx, c.get('member'), localDateOf(now(), timeZone));
+    return c.json({
+      from: from.data,
+      to: to.data,
+      timezone: timeZone,
+      occurrences,
+      coverRequests,
+    });
   });
 
   app.post('/', async (c) => {
@@ -657,7 +681,9 @@ export function eventRoutes(deps: Deps) {
     return { occurrence: occurrenceView(occurrence, series) };
   };
 
-  // One occurrence: skip it, or have a different adult cover it. Replaces any earlier change.
+  // One occurrence: skip it, or cover it yourself. Replaces any earlier change. Having another
+  // adult cover it takes their acceptance: ask them (below); a direct cover for someone else
+  // is refused with 422 use_request, so no client can hand over a handoff silently.
   app.post('/:eventId/occurrences/:date', async (c) => {
     authorize(c, 'event.manage');
     const eventId = uuidParam(c.req.param('eventId'));
@@ -669,6 +695,7 @@ export function eventRoutes(deps: Deps) {
     if (body.memberId) {
       const role = (await memberRoles(trx, member.householdId)).get(body.memberId);
       if (role === undefined || isCaredFor(role)) throw new ApiError(422, 'invalid_cover');
+      if (body.memberId !== member.id) throw new ApiError(422, 'use_request');
     }
     await trx
       .insertInto('app.event_exception')
@@ -697,7 +724,35 @@ export function eventRoutes(deps: Deps) {
       payload: { date, ...(body.memberId && { coverMemberId: body.memberId }) },
       requestId: c.get('requestId'),
     });
+    await settlePendingRequest(trx, member, c.get('requestId'), {
+      eventId,
+      date,
+      coverMemberId: body.memberId ?? null,
+      now: now(),
+    });
     return c.json(await occurrenceResponse(trx, member, eventId, date));
+  });
+
+  // Ask another adult to cover one occurrence. Nothing about who is responsible changes until
+  // they accept (POST /cover-requests/:id/accept). 201 with the request; asking the same adult
+  // again while it waits returns it with 200.
+  app.post('/:eventId/occurrences/:date/cover-requests', async (c) => {
+    authorize(c, 'event.manage');
+    const eventId = uuidParam(c.req.param('eventId'));
+    const date = dateParam(c.req.param('date'));
+    const body = await parseBody(c.req.raw, AskToCover);
+    const trx = c.get('trx');
+    const member = c.get('member');
+    await locate(trx, member, eventId, date);
+    const { coverRequest, created } = await requestCover(trx, member, c.get('requestId'), {
+      eventId,
+      date,
+      askedMemberId: body.memberId,
+    });
+    return c.json(
+      { coverRequest, ...(await occurrenceResponse(trx, member, eventId, date)) },
+      created ? 201 : 200,
+    );
   });
 
   // Undo a skip or cover.

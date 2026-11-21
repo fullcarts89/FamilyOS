@@ -164,6 +164,18 @@ export const HouseholdExportSchema = z.object({
       createdAt: Timestamp,
     }),
   ),
+  coverRequests: z.array(
+    z.object({
+      id: z.uuid(),
+      eventId: z.uuid(),
+      occurrenceDate: z.string(),
+      askedMemberId: z.uuid(),
+      askedByMemberId: z.uuid(),
+      status: z.enum(['pending', 'accepted', 'declined', 'cancelled']),
+      createdAt: Timestamp,
+      respondedAt: Timestamp.nullable(),
+    }),
+  ),
   contacts: z.array(
     z.object({
       id: z.uuid(),

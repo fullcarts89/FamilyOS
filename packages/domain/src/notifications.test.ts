@@ -11,6 +11,7 @@ import {
   type NotificationPlanInput,
   type NotificationSettings,
   type NotifierAuditRow,
+  type NotifierCoverRequest,
   type PartnerContext,
 } from './notifications';
 import type { RhythmMember, RhythmTask } from './rhythm';
@@ -784,5 +785,85 @@ describe('the first partner batch', () => {
     expect(batch(pst('10:00', '2026-11-15'), null)).toEqual(['partner_changes:50']);
     expect(batch(pst('08:00', '2026-11-15'), null)).toEqual([]);
     expect(batch(pst('08:00', '2026-11-15'), pst('08:00', '2026-11-14'))).toEqual([]);
+  });
+});
+
+describe('cover requests', () => {
+  const request = (changes: Partial<NotifierCoverRequest> = {}): NotifierCoverRequest => ({
+    id: 'req-1',
+    askedMemberId: 'theo',
+    askedByMemberId: 'maya',
+    status: 'pending',
+    date: '2026-11-17',
+    createdAt: pst('09:00'),
+    respondedAt: null,
+    careMemberId: 'june',
+    careAction: 'drop_off',
+    startsAt: pst('08:15', '2026-11-17'),
+    ...changes,
+  });
+  const plan = (memberId: string, coverRequests: NotifierCoverRequest[], extra = {}) =>
+    planNotifications(
+      input({ memberId, now: pst('09:05'), coverRequests, dinner: null, tasks: [], ...extra }),
+    ).filter((p) => p.kind === 'cover_request' || p.kind === 'cover_response');
+
+  it('tell the asked adult, once, generically unless they show details', () => {
+    expect(plan('theo', [request()], { settings: DEFAULT_NOTIFICATION_SETTINGS })).toEqual([
+      {
+        kind: 'cover_request',
+        dedupeKey: 'cover_request:req-1',
+        send: true,
+        urgent: false,
+        message: { title: 'Cover request', body: 'You’ve been asked to cover a handoff.' },
+      },
+    ]);
+    expect(plan('theo', [request()])[0]?.message).toEqual({
+      title: 'Maya asked you to cover',
+      body: 'June’s drop-off on Tue, Nov 17 at 8:15 AM.',
+    });
+    // Not to the asker, not twice, not after the handoff, not when stale or switched off.
+    expect(plan('maya', [request()])).toEqual([]);
+    const log = [
+      { kind: 'cover_request' as const, dedupeKey: 'cover_request:req-1', sentAt: pst('09:01') },
+    ];
+    expect(plan('theo', [request()], { log })).toEqual([]);
+    expect(plan('theo', [request({ startsAt: pst('09:00') })])).toEqual([]);
+    expect(plan('theo', [request({ createdAt: pst('08:00', '2026-11-15') })])).toEqual([]);
+    expect(plan('theo', [request()], { settings: settings({ handoffReminders: false }) })).toEqual(
+      [],
+    );
+    expect(plan('theo', [request({ status: 'cancelled' })])).toEqual([]);
+  });
+
+  it('wait out quiet hours', () => {
+    const quiet = settings({ quietHours: { start: '22:00', end: '06:00' } });
+    const late = request({ createdAt: pst('22:30', '2026-11-15') });
+    expect(plan('theo', [late], { settings: quiet, now: pst('05:30') })).toEqual([]);
+    expect(plan('theo', [late], { settings: quiet, now: pst('06:00') })).toHaveLength(1);
+  });
+
+  it('tell the asker the answer', () => {
+    const accepted = request({ status: 'accepted', respondedAt: pst('09:02') });
+    const declined = request({ id: 'req-2', status: 'declined', respondedAt: pst('09:03') });
+    expect(plan('maya', [accepted, declined]).map((p) => [p.dedupeKey, p.message])).toEqual([
+      [
+        'cover_response:req-1',
+        { title: 'Theo will cover', body: 'June’s drop-off on Tue, Nov 17 at 8:15 AM.' },
+      ],
+      [
+        'cover_response:req-2',
+        {
+          title: 'Theo can’t cover',
+          body: 'June’s drop-off on Tue, Nov 17 at 8:15 AM. It’s still yours.',
+        },
+      ],
+    ]);
+    expect(
+      plan('maya', [accepted], { settings: DEFAULT_NOTIFICATION_SETTINGS })[0]?.message,
+    ).toEqual({
+      title: 'Cover request',
+      body: 'Your request to cover a handoff has an answer.',
+    });
+    expect(plan('theo', [accepted, declined])).toEqual([]);
   });
 });
