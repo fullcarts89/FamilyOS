@@ -1,7 +1,7 @@
 import { Repeat2 } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { hitSlopFor, type PressState } from '../../design/Button';
+import { HitArea, hitSlopFor, type PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
 import { Meta, Row } from '../../design/Row';
 import { Text } from '../../design/Text';
@@ -122,6 +122,7 @@ function Step({
         disabled && !busy && styles.stepIdle,
       ]}
     >
+      <HitArea slop={hitSlopFor(28)} border={1} />
       <Text variant="small" color={strong ? color.onInk : color.ink} style={styles.stepText}>
         {busy ? `${label}…` : label}
       </Text>
@@ -142,7 +143,7 @@ const styles = StyleSheet.create({
   },
   actions: { flexDirection: 'row', gap: space[2] - 2 },
   step: {
-    height: 28,
+    minHeight: 28,
     paddingHorizontal: space[3],
     borderRadius: radius.pill,
     borderWidth: 1,

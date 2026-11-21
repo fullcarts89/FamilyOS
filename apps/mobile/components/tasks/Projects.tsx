@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { ChevronDown, ChevronUp, Flag, Plus } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Button, type PressState } from '../../design/Button';
+import { Button, HitArea, hitSlopFor, type PressState } from '../../design/Button';
 import { EmptyState } from '../../design/EmptyState';
 import { Hatch } from '../../design/Hatch';
 import { useLayout } from '../../design/layout';
@@ -190,6 +190,7 @@ function ProjectTrack({
           style,
         ]}
       >
+        <HitArea slop={hitSlopFor(18)} border={2} />
         {late ? <Hatch width={13} height={13} radius={7} outline={false} /> : null}
       </Pressable>
     );
@@ -204,9 +205,12 @@ function ProjectTrack({
             onPress={() => router.push({ pathname: '/item/[id]', params: { id: project.id } })}
           >
             {(s: PressState) => (
-              <Text variant="h3" style={s.hovered && styles.underline}>
-                {project.title}
-              </Text>
+              <>
+                <HitArea slop={TITLE_SLOP} />
+                <Text variant="h3" style={s.hovered && styles.underline}>
+                  {project.title}
+                </Text>
+              </>
             )}
           </Pressable>
           <Text variant="meta" tone="muted">
@@ -218,6 +222,7 @@ function ProjectTrack({
             onPress={() => setOpen((v) => !v)}
             style={styles.toggle}
           >
+            <HitArea slop={hitSlopFor(32)} />
             <Text variant="small" style={styles.toggleText}>
               {open ? 'Hide steps' : steps.length ? 'Show steps' : 'Add steps'}
             </Text>
@@ -344,6 +349,9 @@ function AddStep({ projectId, onAdded }: { projectId: string; onAdded: () => voi
 }
 
 const INFO = 300;
+/** A title link's text line is short: its tap area reaches 44pt (web; native rows are taller). */
+const TITLE_SLOP = { top: 10, bottom: 10, left: 0, right: 0 };
+
 const styles = StyleSheet.create({
   section: { marginTop: 48 },
   sectionPhone: { marginTop: 18 },

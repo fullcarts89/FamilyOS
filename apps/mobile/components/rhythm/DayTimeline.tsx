@@ -3,7 +3,7 @@ import { CalendarDays, Car } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Avatar } from '../../design/Avatar';
-import type { PressState } from '../../design/Button';
+import { HitArea, hitSlopFor, type PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
 import { Text } from '../../design/Text';
 import { color, font, radius, space, tint, touch } from '../../design/tokens';
@@ -280,7 +280,12 @@ export function DayTimeline({
                     },
                     s.hovered && styles.bandHover,
                   ]}
-                />
+                >
+                  <HitArea
+                    slop={hitSlopFor(model.height + 8, Math.max(4, x(t.end) - x(t.start)))}
+                    border={1.5}
+                  />
+                </Pressable>
               ))}
 
               {/* Children and pets: where they are */}
@@ -384,6 +389,8 @@ export function DayTimeline({
                       (s.hovered || s.focused) && styles.blockHover,
                     ]}
                   >
+                    {/* A short item (a 20-minute pickup) still takes a 44pt tap (web). */}
+                    <HitArea slop={hitSlopFor(b.height, w)} border={1} />
                     {b.conflict ? (
                       <View style={StyleSheet.absoluteFill} pointerEvents="none">
                         <Hatch

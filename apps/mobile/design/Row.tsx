@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import type { PressState } from './Button';
+import { HitArea, type PressState } from './Button';
 import { Text } from './Text';
 import { color } from './tokens';
 
@@ -50,6 +50,8 @@ export function Row({
           state.hovered && onPress && styles.hover,
         ]}
       >
+        {/* Taps in the row's padding count too: 44pt even for a one-line row (web). */}
+        {onPress ? <HitArea slop={ROW_SLOP} /> : null}
         <Text
           variant="title"
           tone={done ? 'muted' : 'ink'}
@@ -92,6 +94,8 @@ export function Meta({
     </View>
   );
 }
+
+const ROW_SLOP = { top: 10, bottom: 10, left: 0, right: 0 };
 
 const styles = StyleSheet.create({
   row: {

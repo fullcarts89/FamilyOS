@@ -3,7 +3,8 @@ import { ArrowRightLeft, Repeat2 } from 'lucide-react-native';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { Avatar } from '../../design/Avatar';
-import { hitSlopFor, type PressState } from '../../design/Button';
+import { solidFill, textOn } from '../../design/contrast';
+import { HitArea, hitSlopFor, type PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
 import { nativeDriver, useLayout } from '../../design/layout';
 import { RoundCheckbox } from '../../design/RoundCheckbox';
@@ -76,7 +77,17 @@ export function TaskRow({
         last={last}
         done={done}
         title={item.title}
-        accessibilityLabel={`${item.title}${due ? `, ${due}` : ''}${note ? `, ${note}` : ''}`}
+        // Says what the row shows, in the same order (so voice control can use the visible words).
+        accessibilityLabel={[
+          item.title,
+          done ? (doneBy === 'You' ? 'Done by you' : `Done by ${doneBy}`) : null,
+          !done ? due : null,
+          !done ? note : null,
+          context,
+          item.visibility === 'private' ? 'Private' : null,
+        ]
+          .filter(Boolean)
+          .join(', ')}
         onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}
         titleAccessory={
           item.priority === 1 ? (
@@ -191,6 +202,7 @@ function NextStep({ label, onPress }: { label: string; onPress: () => void }) {
       hitSlop={hitSlopFor(26)}
       style={(s: PressState) => [styles.nextStep, s.hovered && styles.nextHover]}
     >
+      <HitArea slop={hitSlopFor(26)} border={1} />
       <Text variant="small" style={styles.nextText}>
         {label}
       </Text>
@@ -221,17 +233,23 @@ function HandOff({
             hitSlop={hitSlopFor(32)}
             style={(s: PressState) => [
               styles.take,
-              s.hovered && { backgroundColor: me.color, borderColor: me.color },
+              s.hovered && {
+                backgroundColor: solidFill(me.color),
+                borderColor: solidFill(me.color),
+              },
             ]}
           >
             {(s: PressState) => (
-              <Text
-                variant="small"
-                color={s.hovered ? color.onInk : color.ink}
-                style={styles.takeText}
-              >
-                I’ll take it
-              </Text>
+              <>
+                <HitArea slop={hitSlopFor(32)} border={1.5} />
+                <Text
+                  variant="small"
+                  color={s.hovered ? textOn(solidFill(me.color)) : color.ink}
+                  style={styles.takeText}
+                >
+                  I’ll take it
+                </Text>
+              </>
             )}
           </Pressable>
         ) : null}
@@ -275,6 +293,7 @@ function HandButton({
     >
       {(s: PressState) => (
         <>
+          <HitArea slop={hitSlopFor(32)} border={1.5} />
           <ArrowRightLeft size={14} strokeWidth={2.2} color={color.muted} />
           <Avatar person={person} size={22} />
           {s.hovered || s.focused ? (
@@ -291,7 +310,7 @@ function HandButton({
 const styles = StyleSheet.create({
   next: { flexDirection: 'row', gap: 6 },
   nextStep: {
-    height: 26,
+    minHeight: 26,
     paddingHorizontal: 10,
     borderRadius: radius.pill,
     borderWidth: 1,
@@ -304,7 +323,7 @@ const styles = StyleSheet.create({
   important: { fontSize: 9, lineHeight: 21, color: color.ink },
   handGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   take: {
-    height: 32,
+    minHeight: 32,
     paddingHorizontal: 12,
     borderRadius: radius.pill,
     borderWidth: 1.5,
@@ -318,7 +337,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    height: 32,
+    minHeight: 32,
     paddingHorizontal: 7,
     borderRadius: radius.pill,
     borderWidth: 1.5,

@@ -1,10 +1,10 @@
 import type { LucideIcon } from 'lucide-react-native';
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { hitSlopFor, type PressState } from './Button';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { HitArea, hitSlopFor, type PressState } from './Button';
 import { solidFill, textOn } from './contrast';
 import { Text } from './Text';
-import { color, radius } from './tokens';
+import { color, radius, touch } from './tokens';
 
 /**
  * A choice chip (owner, day, schedule). Selected chips are ink. With `accent`, the selected chip
@@ -36,12 +36,15 @@ export function Chip({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityState={{ selected, disabled: !!disabled }}
-      aria-selected={selected}
+      // A toggle: pressed on the web (aria-selected isn't allowed on buttons), selected on iPhone.
+      accessibilityState={
+        Platform.OS === 'web' ? { disabled: !!disabled } : { selected, disabled: !!disabled }
+      }
+      aria-pressed={Platform.OS === 'web' ? selected : undefined}
       aria-disabled={!!disabled}
       onPress={onPress}
       disabled={disabled}
-      hitSlop={hitSlopFor(36)}
+      hitSlop={hitSlopFor(36, touch)}
       style={(state: PressState) => [
         styles.chip,
         {
@@ -52,6 +55,7 @@ export function Chip({
         state.pressed && { transform: [{ scale: 0.97 }] },
       ]}
     >
+      <HitArea slop={hitSlopFor(36, touch)} border={1.5} />
       {leading}
       {Icon ? <Icon size={15} strokeWidth={2.2} color={fg} /> : null}
       <Text variant="label" style={styles.text} color={fg}>

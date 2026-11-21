@@ -1,8 +1,8 @@
 import { Check } from 'lucide-react-native';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
-import { hitSlopFor, type PressState } from './Button';
-import { nativeDriver, useReducedMotion } from './layout';
+import { HitArea, hitSlopFor, type PressState } from './Button';
+import { nativeDriver, reducedMotion, useReducedMotion } from './layout';
 import { color as tokens, tint } from './tokens';
 
 /**
@@ -84,7 +84,7 @@ export function RoundCheckbox({
   useEffect(() => {
     if (checked === was) return;
     setWas(checked);
-    if (!checked || reduced) {
+    if (!checked || reduced || reducedMotion()) {
       pop.setValue(checked ? 1 : 0);
       return;
     }
@@ -135,8 +135,10 @@ export function RoundCheckbox({
         state.pressed && styles.pressed,
       ]}
     >
-      {(state: PressState) =>
-        checked ? (
+      {(state: PressState) => (
+        <>
+          <HitArea slop={hitSlopFor(size)} border={2} />
+          {checked ? (
           <Animated.View
             style={{
               opacity: pop.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1, 1] }),
@@ -147,8 +149,9 @@ export function RoundCheckbox({
           </Animated.View>
         ) : state.hovered && !quiet ? (
           <Check size={size * 0.56} strokeWidth={3} color={color} aria-hidden />
-        ) : null
-      }
+          ) : null}
+        </>
+      )}
     </Pressable>
   );
 }

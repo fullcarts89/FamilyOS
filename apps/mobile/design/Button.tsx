@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -16,11 +17,44 @@ import { color, radius, touch } from './tokens';
 /** Pressable state, with the hover state React Native Web adds. */
 export type PressState = PressableStateCallbackType & { hovered?: boolean; focused?: boolean };
 
-/** Extra hit area so small-looking controls still meet the 44pt minimum. */
-export const hitSlopFor = (height: number) => {
-  const extra = Math.max(0, Math.ceil((touch - height) / 2));
-  return { top: extra, bottom: extra, left: 4, right: 4 };
+/**
+ * Extra hit area so small-looking controls still meet the 44pt minimum, the same on every side
+ * (pass the width too when the control is narrower than it is tall).
+ */
+export const hitSlopFor = (height: number, width = height) => {
+  const v = Math.max(0, Math.ceil((touch - height) / 2));
+  const h = Math.max(0, Math.ceil((touch - width) / 2));
+  return { top: v, bottom: v, left: h, right: h };
 };
+
+/**
+ * The web has no hitSlop: this invisible layer, the first child of a small control, reaches past
+ * its edges by the same amounts, so a tap or click there still lands on the control.
+ */
+export function HitArea({
+  slop,
+  border = 0,
+}: {
+  slop: { top: number; bottom: number; left: number; right: number };
+  /** The control's border width: the layer is placed inside it, so it reaches that much further. */
+  border?: number;
+}) {
+  if (Platform.OS !== 'web' || (!slop.top && !slop.bottom && !slop.left && !slop.right))
+    return null;
+  const b = Math.ceil(border);
+  return (
+    <View
+      aria-hidden
+      style={{
+        position: 'absolute',
+        top: -(slop.top && slop.top + b),
+        bottom: -(slop.bottom && slop.bottom + b),
+        left: -(slop.left && slop.left + b),
+        right: -(slop.right && slop.right + b),
+      }}
+    />
+  );
+}
 
 type Variant = 'primary' | 'secondary' | 'quiet';
 
@@ -58,6 +92,7 @@ export function Button({
   const height = size === 'sm' ? 34 : size === 'lg' ? 52 : 44;
   const fg = variant === 'primary' ? color.onInk : color.ink;
   const iconNode = Icon ? <Icon size={size === 'sm' ? 15 : 17} color={fg} strokeWidth={2.2} /> : null;
+  const slop = hitSlopFor(height, touch);
   return (
     <Pressable
       accessibilityRole="button"
@@ -67,7 +102,7 @@ export function Button({
       aria-busy={!!busy}
       disabled={inactive}
       onPress={onPress}
-      hitSlop={hitSlopFor(height)}
+      hitSlop={slop}
       style={(state: PressState) => [
         styles.base,
         {
@@ -88,6 +123,7 @@ export function Button({
         style,
       ]}
     >
+      <HitArea slop={slop} border={1.5} />
       {busy ? (
         <ActivityIndicator color={fg} />
       ) : (
@@ -96,8 +132,11 @@ export function Button({
           <Text
             variant="label"
             color={fg}
-            style={size === 'sm' ? styles.smText : size === 'lg' ? styles.lgText : undefined}
-            numberOfLines={1}
+            style={[
+              styles.title,
+              size === 'sm' ? styles.smText : size === 'lg' ? styles.lgText : undefined,
+            ]}
+            numberOfLines={2}
           >
             {title}
           </Text>
@@ -156,6 +195,7 @@ export function IconButton({
         state.pressed && styles.pressed,
       ]}
     >
+      <HitArea slop={hitSlopFor(size)} />
       {children ?? (Icon ? <Icon size={iconSize} color={fg} strokeWidth={2} /> : null)}
     </Pressable>
   );
@@ -171,7 +211,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     cursor: 'pointer',
   },
-  inner: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  inner: { flexDirection: 'row', alignItems: 'center', gap: 7, flexShrink: 1 },
+  /** Large text wraps to a second line rather than being cut off. */
+  title: { flexShrink: 1, textAlign: 'center' },
   full: { alignSelf: 'stretch' },
   smText: { fontSize: 13, lineHeight: 16 },
   lgText: { fontSize: 15.5, lineHeight: 20 },
