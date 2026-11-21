@@ -23,11 +23,16 @@ export interface NextEntry {
   task?: RhythmTaskView;
 }
 
-/** Everything timed today, in order: events (one per occurrence), handoffs and timed tasks. */
+/**
+ * Everything timed today, in order: events (one per occurrence), handoffs and timed tasks. A task
+ * with a length runs from its time to its end ("5:30–6pm"); one without stays a moment ("Due
+ * 5:30pm"). `keep` holds a just-finished task in place for its moment (lib/use-settle.ts).
+ */
 export function dayEntries(
   lanes: (Pick<RhythmLaneView, 'occurrences'> & { tasks?: { timed: RhythmTaskView[] } })[],
   people: People,
   timeZone: string,
+  { keep }: { keep?: (id: string) => boolean } = {},
 ): NextEntry[] {
   const seen = new Set<string>();
   const out: NextEntry[] = [];
@@ -67,15 +72,19 @@ export function dayEntries(
       });
     }
     for (const t of lane.tasks?.timed ?? []) {
-      if (seen.has(t.id) || !t.dueAt || !isOpen(t)) continue;
+      if (seen.has(t.id) || !t.dueAt || !(isOpen(t) || keep?.(t.id))) continue;
       seen.add(t.id);
       const owner = people.byId(t.ownerMemberId);
+      const who = owner ? (owner.isMe ? 'You' : owner.name) : 'Either of you';
+      const block = t.block ?? null;
       out.push({
         key: t.id,
-        startsAt: t.dueAt,
-        endsAt: t.dueAt,
+        startsAt: block?.startsAt ?? t.dueAt,
+        endsAt: block?.endsAt ?? t.dueAt,
         title: t.title,
-        sub: `Due ${timeOf(t.dueAt, timeZone)} · ${owner ? (owner.isMe ? 'You' : owner.name) : 'Either of you'}`,
+        sub: block
+          ? `${rangeOf(block.startsAt, block.endsAt, timeZone)} · ${who}`
+          : `Due ${timeOf(t.dueAt, timeZone)} · ${who}`,
         people: owner ? [owner] : [],
         kind: 'task',
         task: t,
