@@ -29,7 +29,10 @@ export function Skeleton({ children, label = 'Loading' }: { children: ReactNode;
   const reduced = useReducedMotion();
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    if (reduced) return;
+    if (reduced) {
+      pulse.setValue(1);
+      return;
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 0.55, duration: 700, useNativeDriver: nativeDriver }),

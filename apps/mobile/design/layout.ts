@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Platform, useWindowDimensions } from 'react-native';
+import { Platform, useWindowDimensions } from 'react-native';
 import { breakpoint } from './tokens';
+
+/** One app-wide Reduce Motion value, known before anything animates (see motion/reduced.ts). */
+export { reducedMotion, useReducedMotion } from './motion/reduced';
 
 export type LayoutKind = 'phone' | 'tablet' | 'desktop';
 
@@ -15,23 +17,6 @@ export function useLayout(): {
   const kind: LayoutKind =
     width >= breakpoint.desktop ? 'desktop' : width >= breakpoint.tablet ? 'tablet' : 'phone';
   return { kind, width, phone: kind === 'phone', desktop: kind === 'desktop' };
-}
-
-/** True when the person asked their device for less motion. */
-export function useReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    AccessibilityInfo.isReduceMotionEnabled()
-      .then((value) => alive && setReduced(value))
-      .catch(() => undefined);
-    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
-    return () => {
-      alive = false;
-      sub.remove();
-    };
-  }, []);
-  return reduced;
 }
 
 /** The native driver isn't available on the web. */

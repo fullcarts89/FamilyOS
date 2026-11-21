@@ -10,8 +10,13 @@ import {
   type ReactNode,
 } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { announce, politeLiveRegion, useScreenReader } from './announce';
 import type { PressState } from './Button';
-import { nativeDriver, useLayout, useReducedMotion } from './layout';
+import { toastBottom } from './chrome';
+import { nativeDriver, reducedMotion, useLayout, useReducedMotion } from './layout';
+import { easing } from './motion/easing';
+import { duration, linger } from './motion/timing';
 import { Text } from './Text';
 import { color, radius, shadow } from './tokens';
 
@@ -35,20 +40,30 @@ interface ToastApi {
 }
 
 const ToastContext = createContext<ToastApi | null>(null);
-const DURATION = 4500;
 
+/**
+ * One confirmation at a time: a new one replaces the one showing (never a pile of stale ones).
+ * On phones it sits just above the capture button, never over it. Announced once per platform
+ * (design/announce.ts); it stays while hovered or focused, and an Undo stays until dismissed
+ * while a screen reader is on.
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [toast, setToast] = useState<Toast | null>(null);
   const next = useRef(1);
   const { phone } = useLayout();
+  const insets = useSafeAreaInsets();
 
   const dismiss = useCallback((id: number) => {
-    setToasts((all) => all.filter((t) => t.id !== id));
+    setToast((t) => (t?.id === id ? null : t));
   }, []);
 
   const show = useCallback<ToastApi['show']>((message, options = {}) => {
     const id = next.current++;
-    setToasts((all) => [...all.slice(-2), { id, message, ...options }]);
+    setToast({ id, message, ...options });
+    announce(
+      [message, options.detail],
+      options.undo ? 'Undo available' : options.action ? `${options.action.label} available` : undefined,
+    );
   }, []);
 
   const api = useMemo(() => ({ show }), [show]);
@@ -58,12 +73,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <View
         pointerEvents="box-none"
-        aria-live="polite"
-        style={[styles.region, { bottom: phone ? 92 : 28 }]}
+        style={[styles.region, { bottom: phone ? toastBottom(insets.bottom) : 28 }]}
       >
-        {toasts.map((t) => (
-          <ToastView key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
-        ))}
+        {toast ? (
+          <ToastView key={toast.id} toast={toast} onDismiss={() => dismiss(toast.id)} />
+        ) : null}
       </View>
     </ToastContext.Provider>
   );
@@ -71,28 +85,71 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 function ToastView({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
   const reduced = useReducedMotion();
-  const enter = useRef(new Animated.Value(reduced ? 1 : 0)).current;
+  const enter = useRef(new Animated.Value(reducedMotion() ? 1 : 0)).current;
   const [busy, setBusy] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const screenReader = useScreenReader();
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
-  const hasUndo = !!toast.undo || !!toast.action;
+  const hasAction = !!toast.undo || !!toast.action;
 
   useEffect(() => {
-    if (!reduced) {
-      Animated.timing(enter, { toValue: 1, duration: 260, useNativeDriver: nativeDriver }).start();
+    if (reducedMotion()) return;
+    const anim = Animated.timing(enter, {
+      toValue: 1,
+      duration: duration.enter,
+      easing: easing.enter,
+      useNativeDriver: nativeDriver,
+    });
+    anim.start();
+    return () => anim.stop();
+  }, [enter]);
+
+  /** Leaves with a short fade (at once with reduced motion). */
+  const gone = useRef(false);
+  const leave = useCallback(() => {
+    if (gone.current) return;
+    gone.current = true;
+    if (reducedMotion()) {
+      dismissRef.current();
+      return;
     }
-    // Undo stays a little longer, so there's time to reach it.
-    const timer = setTimeout(() => dismissRef.current(), hasUndo ? DURATION + 1500 : DURATION);
-    return () => clearTimeout(timer);
-  }, [enter, reduced, hasUndo]);
+    setLeaving(true);
+    Animated.timing(enter, {
+      toValue: 0,
+      duration: duration.exit,
+      easing: easing.exit,
+      useNativeDriver: nativeDriver,
+    }).start(() => dismissRef.current());
+  }, [enter]);
+
+  // Counts down only while nobody is reading or reaching for it.
+  const remaining = useRef<number>(hasAction ? linger.toastWithAction : linger.toast);
+  const paused = hovered || focused || leaving || (screenReader && hasAction);
+  useEffect(() => {
+    if (paused) return;
+    const started = Date.now();
+    const timer = setTimeout(leave, remaining.current);
+    return () => {
+      clearTimeout(timer);
+      remaining.current = Math.max(1500, remaining.current - (Date.now() - started));
+    };
+  }, [paused, leave]);
 
   return (
     <Animated.View
       role="status"
+      {...politeLiveRegion}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={[
         styles.toast,
         toast.error && styles.error,
-        {
+        !reduced && {
           opacity: enter,
           transform: [
             { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) },
@@ -149,7 +206,7 @@ function ToastView({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Dismiss"
-        onPress={onDismiss}
+        onPress={leave}
         style={(s: PressState) => [styles.action, styles.close, s.hovered && styles.hover]}
       >
         <X size={16} color={color.onInk} strokeWidth={2.2} />

@@ -8,6 +8,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { pageReserve } from './chrome';
 import { useLayout } from './layout';
 import { Text } from './Text';
 import { color } from './tokens';
@@ -42,8 +43,8 @@ export function Page({
       contentContainerStyle={{
         paddingHorizontal: pad,
         paddingTop: kind === 'phone' ? 18 : 36,
-        // Clear the floating capture button on phones.
-        paddingBottom: kind === 'phone' ? (docked ? 32 : 120) : 80,
+        // Clear the floating capture button on phones (design/chrome.ts).
+        paddingBottom: kind === 'phone' ? (docked ? 32 : pageReserve) : 80,
       }}
       keyboardShouldPersistTaps="handled"
       {...(refreshControl && { refreshControl })}

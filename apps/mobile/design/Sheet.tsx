@@ -21,7 +21,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconButton } from './Button';
-import { nativeDriver, useLayout, useReducedMotion } from './layout';
+import { nativeDriver, reducedMotion, useLayout, useReducedMotion } from './layout';
+import { easing } from './motion/easing';
+import { duration } from './motion/timing';
 import { Text } from './Text';
 import { color, radius, shadow } from './tokens';
 
@@ -73,7 +75,8 @@ function FooterHost({ slot, fallback }: { slot: FooterSlot; fallback: ReactNode 
 /**
  * A modal sheet: slides up from the bottom on phones, a centered card on larger screens
  * (or anchored top-right with `anchor="top-right"`, under the capture button). Escape, the close
- * button and tapping outside all close it.
+ * button and tapping outside all close it. It arrives easing out and leaves with a short fade
+ * (both instant with reduced motion); `onExited` runs once it is gone.
  */
 export function Sheet({
   visible,
@@ -84,6 +87,7 @@ export function Sheet({
   footer,
   width = 560,
   anchor = 'center',
+  onExited,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -95,34 +99,57 @@ export function Sheet({
   footer?: ReactNode;
   width?: number;
   anchor?: 'center' | 'top-right';
+  /** After the exit fade, when the sheet has left the screen. */
+  onExited?: () => void;
 }) {
   const { phone } = useLayout();
   const reduced = useReducedMotion();
   const insets = useSafeAreaInsets();
   const progress = useRef(new Animated.Value(0)).current;
   const [slot] = useState(createFooterSlot);
+  // Stays on screen through the exit fade after `visible` turns false.
+  const [mounted, setMounted] = useState(visible);
+  const exited = useRef(onExited);
+  exited.current = onExited;
 
   useEffect(() => {
-    if (!visible) return;
-    progress.setValue(reduced ? 1 : 0);
-    if (!reduced) {
-      Animated.timing(progress, {
+    if (visible) {
+      setMounted(true);
+      if (reducedMotion()) {
+        progress.setValue(1);
+        return;
+      }
+      progress.setValue(0);
+      const enter = Animated.timing(progress, {
         toValue: 1,
-        duration: 220,
+        duration: duration.enter,
+        easing: easing.enter,
         useNativeDriver: nativeDriver,
-      }).start();
+      });
+      enter.start();
+      return () => enter.stop();
     }
-  }, [visible, reduced, progress]);
+    if (reducedMotion()) {
+      progress.setValue(0);
+      setMounted(false);
+      exited.current?.();
+      return;
+    }
+    const exit = Animated.timing(progress, {
+      toValue: 0,
+      duration: duration.exit,
+      easing: easing.exit,
+      useNativeDriver: nativeDriver,
+    });
+    exit.start(({ finished }) => {
+      if (!finished) return;
+      setMounted(false);
+      exited.current?.();
+    });
+    return () => exit.stop();
+  }, [visible, progress]);
 
-  useEffect(() => {
-    if (!visible || Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [visible, onClose]);
-
+  // Escape is handled once, by the modal itself (react-native-web calls onRequestClose).
   const translateY = progress.interpolate({
     inputRange: [0, 1],
     outputRange: [phone ? 40 : -8, 0],
@@ -130,14 +157,16 @@ export function Sheet({
 
   return (
     <Modal
-      visible={visible}
+      visible={mounted}
       transparent
       animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent
+      aria-label={label}
     >
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        pointerEvents={visible ? 'auto' : 'none'}
         style={[
           styles.fill,
           phone ? styles.bottom : anchor === 'top-right' ? styles.topRight : styles.center,
@@ -153,15 +182,13 @@ export function Sheet({
         </Animated.View>
         <Animated.View
           accessibilityViewIsModal
-          aria-modal
-          role="dialog"
-          aria-label={label}
           style={[
             styles.sheet,
             phone
               ? [styles.sheetPhone, { paddingBottom: Math.max(insets.bottom, 16) }]
               : [styles.sheetWide, { width }],
-            { opacity: progress, transform: [{ translateY }] },
+            { opacity: progress },
+            !reduced && { transform: [{ translateY }] },
           ]}
         >
           <View style={styles.head}>

@@ -9,12 +9,15 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import { announce, politeLiveRegion } from '../announce';
 import { Button } from '../Button';
-import { nativeDriver, useLayout, useReducedMotion } from '../layout';
+import { nativeDriver, reducedMotion, useLayout, useReducedMotion } from '../layout';
 import { Text } from '../Text';
 import { color, memberPalette, radius, shadow } from '../tokens';
 import { acknowledgeOnce } from './acknowledgment';
+import { easing } from './easing';
+import { celebrationSpring, duration, linger } from './timing';
 import { useHaptics } from './haptics';
 import { playChime } from './sound';
 
@@ -35,65 +38,135 @@ interface CelebrationApi {
 
 const CelebrationContext = createContext<CelebrationApi | null>(null);
 
-/** Rare, warm moments: a short card with a check that blooms, and a firmer haptic. */
+/**
+ * Rare, warm moments: a short card with a check that blooms, and a firmer haptic. A milestone that
+ * arrives while another shows takes over after a short fade (never an abrupt cut); each is
+ * announced once (design/announce.ts) and stays while hovered or focused.
+ */
 export function CelebrationProvider({ children }: { children: ReactNode }) {
-  const [current, setCurrent] = useState<Milestone | null>(null);
+  const [queue, setQueue] = useState<Milestone[]>([]);
   const haptics = useHaptics();
+  const hapticsRef = useRef(haptics);
+  hapticsRef.current = haptics;
   const celebrate = useCallback(
     (m: Milestone) => {
       // Shown only the first time this person reaches it, on any device.
       void acknowledgeOnce(m.key).then((first) => {
         if (!first) return;
-        setCurrent(m);
-        haptics.medium();
-        playChime();
+        setQueue((q) => (q.some((x) => x.key === m.key) ? q : [...q, m]));
       });
     },
-    [haptics],
+    [],
   );
+  const current = queue[0] ?? null;
+  // The haptic and chime play when a milestone actually shows, not while it waits.
+  useEffect(() => {
+    if (!current) return;
+    hapticsRef.current.medium();
+    playChime();
+    announce([current.title, current.line]);
+  }, [current]);
   const value = useMemo(() => ({ celebrate }), [celebrate]);
   return (
     <CelebrationContext.Provider value={value}>
       {children}
       {current ? (
-        <CelebrationCard key={current.key} milestone={current} onDone={() => setCurrent(null)} />
+        <CelebrationCard
+          key={current.key}
+          milestone={current}
+          superseded={queue.length > 1}
+          onDone={() => setQueue((q) => q.slice(1))}
+        />
       ) : null}
     </CelebrationContext.Provider>
   );
 }
 
-function CelebrationCard({ milestone, onDone }: { milestone: Milestone; onDone: () => void }) {
+function CelebrationCard({
+  milestone,
+  superseded,
+  onDone,
+}: {
+  milestone: Milestone;
+  /** A newer milestone is waiting: fade out now. */
+  superseded: boolean;
+  onDone: () => void;
+}) {
   const reduced = useReducedMotion();
   const { phone } = useLayout();
-  const enter = useRef(new Animated.Value(reduced ? 1 : 0)).current;
-  const pop = useRef(new Animated.Value(reduced ? 1 : 0)).current;
-  const bloom = useRef(new Animated.Value(reduced ? 1 : 0)).current;
+  const still = reducedMotion();
+  const enter = useRef(new Animated.Value(still ? 1 : 0)).current;
+  const pop = useRef(new Animated.Value(still ? 1 : 0)).current;
+  const bloom = useRef(new Animated.Value(still ? 1 : 0)).current;
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
   const colors = (milestone.colors?.length ? milestone.colors : memberPalette).slice(0, 3);
 
   useEffect(() => {
-    if (!reduced) {
-      Animated.parallel([
-        Animated.timing(enter, { toValue: 1, duration: 220, useNativeDriver: nativeDriver }),
-        Animated.sequence([
-          Animated.delay(120),
-          Animated.spring(pop, { toValue: 1, friction: 5, tension: 140, useNativeDriver: nativeDriver }),
-        ]),
-        Animated.sequence([
-          Animated.delay(160),
-          Animated.timing(bloom, {
-            toValue: 1,
-            duration: 700,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: nativeDriver,
-          }),
-        ]),
-      ]).start();
+    if (reducedMotion()) return;
+    const anim = Animated.parallel([
+      Animated.timing(enter, {
+        toValue: 1,
+        duration: duration.enter,
+        easing: easing.enter,
+        useNativeDriver: nativeDriver,
+      }),
+      Animated.sequence([
+        Animated.delay(120),
+        Animated.spring(pop, { toValue: 1, ...celebrationSpring, useNativeDriver: nativeDriver }),
+      ]),
+      Animated.sequence([
+        Animated.delay(160),
+        Animated.timing(bloom, {
+          toValue: 1,
+          duration: duration.bloom,
+          easing: easing.enter,
+          useNativeDriver: nativeDriver,
+        }),
+      ]),
+    ]);
+    anim.start();
+    return () => anim.stop();
+  }, [enter, pop, bloom]);
+
+  /** A short fade out (at once with reduced motion), then the next milestone, if any. */
+  const gone = useRef(false);
+  const leave = useCallback(() => {
+    if (gone.current) return;
+    gone.current = true;
+    if (reducedMotion()) {
+      doneRef.current();
+      return;
     }
-    const timer = setTimeout(() => doneRef.current(), milestone.action ? 6500 : 3800);
-    return () => clearTimeout(timer);
-  }, [enter, pop, bloom, reduced, milestone.action]);
+    setLeaving(true);
+    Animated.timing(enter, {
+      toValue: 0,
+      duration: duration.exit,
+      easing: easing.exit,
+      useNativeDriver: nativeDriver,
+    }).start(() => doneRef.current());
+  }, [enter]);
+
+  useEffect(() => {
+    if (superseded) leave();
+  }, [superseded, leave]);
+
+  const remaining = useRef<number>(
+    milestone.action ? linger.celebrationWithAction : linger.celebration,
+  );
+  const paused = hovered || focused || leaving;
+  useEffect(() => {
+    if (paused) return;
+    const started = Date.now();
+    const timer = setTimeout(leave, remaining.current);
+    return () => {
+      clearTimeout(timer);
+      remaining.current = Math.max(1500, remaining.current - (Date.now() - started));
+    };
+  }, [paused, leave]);
 
   const dots = [
     { x: -26, y: -18 },
@@ -105,36 +178,44 @@ function CelebrationCard({ milestone, onDone }: { milestone: Milestone; onDone: 
     <View pointerEvents="box-none" style={[styles.region, { top: phone ? 70 : 84 }]}>
       <Animated.View
         role="status"
-        aria-live="polite"
+        {...politeLiveRegion}
+        onPointerEnter={() => setHovered(true)}
+        onPointerLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         style={[
           styles.card,
-          {
+          !reduced && {
             opacity: enter,
             transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
           },
         ]}
       >
         <View style={styles.badgeWrap} aria-hidden>
-          {dots.map((d, i) => (
-            <Animated.View
-              key={i}
-              style={[
-                styles.dot,
-                {
-                  backgroundColor: colors[i % colors.length],
-                  opacity: bloom.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 1, 0] }),
-                  transform: [
-                    { translateX: bloom.interpolate({ inputRange: [0, 1], outputRange: [0, d.x] }) },
-                    { translateY: bloom.interpolate({ inputRange: [0, 1], outputRange: [0, d.y] }) },
-                  ],
-                },
-              ]}
-            />
-          ))}
+          {reduced
+            ? null
+            : dots.map((d, i) => (
+                <Animated.View
+                  key={i}
+                  style={[
+                    styles.dot,
+                    {
+                      backgroundColor: colors[i % colors.length],
+                      opacity: bloom.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 1, 0] }),
+                      transform: [
+                        { translateX: bloom.interpolate({ inputRange: [0, 1], outputRange: [0, d.x] }) },
+                        { translateY: bloom.interpolate({ inputRange: [0, 1], outputRange: [0, d.y] }) },
+                      ],
+                    },
+                  ]}
+                />
+              ))}
           <Animated.View
             style={[
               styles.badge,
-              { transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) }] },
+              !reduced && {
+                transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) }],
+              },
             ]}
           >
             <Check size={22} strokeWidth={3} color={color.onInk} />
@@ -156,6 +237,8 @@ function CelebrationCard({ milestone, onDone }: { milestone: Milestone; onDone: 
               variant="secondary"
               onPress={() => {
                 milestone.action?.onPress();
+                if (gone.current) return;
+                gone.current = true;
                 onDone();
               }}
               style={styles.action}
@@ -165,7 +248,7 @@ function CelebrationCard({ milestone, onDone }: { milestone: Milestone; onDone: 
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Dismiss"
-          onPress={onDone}
+          onPress={leave}
           style={styles.close}
         >
           <X size={16} color={color.muted} strokeWidth={2.2} />
