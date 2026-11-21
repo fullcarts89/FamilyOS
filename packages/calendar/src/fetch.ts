@@ -49,8 +49,11 @@ export const DEFAULT_FETCH_POLICY: FetchPolicy = {
   maxRedirects: 3,
 };
 
-// Everything that isn't the public internet: RFC 6890 special-purpose ranges and friends.
+// Everything that isn't the public internet: RFC 6890 special-purpose ranges and friends. Two
+// lists: Node's BlockList matches IPv4 addresses against IPv6 rules too (as ::a.b.c.d and
+// ::ffff:a.b.c.d), so the IPv6 ranges below that contain those would block every IPv4 address.
 const blocked = new BlockList();
+const blockedV6 = new BlockList();
 for (const [net, prefix] of [
   ['0.0.0.0', 8],
   ['10.0.0.0', 8],
@@ -71,8 +74,11 @@ for (const [net, prefix] of [
   blocked.addSubnet(net, prefix, 'ipv4');
 }
 for (const [net, prefix] of [
-  ['::', 128],
+  // Unspecified, loopback and IPv4-compatible (::a.b.c.d, deprecated but still parsed).
+  ['::', 96],
   ['::1', 128],
+  // IPv4-mapped in any spelling (0:0:0:0:0:ffff:7f00:1 as well as ::ffff:127.0.0.1).
+  ['::ffff:0:0', 96],
   ['64:ff9b::', 96],
   ['64:ff9b:1::', 48],
   ['100::', 64],
@@ -83,7 +89,7 @@ for (const [net, prefix] of [
   ['fe80::', 10],
   ['ff00::', 8],
 ] as const) {
-  blocked.addSubnet(net, prefix, 'ipv6');
+  blockedV6.addSubnet(net, prefix, 'ipv6');
 }
 
 /** Whether an IP address is on the public internet. IPv4-mapped IPv6 is checked as IPv4. */
@@ -94,7 +100,7 @@ export function isPublicAddress(address: string): boolean {
     const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
     if (mapped?.[1]) return !blocked.check(mapped[1], 'ipv4');
     if (/^::ffff:/i.test(address)) return false;
-    return !blocked.check(address, 'ipv6');
+    return !blockedV6.check(address, 'ipv6');
   }
   return false;
 }

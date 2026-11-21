@@ -35,7 +35,7 @@ RUN test -n "$EXPO_PUBLIC_SUPABASE_URL" && test -n "$EXPO_PUBLIC_SUPABASE_PUBLIS
 ENV NODE_ENV=production \
     WEB_DIST_DIR=/app/web-dist \
     WEB_SUPABASE_URL=$EXPO_PUBLIC_SUPABASE_URL
-COPY deploy/start.mjs deploy/start.mjs
+COPY deploy/start.mjs deploy/env.mjs deploy/
 USER node
 EXPOSE 8787
 CMD ["node", "deploy/start.mjs"]

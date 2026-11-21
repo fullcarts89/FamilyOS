@@ -24,6 +24,14 @@ describe('which addresses are public', () => {
       '::ffff:127.0.0.1',
       '::ffff:10.0.0.1',
       '64:ff9b::a00:1',
+      // IPv4-compatible and IPv4-mapped in hex or expanded form.
+      '::7f00:1',
+      '::127.0.0.1',
+      '::a9fe:a9fe',
+      '::ffff:7f00:1',
+      '0:0:0:0:0:ffff:7f00:1',
+      '0:0:0:0:0:ffff:808:808',
+      '0:0:0:0:0:0:7f00:1',
       'not-an-ip',
     ]) {
       expect({ ip, public: isPublicAddress(ip) }).toEqual({ ip, public: false });
