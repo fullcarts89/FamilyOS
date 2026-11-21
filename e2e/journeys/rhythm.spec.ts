@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import { addDays, weekday, weekdayName } from '../support/api';
-import { TIME_ZONE } from '../support/env';
+import { THEO, TIME_ZONE } from '../support/env';
 import { expect, test, toast } from '../support/fixtures';
 
 /** The day strip on Today links each of the next seven days to the Week. */
@@ -47,22 +47,42 @@ test.describe('Events, handoffs and conflicts', () => {
     const theoPickups = maya.getByRole('button', { name: 'Pickup 5:30pm, Theo', exact: true });
     const coveredBefore = await theoPickups.count();
 
-    // Today's heads-up offers the fix.
+    // Today's heads-up offers the fix. Asking Theo changes nothing until he says yes: the
+    // pickup stays Maya's, marked as waiting, with a way to take the request back.
     await app.nav(maya, 'Today');
     const headsUp = maya.getByRole('button', {
       name: /“Quarterly planning \(runs late\)” runs into June’s pickup at 5:30pm/,
     });
     await expect(headsUp).toBeVisible();
-    await app.clip('resolve-childcare-conflict', maya, async () => {
-      await maya.getByRole('button', { name: 'Ask Theo to cover' }).click();
-      await expect(toast(maya, 'Theo has June’s pickup now')).toBeVisible();
-      await expect(maya.getByText('Pickup covered')).toBeVisible();
-    });
-    await expect(headsUp).toBeHidden();
+    await maya.getByRole('button', { name: 'Ask Theo to cover' }).click();
+    await expect(toast(maya, 'Asked Theo. You’ll see here when they answer.')).toBeVisible();
+    await expect(headsUp).toContainText('Asked Theo · waiting');
+    await expect(maya.getByRole('button', { name: 'Cancel request' })).toBeVisible();
+    await expect.poll(async () => (await pickupOn())?.coverRequest?.status).toBe('pending');
+    expect((await pickupOn())?.cover).toBeNull();
+    expect((await pickupOn())?.memberIds).not.toContain(theo.id);
 
-    // The server has Theo covering that one pickup.
+    // Theo, on his own phone, is asked on his Today, and says yes.
+    const theoPage = await app.as(THEO.email);
+    const asked = theoPage.getByRole('button', {
+      name: /^Maya asked you to cover June’s pickup · (Thu|Today|Tomorrow) 5:30pm/,
+    });
+    await expect(asked).toBeVisible();
+    await app.clip('resolve-childcare-conflict', theoPage, async () => {
+      await theoPage.getByRole('button', { name: 'Accept', exact: true }).click();
+      await expect(toast(theoPage, 'You have June’s pickup now')).toBeVisible();
+    });
+    await expect(asked).toBeHidden();
+
+    // The server has Theo covering that one pickup, and the request is answered.
     await expect.poll(async () => (await pickupOn())?.cover?.memberId).toBe(theo.id);
     expect((await pickupOn())?.memberIds).toContain(theo.id);
+    expect((await pickupOn())?.coverRequest).toBeNull();
+
+    // Back on Maya's Today, the clash is gone.
+    await app.nav(maya, 'Week');
+    await app.nav(maya, 'Today');
+    await expect(headsUp).toBeHidden();
 
     // The Week shows it covered, and nothing left to sort that day.
     await stripDay(maya, thursday).click();

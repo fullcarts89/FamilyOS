@@ -6,6 +6,7 @@ import { Text } from '../../design/Text';
 import { color, space, touch } from '../../design/tokens';
 import type { Activity } from '../../lib/api';
 import type { People } from '../../lib/people';
+import { activityLink, activityWords, type ActivityEntry } from '../reset/coordination';
 
 /** "2 hours ago", "yesterday", "Tuesday". */
 export function ago(iso: string, now: Date): string {
@@ -18,34 +19,13 @@ export function ago(iso: string, now: Date): string {
   return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
-/** One plain sentence for what someone did: appreciation in words, never counted. */
-export function activityLine(a: Activity, people: People): { who: string; rest: string } {
-  const actor = people.byId(a.actorMemberId);
-  const who = actor ? (actor.isMe ? 'You' : actor.name) : 'Someone';
-  const target = people.byId(a.memberId);
-  const toWhom = target ? (target.isMe ? 'you' : target.name) : 'someone';
-  switch (a.action) {
-    case 'task.completed':
-      return { who, rest: `handled ${a.title}` };
-    case 'routine.done':
-      return { who, rest: `did ${a.title}` };
-    case 'project.completed':
-      return { who, rest: `finished ${a.title}` };
-    case 'task.taken':
-      return { who, rest: `took on ${a.title}` };
-    case 'task.assigned':
-      return target?.isMe
-        ? { who, rest: `handed you ${a.title}` }
-        : { who, rest: `gave ${a.title} to ${toWhom}` };
-    case 'routine.swapped':
-      return { who, rest: `swapped turns on ${a.title}` };
-    case 'event.covered':
-      return target?.id === actor?.id
-        ? { who, rest: `is covering ${a.title}` }
-        : { who, rest: `asked ${toWhom} to cover ${a.title}` };
-    case 'member.added':
-      return { who, rest: `added ${a.title} to the household` };
-  }
+/**
+ * One plain sentence for what someone did: appreciation in words, never counted. Covers asked
+ * for, accepted and declined, and decisions voted on and settled, are lines too; anything this
+ * version doesn't know is left out (null) rather than shown wrong.
+ */
+export function activityLine(a: Activity | ActivityEntry, people: People) {
+  return activityWords(a, (id) => people.byId(id));
 }
 
 /**
@@ -58,23 +38,30 @@ export function SinceLastLooked({
   now,
   limit = 6,
 }: {
-  activity: Activity[];
+  activity: (Activity | ActivityEntry)[];
   people: People;
   now: Date;
   limit?: number;
 }) {
+  const lines = activity
+    .map((a) => ({ a, line: activityLine(a, people) }))
+    .filter(
+      (x): x is { a: Activity | ActivityEntry; line: { who: string; rest: string } } => !!x.line,
+    )
+    .slice(0, limit);
   return (
     <View role="list" aria-label="What changed since you last looked">
-      {activity.slice(0, limit).map((a, i, all) => {
+      {lines.map(({ a, line }, i, all) => {
         const actor = people.byId(a.actorMemberId);
-        const { who, rest } = activityLine(a, people);
-        const link = a.entityType === 'work_item';
+        const { who, rest } = line;
+        const to = activityLink(a);
+        const link = to !== null;
         return (
           <View key={a.id} role="listitem">
             <Pressable
               accessibilityRole={link ? 'link' : undefined}
               disabled={!link}
-              onPress={() => router.push({ pathname: '/item/[id]', params: { id: a.entityId } })}
+              onPress={() => to && router.push(to)}
               style={(s: PressState) => [
                 styles.row,
                 i === all.length - 1 && styles.last,

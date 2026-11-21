@@ -34,6 +34,13 @@ export interface Occurrence {
   carePlace: string | null;
   recurring: boolean;
   cover: { memberId: string; replacedMemberIds: string[] } | null;
+  /** A request to cover it that hasn't been answered yet. */
+  coverRequest?: {
+    id: string;
+    askedMemberId: string;
+    askedByMemberId: string;
+    status: 'pending' | 'accepted' | 'declined' | 'cancelled';
+  } | null;
 }
 export interface Routine {
   id: string;

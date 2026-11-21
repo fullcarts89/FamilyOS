@@ -31,10 +31,18 @@ import { useToast } from '../../design/Toast';
 import { color, font, radius } from '../../design/tokens';
 import { api, errorMessage, type EventDetail, type Occurrence } from '../../lib/api';
 import { addDays, clock, dayOfWeek, longDate, relativeDay } from '../../lib/dates';
-import { eventBody, loadEvent, useOccurrenceActions, type EventDraft } from '../../lib/events';
+import {
+  eventBody,
+  loadEvent,
+  trackRequests,
+  useDeclined,
+  useOccurrenceActions,
+  type EventDraft,
+} from '../../lib/events';
 import { useHousehold } from '../../lib/household';
 import { usePeople, type Person } from '../../lib/people';
 import { CARE_VERB, localParts, rangeOf } from '../../lib/rhythm';
+import { requestView, waitingWords, type WithRequest } from '../reset/coordination';
 
 export type EventTarget =
   { mode: 'new'; date: string; care?: boolean } | { mode: 'occurrence'; occurrence: Occurrence };
@@ -210,10 +218,15 @@ function OccurrenceView({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const { timeZone } = useHousehold();
+  const { household, timeZone } = useHousehold();
   const people = usePeople();
   const [busy, setBusy] = useState<string | null>(null);
   const actions = useOccurrenceActions(onChanged);
+  const declinedBy = useDeclined();
+  const request = requestView(o as WithRequest, people.me?.id);
+  useEffect(() => {
+    trackRequests(household?.id, people.me?.id, [o]);
+  }, [o, household, people.me]);
   const who = o.memberIds.map((id) => people.byId(id)).filter((p): p is Person => !!p);
   const child = people.byId(o.careMemberId);
   const adults = who.filter((p) => !p.caredFor);
@@ -222,6 +235,14 @@ function OccurrenceView({
     .filter((p): p is Person => !!p);
   const coverOptions = people.adults.filter((p) => !adults.some((a) => a.id === p.id));
   const exception = series?.exceptions.find((e) => e.date === o.date);
+  // Undoing a cover hands the occurrence back to whoever usually has it: only they do that
+  // (from their own phone), so nobody gets a handoff they didn't say yes to.
+  const usual = o.cover?.replacedMemberIds.find((id) => !people.byId(id)?.caredFor) ?? null;
+  const canRestore =
+    exception?.kind === 'skip' || !usual || usual === people.me?.id || !people.byId(usual);
+  const asked = request.kind === 'none' ? null : people.byId(request.request.askedMemberId);
+  const asker = request.kind === 'none' ? null : people.byId(request.request.askedByMemberId);
+  const noFrom = request.kind === 'none' ? people.byId(declinedBy(o)) : null;
 
   const run = async (label: string, fn: () => Promise<boolean>) => {
     setBusy(label);
@@ -306,32 +327,83 @@ function OccurrenceView({
               Just this {o.recurring ? 'one' : 'time'}
             </Text>
           ) : null}
+          {request.kind !== 'none' ? (
+            <Text variant="meta" style={styles.requestLine}>
+              {request.kind === 'forMe'
+                ? `${asker?.name ?? 'Someone'} asked you to cover this one.`
+                : waitingWords(asked?.isMe ? 'you' : (asked?.name ?? 'them'))}
+            </Text>
+          ) : noFrom ? (
+            <Text variant="meta" style={styles.requestLine}>
+              {noFrom.name} can’t make it.
+            </Text>
+          ) : null}
           <View style={styles.chips}>
             {exception ? (
-              <Button
-                title={exception.kind === 'skip' ? 'Put it back' : 'Back to the usual'}
-                variant="secondary"
-                size="sm"
-                busy={busy === 'restore'}
-                onPress={() =>
-                  void run('restore', async () => {
-                    await actions.restore(o.eventId, o.date);
-                    return true;
-                  })
-                }
-              />
+              canRestore ? (
+                <Button
+                  title={exception.kind === 'skip' ? 'Put it back' : 'Back to the usual'}
+                  variant="secondary"
+                  size="sm"
+                  busy={busy === 'restore'}
+                  onPress={() =>
+                    void run('restore', async () => {
+                      await actions.restore(o.eventId, o.date);
+                      return true;
+                    })
+                  }
+                />
+              ) : (
+                <Text variant="meta" tone="muted">
+                  You’re covering this one. {people.byId(usual)?.name ?? 'They'} can take it back
+                  from their phone.
+                </Text>
+              )
+            ) : request.kind === 'forMe' ? (
+              <>
+                <Button
+                  title="Accept"
+                  size="sm"
+                  busy={busy === 'accept'}
+                  onPress={() =>
+                    void run('accept', () => actions.accept(request.request, o, { today }))
+                  }
+                />
+                <Button
+                  title="Decline"
+                  variant="secondary"
+                  size="sm"
+                  busy={busy === 'decline'}
+                  onPress={() =>
+                    void run('decline', () => actions.decline(request.request, o, { today }))
+                  }
+                />
+              </>
             ) : (
               <>
-                {(o.careMemberId ? coverOptions : []).map((p) => (
+                {(o.careMemberId ? coverOptions : [])
+                  .filter((p) => request.kind === 'none' || p.isMe)
+                  .map((p) => (
+                    <Button
+                      key={p.id}
+                      title={p.isMe ? 'I’ll cover it' : `Ask ${p.name} to cover`}
+                      variant={adults.length === 0 || p.isMe ? 'primary' : 'secondary'}
+                      size="sm"
+                      busy={busy === p.id}
+                      onPress={() => void run(p.id, () => actions.cover(o, p.id, { today }))}
+                    />
+                  ))}
+                {request.kind === 'mine' ? (
                   <Button
-                    key={p.id}
-                    title={p.isMe ? 'I’ll cover it' : `Ask ${p.name} to cover`}
-                    variant={adults.length === 0 || p.isMe ? 'primary' : 'secondary'}
+                    title="Cancel request"
+                    variant="secondary"
                     size="sm"
-                    busy={busy === p.id}
-                    onPress={() => void run(p.id, () => actions.cover(o, p.id, { today }))}
+                    busy={busy === 'cancel'}
+                    onPress={() =>
+                      void run('cancel', () => actions.cancelRequest(request.request, o))
+                    }
                   />
-                ))}
+                ) : null}
                 {o.recurring ? (
                   <Button
                     title="Skip this one"
@@ -914,6 +986,7 @@ const styles = StyleSheet.create({
   form: { gap: 18, paddingBottom: 8 },
   group: { gap: 10 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center', paddingTop: 2 },
+  requestLine: { color: color.ink },
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   dateText: { minWidth: 170, textAlign: 'center' },
   times: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },

@@ -1,17 +1,27 @@
 import type { HeadsUp } from '@familyos/domain';
 import { router } from 'expo-router';
-import { Car, Repeat2, Vote } from 'lucide-react-native';
-import { useState } from 'react';
+import { Car, Hourglass, Repeat2, Vote } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Button, type PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
 import { FadeIn } from '../../design/motion';
 import { Text } from '../../design/Text';
 import { color, radius, space, touch } from '../../design/tokens';
-import type { Occurrence, WorkItem } from '../../lib/api';
+import { api, type Occurrence, type WorkItem } from '../../lib/api';
+import { useCapture } from '../../lib/capture';
 import { relativeDay } from '../../lib/dates';
+import { trackRequests, useDeclined, useOccurrenceActions } from '../../lib/events';
+import { useHousehold } from '../../lib/household';
 import type { People } from '../../lib/people';
 import { CARE_VERB, timeOf } from '../../lib/rhythm';
+import {
+  requestView,
+  waitingWords,
+  type CoverRequest,
+  type CoverRequestLists,
+  type WithRequest,
+} from '../reset/coordination';
 
 export interface DatedHeadsUp {
   date: string;
@@ -20,8 +30,10 @@ export interface DatedHeadsUp {
 
 /**
  * Heads-ups as rows you can act on: a pickup that clashes with a meeting ("Ask Theo to cover"),
- * a drop-off nobody has, a routine still open after its day. Each is a rule over real data; the
- * buttons do the thing, and the row leaves once the server agrees.
+ * a drop-off nobody has, a routine still open after its day, and a request from the other adult
+ * to cover something ("Maya asked you to cover June's pickup", Accept or Decline). Each is a rule
+ * over real data; the buttons do the thing, and the row changes once the server agrees. Asking
+ * someone changes nothing until they accept: the row says "Asked Theo · waiting" meanwhile.
  */
 export function HeadsUps({
   items,
@@ -34,6 +46,8 @@ export function HeadsUps({
   onOpen,
   onComplete,
   onAssign,
+  requests: given,
+  onChanged,
 }: {
   items: DatedHeadsUp[];
   today: string;
@@ -45,10 +59,67 @@ export function HeadsUps({
   onOpen: (o: Occurrence) => void;
   onComplete: (item: WorkItem) => void;
   onAssign: (item: WorkItem, ownerId: string | null) => void;
+  /** What you've been asked and are waiting on (GET /events' `coverRequests`); loaded if absent. */
+  requests?: CoverRequestLists;
+  /** After an answer: reload the screen (default: every visible screen reloads). */
+  onChanged?: () => void;
 }) {
-  if (items.length === 0) return null;
+  const { household } = useHousehold();
+  const { changed } = useCapture();
+  const actions = useOccurrenceActions(onChanged ?? changed);
+  const [loaded, setLoaded] = useState<CoverRequestLists | null>(null);
+  const requests = given ?? loaded;
+  const meId = people.me?.id;
+
+  // Without the lists from the screen, ask for them whenever the heads-ups reload.
+  useEffect(() => {
+    if (given || !household) return;
+    let alive = true;
+    api<CoverRequestLists>(`/households/${household.id}/cover-requests`)
+      .then((r) => alive && setLoaded(r))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [given, household, items]);
+
+  // Requests you made that are no longer waiting: was it a no?
+  useEffect(() => {
+    const seen = items
+      .map(({ headsUp: h }) => ('occurrenceKey' in h ? occurrence(h.occurrenceKey) : undefined))
+      .filter((o): o is Occurrence => !!o);
+    trackRequests(household?.id, meId, seen);
+  }, [items, occurrence, household, meId]);
+
+  // Asked of you, about something with no heads-up of its own: a row to answer it.
+  const shown = new Set(
+    items.map(({ headsUp: h }) => ('occurrenceKey' in h ? h.occurrenceKey : h.id)),
+  );
+  const asks = (requests?.askedOfMe ?? []).filter(
+    (r) => !shown.has(`${r.eventId}:${r.date}`) && occurrence(`${r.eventId}:${r.date}`),
+  );
+
+  if (items.length === 0 && asks.length === 0) return null;
   return (
     <View style={styles.list} role="list" aria-label="Heads-ups">
+      {asks.map((r) => {
+        const o = occurrence(`${r.eventId}:${r.date}`);
+        return o ? (
+          <View key={r.id} role="listitem">
+            <FadeIn>
+              <AskedRow
+                request={r}
+                o={o}
+                today={today}
+                timeZone={timeZone}
+                people={people}
+                actions={actions}
+                onOpen={onOpen}
+              />
+            </FadeIn>
+          </View>
+        ) : null;
+      })}
       {items.map(({ date, headsUp }) => (
         <View key={headsUp.id} role="listitem">
           <FadeIn>
@@ -64,6 +135,7 @@ export function HeadsUps({
               onOpen={onOpen}
               onComplete={onComplete}
               onAssign={onAssign}
+              actions={actions}
             />
           </FadeIn>
         </View>
@@ -73,6 +145,88 @@ export function HeadsUps({
 }
 
 const dayWord = (date: string, today: string) => relativeDay(date, today, { late: false });
+
+/** "Thu 5:30pm", "Today 5:30pm". */
+const shortWhen = (o: Occurrence, today: string, timeZone: string) => {
+  const day = dayWord(o.date, today);
+  return `${/^(Today|Tomorrow)$/.test(day) ? day : day.slice(0, 3)} ${timeOf(o.startsAt, timeZone)}`;
+};
+
+/** "June’s pickup", or “Swim lesson”. */
+const whatOf = (o: Occurrence, people: People) => {
+  const child = people.byId(o.careMemberId);
+  return child && o.careAction ? `${child.name}’s ${CARE_VERB[o.careAction]}` : `“${o.title}”`;
+};
+
+type Actions = ReturnType<typeof useOccurrenceActions>;
+
+/** The other adult asked you to cover something: say yes or no. */
+function AskedRow({
+  request,
+  o,
+  today,
+  timeZone,
+  people,
+  actions,
+  onOpen,
+}: {
+  request: CoverRequest;
+  o: Occurrence;
+  today: string;
+  timeZone: string;
+  people: People;
+  actions: Actions;
+  onOpen: (o: Occurrence) => void;
+}) {
+  const [busy, setBusy] = useState<'accept' | 'decline' | null>(null);
+  const asker = people.byId(request.askedByMemberId);
+  const run = async (which: 'accept' | 'decline') => {
+    setBusy(which);
+    await actions[which](request, o, { today });
+    setBusy(null);
+  };
+  return (
+    <View style={[styles.row, styles.asked]}>
+      <View style={styles.icon}>
+        <Car size={17} color={people.byId(o.careMemberId)?.color ?? color.ink} strokeWidth={2.4} />
+      </View>
+      <View style={styles.body}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityHint="Opens the details"
+          onPress={() => onOpen(o)}
+          style={(s: PressState) => [
+            styles.text,
+            { cursor: 'pointer' },
+            s.hovered && { opacity: 0.8 },
+          ]}
+        >
+          <Text variant="title">
+            {asker?.name ?? 'Someone'} asked you to cover {whatOf(o, people)} ·{' '}
+            {shortWhen(o, today, timeZone)}
+          </Text>
+        </Pressable>
+        <View style={styles.actions}>
+          <Button
+            size="md"
+            title="Accept"
+            busy={busy === 'accept'}
+            disabled={busy !== null}
+            onPress={() => void run('accept')}
+          />
+          <Button
+            size="md"
+            variant="secondary"
+            title="Decline"
+            busy={busy === 'decline'}
+            disabled={busy !== null}
+            onPress={() => void run('decline')}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
 
 function HeadsUpRow({
   date,
@@ -86,6 +240,7 @@ function HeadsUpRow({
   onOpen,
   onComplete,
   onAssign,
+  actions: occurrenceActions,
 }: {
   date: string;
   h: HeadsUp;
@@ -98,8 +253,10 @@ function HeadsUpRow({
   onOpen: (o: Occurrence) => void;
   onComplete: (item: WorkItem) => void;
   onAssign: (item: WorkItem, ownerId: string | null) => void;
+  actions: Actions;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const declinedBy = useDeclined();
   const when = dayWord(date, today);
   const cover = async (o: Occurrence, id: string) => {
     setBusy(id);
@@ -109,11 +266,26 @@ function HeadsUpRow({
 
   let icon = <Hatch width={18} height={12} radius={3} />;
   let text: string;
+  let status: string | null = null;
   let actions: React.ReactNode = null;
   let open: (() => void) | null = null;
 
   if (h.type === 'handoff_conflict' || h.type === 'care_unassigned') {
-    const o = occurrence(h.occurrenceKey);
+    const o = occurrence(h.occurrenceKey) as WithRequest | undefined;
+    const view = o ? requestView(o, people.me?.id) : ({ kind: 'none' } as const);
+    if (o && view.kind === 'forMe') {
+      return (
+        <AskedRow
+          request={view.request}
+          o={o}
+          today={today}
+          timeZone={timeZone}
+          people={people}
+          actions={occurrenceActions}
+          onOpen={onOpen}
+        />
+      );
+    }
     const child = people.byId(
       o?.careMemberId ?? (h.type === 'care_unassigned' ? h.careMemberId : null),
     );
@@ -131,6 +303,7 @@ function HeadsUpRow({
       actions = o
         ? others
             .slice(0, 2)
+            .filter((p) => view.kind === 'none' || p.isMe)
             .map((p) => (
               <Button
                 key={p.id}
@@ -157,7 +330,7 @@ function HeadsUpRow({
               onPress={() => void cover(o, me.id)}
             />
           ) : null}
-          {partner ? (
+          {partner && view.kind === 'none' ? (
             <Button
               size="md"
               variant="secondary"
@@ -168,6 +341,34 @@ function HeadsUpRow({
           ) : null}
         </>
       ) : null;
+    }
+    if (o && (view.kind === 'mine' || view.kind === 'others')) {
+      // Asked, not answered: it stays where it was until they say yes.
+      const asked = people.byId(view.request.askedMemberId);
+      status = waitingWords(asked?.name ?? 'them');
+      icon = <Hourglass size={17} color={asked?.color ?? color.ink} strokeWidth={2.4} />;
+      if (view.kind === 'mine') {
+        const request = view.request;
+        actions = (
+          <>
+            {actions}
+            <Button
+              size="md"
+              variant="secondary"
+              title="Cancel request"
+              busy={busy === 'cancel'}
+              onPress={async () => {
+                setBusy('cancel');
+                await occurrenceActions.cancelRequest(request, o);
+                setBusy(null);
+              }}
+            />
+          </>
+        );
+      }
+    } else if (o) {
+      const no = people.byId(declinedBy(o));
+      if (no) status = `${no.name} can’t make it`;
     }
     if (o) open = () => onOpen(o);
   } else if (h.type === 'overdue_routine') {
@@ -226,6 +427,11 @@ function HeadsUpRow({
           ]}
         >
           <Text variant="title">{text}</Text>
+          {status ? (
+            <Text variant="meta" tone="muted" style={styles.status}>
+              {status}
+            </Text>
+          ) : null}
         </Pressable>
         {actions ? <View style={styles.actions}>{actions}</View> : null}
       </View>
@@ -252,6 +458,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   body: { flex: 1, gap: space[2] },
+  asked: { borderColor: color.ink },
   text: { minHeight: touch, justifyContent: 'center' },
+  status: { marginTop: 2 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
 });

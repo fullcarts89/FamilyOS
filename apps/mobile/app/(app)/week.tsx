@@ -12,9 +12,11 @@ import { ErrorNotice } from '../../design/Notice';
 import { Page, PageHeader } from '../../design/Page';
 import { Text } from '../../design/Text';
 import { color, font, radius, tint } from '../../design/tokens';
+import { pendingRequest, type WithRequest } from '../../components/reset/coordination';
 import { api, type EventsResponse, type Occurrence, type RhythmResponse } from '../../lib/api';
 import { useCapture } from '../../lib/capture';
 import { addDays, dayOfWeek, shortDate, weekdayName } from '../../lib/dates';
+import { trackRequests } from '../../lib/events';
 import { useHousehold } from '../../lib/household';
 import { usePeople, type Person } from '../../lib/people';
 import { headsUpsForDays, timeOf } from '../../lib/rhythm';
@@ -75,6 +77,7 @@ export default function Week() {
       if (!alive.current) return;
       setData(res);
       setError(false);
+      trackRequests(household.id, household.memberId, res.occurrences);
     } catch {
       if (alive.current) setError(true);
     }
@@ -160,6 +163,10 @@ export default function Week() {
   const partnerColors: [string, string] | undefined =
     people.me && people.partner ? [people.me.color, people.partner.color] : undefined;
   const open = headsUps.length;
+  const waiting = headsUps.filter(({ headsUp: h }) => {
+    const o = occ.find((x) => x.key === h.occurrenceKey);
+    return !!o && !!pendingRequest(o as WithRequest);
+  }).length;
 
   const header = (
     <PageHeader
@@ -173,7 +180,7 @@ export default function Week() {
         data
           ? open === 0
             ? 'Every drop-off and pickup has someone, and nothing clashes.'
-            : `${open === 1 ? 'One drop-off or pickup needs' : `${open} drop-offs and pickups need`} sorting: look for the hatching.`
+            : `${open === 1 ? 'One drop-off or pickup needs' : `${open} drop-offs and pickups need`} sorting: look for the hatching.${waiting ? ` ${waiting === 1 ? 'One is' : `${waiting} are`} waiting for an answer.` : ''}`
           : undefined
       }
       action={
@@ -396,10 +403,14 @@ function Card({
     : !!row.person && flagged.has(`${row.person.id}|${o.key}`);
   if (row.care && o.careAction) {
     const who = adults[0] ?? null;
+    // Asked and not answered yet: it reads "asked Theo, waiting" and still needs sorting.
+    const request = pendingRequest(o as WithRequest);
+    const asked = request ? people.byId(request.askedMemberId) : null;
+    const askedName = asked ? (asked.isMe ? 'you' : asked.name) : null;
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${o.careAction === 'drop_off' ? 'Drop-off' : 'Pickup'} ${time}, ${who ? (who.isMe ? 'you' : who.name) : 'nobody yet'}${problem ? ', needs sorting' : ''}`}
+        accessibilityLabel={`${o.careAction === 'drop_off' ? 'Drop-off' : 'Pickup'} ${time}, ${who ? (who.isMe ? 'you' : who.name) : 'nobody yet'}${problem ? ', needs sorting' : ''}${askedName ? `, asked ${askedName}, waiting` : ''}`}
         onPress={() => onOpen(o)}
         style={(s: PressState) => [
           styles.handoff,
@@ -420,6 +431,10 @@ function Card({
         </Text>
         {who && !problem ? (
           <Avatar person={who} size={20} />
+        ) : asked ? (
+          <View style={[styles.waitingRing, { borderColor: asked.color }]}>
+            <Avatar person={asked} size={16} />
+          </View>
         ) : (
           <View style={styles.unknown}>
             <Text variant="small" style={styles.unknownText}>
@@ -659,6 +674,16 @@ const styles = StyleSheet.create({
     backgroundColor: color.surface,
   },
   unknownText: { fontFamily: font.uiBold, color: color.ink, fontSize: 11, lineHeight: 13 },
+  waitingRing: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.75,
+  },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 20, marginTop: 18, alignItems: 'center' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 },
   legendImported: {
