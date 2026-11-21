@@ -81,6 +81,8 @@ test.describe('Two adults: covering for each other, and the Weekly Reset in step
     await expect(askedHeadsUp(theo)).toBeHidden();
     // One pickup covered is a confirmation, not a milestone card.
     await expect(theo.getByText('Pickup covered')).toHaveCount(0);
+    // "Since you last looked" keeps Maya's ask as history, marked as answered.
+    await expect(theo.getByText('asked you to cover Daycare pickup · you said yes')).toBeVisible();
     await expect.poll(async () => (await read())?.cover?.memberId).toBe(theoId);
 
     // Both see it covered by Theo: his Week, and Maya's (she reloads the Week).

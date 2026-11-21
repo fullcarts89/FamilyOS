@@ -1,12 +1,20 @@
 import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Avatar } from '../../design/Avatar';
 import type { PressState } from '../../design/Button';
 import { Text } from '../../design/Text';
 import { color, space, touch } from '../../design/tokens';
-import type { Activity } from '../../lib/api';
+import { api, type Activity } from '../../lib/api';
+import { useHousehold } from '../../lib/household';
 import type { People } from '../../lib/people';
-import { activityLink, activityWords, type ActivityEntry } from '../reset/coordination';
+import {
+  activityLink,
+  activityWords,
+  answeredWords,
+  answerTo,
+  type ActivityEntry,
+} from '../reset/coordination';
 
 /** "2 hours ago", "yesterday", "Tuesday". */
 export function ago(iso: string, now: Date): string {
@@ -30,7 +38,8 @@ export function activityLine(a: Activity | ActivityEntry, people: People) {
 
 /**
  * What changed since you last looked: the other adults' activity from the household's audit
- * trail, newest first. Real events only; nothing is summarized or scored.
+ * trail, newest first. Real events only; nothing is summarized or scored. A request to cover
+ * that you've answered since says so ("· you said yes"), so it doesn't read as still open.
  */
 export function SinceLastLooked({
   activity,
@@ -43,8 +52,36 @@ export function SinceLastLooked({
   now: Date;
   limit?: number;
 }) {
+  const { household } = useHousehold();
+  const meId = household?.memberId ?? null;
+  // Your own answers aren't in this list (it's the others' activity): read them when someone
+  // asked you to cover something.
+  const askedOfMe = activity.filter(
+    (a) => a.action === 'event.cover_requested' && a.memberId === meId,
+  );
+  const since = askedOfMe.map((a) => a.at).sort()[0] ?? null;
+  const [mine, setMine] = useState<ActivityEntry[]>([]);
+  useEffect(() => {
+    if (!household || !since) return;
+    let alive = true;
+    api<{ activity: ActivityEntry[] }>(
+      `/households/${household.id}/activity?since=${encodeURIComponent(since)}&includeMine=true`,
+    )
+      .then((r) => alive && setMine(r.activity))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [household, since, activity]);
+
   const lines = activity
-    .map((a) => ({ a, line: activityLine(a, people) }))
+    .map((a) => {
+      const line = activityLine(a, people);
+      return {
+        a,
+        line: line && { ...line, rest: `${line.rest}${answeredWords(answerTo(a, mine, meId))}` },
+      };
+    })
     .filter(
       (x): x is { a: Activity | ActivityEntry; line: { who: string; rest: string } } => !!x.line,
     )

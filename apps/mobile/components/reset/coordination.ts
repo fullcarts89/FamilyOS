@@ -246,6 +246,40 @@ export function activityWords(
   }
 }
 
+/**
+ * How a request asked of you was answered, from your own activity (GET /activity with
+ * includeMine): the first yes or no you gave on that event after it was asked, and before the
+ * next request on it. Null: not answered (yet), or not a request asked of you.
+ */
+export function answerTo(
+  request: ActivityEntry,
+  activity: ActivityEntry[],
+  meId: string | null | undefined,
+): 'yes' | 'no' | null {
+  if (!meId || request.action !== 'event.cover_requested' || request.memberId !== meId) {
+    return null;
+  }
+  const sameEvent = (a: ActivityEntry) => a.entityId === request.entityId && a.at >= request.at;
+  const next = activity
+    .filter((a) => a.action === 'event.cover_requested' && a.id !== request.id && sameEvent(a))
+    .map((a) => a.at)
+    .sort()[0];
+  const answer = activity
+    .filter(
+      (a) =>
+        (a.action === 'event.cover_accepted' || a.action === 'event.cover_declined') &&
+        a.actorMemberId === meId &&
+        sameEvent(a) &&
+        (!next || a.at < next),
+    )
+    .sort((a, b) => a.at.localeCompare(b.at))[0];
+  return answer ? (answer.action === 'event.cover_accepted' ? 'yes' : 'no') : null;
+}
+
+/** " · you said yes" (or no) after a request you've answered, so it doesn't read as open. */
+export const answeredWords = (answer: 'yes' | 'no' | null) =>
+  answer === 'yes' ? ' · you said yes' : answer === 'no' ? ' · you said no' : '';
+
 /** Where an activity line leads: the item, the decisions, or nowhere. */
 export function activityLink(
   a: ActivityEntry,

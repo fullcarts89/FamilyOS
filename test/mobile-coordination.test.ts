@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   activityLink,
   activityWords,
+  answeredWords,
+  answerTo,
   coverRefusal,
   createFreshness,
   declineIn,
@@ -224,6 +226,35 @@ describe('what the other adult did, in words', () => {
     title: 'Daycare pickup',
     memberId: null,
     ...over,
+  });
+
+  it('marks a request asked of you as answered, from your own activity', () => {
+    const asked = entry({ id: '10', action: 'event.cover_requested', memberId: THEO });
+    const yes = entry({
+      id: '11',
+      at: '2026-11-21T18:05:00.000Z',
+      action: 'event.cover_accepted',
+      actorMemberId: THEO,
+      memberId: THEO,
+    });
+    const no = { ...yes, id: '12', action: 'event.cover_declined' };
+    expect(answerTo(asked, [asked, yes], THEO)).toBe('yes');
+    expect(answerTo(asked, [no, asked], THEO)).toBe('no');
+    expect(answeredWords('yes')).toBe(' · you said yes');
+    expect(answeredWords('no')).toBe(' · you said no');
+    expect(answeredWords(null)).toBe('');
+    // Not answered yet, someone else's answer, an answer from before, or another event: open.
+    expect(answerTo(asked, [asked], THEO)).toBeNull();
+    expect(answerTo(asked, [{ ...yes, actorMemberId: MAYA }], THEO)).toBeNull();
+    expect(answerTo(asked, [{ ...yes, at: '2026-11-21T17:00:00.000Z' }], THEO)).toBeNull();
+    expect(answerTo(asked, [{ ...yes, entityId: 'other' }], THEO)).toBeNull();
+    // An answer after the next request on the same event answers that one, not this.
+    const again = { ...asked, id: '13', at: '2026-11-21T18:02:00.000Z' };
+    expect(answerTo(asked, [asked, again, yes], THEO)).toBeNull();
+    expect(answerTo(again, [asked, again, yes], THEO)).toBe('yes');
+    // Only requests asked of you are marked.
+    expect(answerTo({ ...asked, memberId: MAYA }, [yes], THEO)).toBeNull();
+    expect(answerTo(yes, [yes], THEO)).toBeNull();
   });
 
   it('says asked, accepted and declined, and decisions voted on and settled', () => {
