@@ -7,7 +7,7 @@ import { expect, test, toast, type AppDriver } from '../support/fixtures';
 /** Opens a page under More (the top bar's menu on desktop, the More tab's sheet on phones). */
 async function openMore(app: AppDriver, page: Page, label: string): Promise<void> {
   if (app.phone) {
-    await page.getByRole('tab', { name: /^More/ }).click();
+    await page.getByRole('button', { name: /^More/ }).click();
     await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: label }).click();
   } else {
     await page.getByRole('button', { name: /^More:/ }).click();

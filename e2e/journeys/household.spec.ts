@@ -71,6 +71,7 @@ test.describe('Household: pets and invites', () => {
     await sam.getByLabel('Password', { exact: true }).fill(password);
     await sam.getByLabel('Password again').fill(password);
     await sam.getByRole('button', { name: 'Join the household' }).click();
+    await sam.getByRole('button', { name: 'Go to Today' }).click();
     await expect(greeting(sam, 'Sam')).toBeVisible();
     await expect(sam.getByRole('link', { name: `${DEMO_HOUSEHOLD}, today` }).first()).toBeVisible();
 
