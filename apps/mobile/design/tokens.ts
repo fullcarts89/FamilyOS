@@ -64,7 +64,6 @@ export const font = {
   serif: 'Fraunces-500',
   serifRegular: 'Fraunces-400',
   ui: 'Figtree-500',
-  uiRegular: 'Figtree-400',
   uiSemi: 'Figtree-600',
   uiBold: 'Figtree-700',
   uiHeavy: 'Figtree-800',
