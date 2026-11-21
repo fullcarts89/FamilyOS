@@ -39,7 +39,7 @@ const askedHeadsUp = (page: Page) =>
 async function openPickup(page: Page, thursday: string) {
   await page.goto(`/week?date=${thursday}`);
   await expect(page.getByRole('button', { name: 'Previous week' })).toBeVisible();
-  await page.getByRole('button', { name: /^Pickup 5:30pm, you, needs sorting/ }).click();
+  await page.getByRole('button', { name: /^Pick 5:30pm, pickup, you, needs sorting/ }).click();
   const sheet = page.getByRole('dialog', { name: 'Event' });
   await expect(sheet.getByText('Daycare pickup').first()).toBeVisible();
   return sheet;
@@ -66,7 +66,9 @@ test.describe('Two adults: covering for each other, and the Weekly Reset in step
 
     // On Maya's Week it still needs sorting, and says who it's waiting for.
     await expect(
-      maya.getByRole('button', { name: /^Pickup 5:30pm, you, needs sorting, asked Theo, waiting/ }),
+      maya.getByRole('button', {
+        name: /^Pick 5:30pm, pickup, you, needs sorting, asked Theo, waiting/,
+      }),
     ).toBeVisible();
 
     // Theo's phone: the ask is on his Today, with Accept and Decline.
@@ -84,14 +86,14 @@ test.describe('Two adults: covering for each other, and the Weekly Reset in step
     // Both see it covered by Theo: his Week, and Maya's (she reloads the Week).
     await theo.goto(`/week?date=${thursday}`);
     await expect(
-      theo.getByRole('button', { name: 'Pickup 5:30pm, you', exact: true }),
+      theo.getByRole('button', { name: 'Pick 5:30pm, pickup, you', exact: true }),
     ).toBeVisible();
     await maya.reload();
     await expect(
-      maya.getByRole('button', { name: 'Pickup 5:30pm, Theo', exact: true }),
+      maya.getByRole('button', { name: 'Pick 5:30pm, pickup, Theo', exact: true }),
     ).toBeVisible();
     // Undoing his cover would hand it back to Maya without her yes: Theo can't.
-    await theo.getByRole('button', { name: 'Pickup 5:30pm, you', exact: true }).click();
+    await theo.getByRole('button', { name: 'Pick 5:30pm, pickup, you', exact: true }).click();
     const theirs = theo.getByRole('dialog', { name: 'Event' });
     await expect(theirs.getByText(/Maya can take it back from their phone/)).toBeVisible();
     await expect(theirs.getByRole('button', { name: 'Back to the usual' })).toHaveCount(0);

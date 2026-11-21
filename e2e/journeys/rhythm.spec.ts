@@ -37,14 +37,17 @@ test.describe('Events, handoffs and conflicts', () => {
     // On the Week, Thursday's pickup needs sorting: it clashes with Maya's planning meeting.
     await stripDay(maya, thursday).click();
     await expect(maya).toHaveURL(new RegExp(`/week\\?date=${thursday}`));
-    const clash = maya.getByRole('button', { name: 'Pickup 5:30pm, you, needs sorting' });
+    const clash = maya.getByRole('button', { name: 'Pick 5:30pm, pickup, you, needs sorting' });
     await expect(clash).toBeVisible();
     await expect(
       maya.getByRole('button', {
         name: 'Quarterly planning (runs late), 2pm, clashes with a handoff',
       }),
     ).toBeVisible();
-    const theoPickups = maya.getByRole('button', { name: 'Pickup 5:30pm, Theo', exact: true });
+    const theoPickups = maya.getByRole('button', {
+      name: 'Pick 5:30pm, pickup, Theo',
+      exact: true,
+    });
     const coveredBefore = await theoPickups.count();
 
     // Today's heads-up offers the fix. Asking Theo changes nothing until he says yes: the
@@ -133,7 +136,7 @@ test.describe('Events, handoffs and conflicts', () => {
     await expect(sheet).toBeHidden();
 
     // On the Week: Theo's pickup at 4:45, with nothing to sort.
-    const card = maya.getByRole('button', { name: 'Pickup 4:45pm, Theo', exact: true });
+    const card = maya.getByRole('button', { name: 'Pick 4:45pm, pickup, Theo', exact: true });
     await expect(card).toBeVisible();
 
     // What the server stored: a weekly series on today's weekday, a pickup of June by Theo.

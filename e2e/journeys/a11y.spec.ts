@@ -11,20 +11,6 @@ import { expect, greeting, test } from '../support/fixtures';
  */
 const KNOWN: { screen: string; id: string; node: RegExp; reason: string }[] = [
   {
-    screen: 'Week',
-    id: 'color-contrast',
-    node: /font-size: 12px/,
-    reason:
-      'past days are faded with opacity 0.6 (app/(app)/week.tsx cellPast, owned by the Reset worker)',
-  },
-  {
-    screen: 'Week',
-    id: 'label-content-name-mismatch',
-    node: /aria-label="(Drop-off|Pickup) /,
-    reason:
-      'care chips show “Drop 8:15am” but are named “Drop-off 8:15am, Theo” (app/(app)/week.tsx, Reset worker)',
-  },
-  {
     screen: 'Weekly Reset',
     id: 'label-content-name-mismatch',
     node: /aria-label="\w+day (drop-off|pickup|dinner|Swim)/,

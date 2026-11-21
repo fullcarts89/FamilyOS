@@ -228,7 +228,7 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
     await app.nav(maya, 'Week');
     await expect(
       maya.getByRole('link', {
-        name: `${weekdayName(today)} dinner: Sheet-pan salmon, Theo cooks`,
+        name: `Sheet-pan salmon, Theo cooks, ${weekdayName(today)} dinner`,
       }),
     ).toBeVisible();
   });

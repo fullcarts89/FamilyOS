@@ -298,7 +298,9 @@ export default function Week() {
                   return (
                     <View key={d} style={[styles.dayHead, d === today && styles.dayToday]}>
                       <View style={styles.dayTop}>
-                        <Text style={styles.dayName}>{weekdayName(d).slice(0, 3)}</Text>
+                        <Text style={[styles.dayName, d < today && styles.past]}>
+                          {weekdayName(d).slice(0, 3)}
+                        </Text>
                         <IconButton
                           icon={Plus}
                           label={`Add on ${weekdayName(d)}`}
@@ -341,14 +343,7 @@ export default function Week() {
                     </View>
                   </View>
                   {days.map((d) => (
-                    <View
-                      key={d}
-                      style={[
-                        styles.cell,
-                        d === today && styles.cellToday,
-                        d < today && styles.cellPast,
-                      ]}
-                    >
+                    <View key={d} style={[styles.cell, d === today && styles.cellToday]}>
                       {row
                         .on(d)
                         .filter((o) => !o.allDay || row.key !== 'together')
@@ -360,6 +355,7 @@ export default function Week() {
                             timeZone={timeZone}
                             flagged={flagged}
                             onOpen={openO}
+                            past={d < today}
                           />
                         ))}
                     </View>
@@ -381,15 +377,8 @@ export default function Week() {
                   </View>
                 </View>
                 {days.map((d) => (
-                  <View
-                    key={d}
-                    style={[
-                      styles.cell,
-                      d === today && styles.cellToday,
-                      d < today && styles.cellPast,
-                    ]}
-                  >
-                    <Dinner meal={dinnerOn(meals, d)} date={d} />
+                  <View key={d} style={[styles.cell, d === today && styles.cellToday]}>
+                    <Dinner meal={dinnerOn(meals, d)} date={d} past={d < today} />
                   </View>
                 ))}
               </View>
@@ -438,12 +427,15 @@ function Card({
   timeZone,
   flagged,
   onOpen,
+  past,
 }: {
   o: Occurrence;
   row: Row;
   timeZone: string;
   flagged: Set<string>;
   onOpen: (o: Occurrence) => void;
+  /** A day already gone: quieter by color (never by fading, so its text stays readable). */
+  past?: boolean;
 }) {
   const people = usePeople();
   const adults = o.memberIds
@@ -459,13 +451,16 @@ function Card({
     const request = pendingRequest(o as WithRequest);
     const asked = request ? people.byId(request.askedMemberId) : null;
     const askedName = asked ? (asked.isMe ? 'you' : asked.name) : null;
+    const short = o.careAction === 'drop_off' ? 'Drop' : 'Pick';
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${o.careAction === 'drop_off' ? 'Drop-off' : 'Pickup'} ${time}, ${who ? (who.isMe ? 'you' : who.name) : 'nobody yet'}${problem ? ', needs sorting' : ''}${askedName ? `, asked ${askedName}, waiting` : ''}`}
+        // The name starts with what the chip shows ("Pick 5:30pm"), then the rest.
+        accessibilityLabel={`${short} ${time}, ${o.careAction === 'drop_off' ? 'drop-off' : 'pickup'}, ${who ? (who.isMe ? 'you' : who.name) : 'nobody yet'}${problem ? ', needs sorting' : ''}${askedName ? `, asked ${askedName}, waiting` : ''}`}
         onPress={() => onOpen(o)}
         style={(s: PressState) => [
           styles.handoff,
+          past && styles.handoffPast,
           problem && styles.handoffProblem,
           s.hovered && styles.cardHover,
         ]}
@@ -475,8 +470,8 @@ function Card({
             <Hatch width={200} height={40} radius={0} outline={false} strokeOpacity={0.18} />
           </View>
         ) : null}
-        <Text variant="small" style={styles.handoffText}>
-          {o.careAction === 'drop_off' ? 'Drop' : 'Pick'}{' '}
+        <Text variant="small" style={[styles.handoffText, past && styles.past]}>
+          {short}{' '}
           <Text variant="small" tone="muted">
             {time}
           </Text>
@@ -507,13 +502,14 @@ function Card({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${o.title}, ${time}${o.readOnly && o.source ? `, from ${o.source.label}` : ''}${problem ? ', clashes with a handoff' : ''}`}
+      accessibilityLabel={`${o.title}, ${time}${o.readOnly && o.source ? `, ${o.source.label}, from a connected calendar` : ''}${o.cover ? ', covered' : ''}${problem ? ', clashes with a handoff' : ''}`}
       onPress={() => onOpen(o)}
       style={(s: PressState) => [
         styles.card,
         o.readOnly
           ? { borderColor: c, borderStyle: 'dashed', backgroundColor: color.surface }
           : { borderLeftColor: c, backgroundColor: tint(c, 0.1) },
+        past && styles.cardPast,
         problem && styles.cardProblem,
         s.hovered && styles.cardHover,
       ]}
@@ -523,7 +519,7 @@ function Card({
           <Hatch width={220} height={80} radius={0} outline={false} strokeOpacity={0.22} />
         </View>
       ) : null}
-      <Text variant="small" numberOfLines={2} style={styles.cardTitle}>
+      <Text variant="small" numberOfLines={2} style={[styles.cardTitle, past && styles.past]}>
         {o.title}
       </Text>
       <Text variant="small" tone="muted" numberOfLines={1}>
@@ -585,11 +581,13 @@ function DayList({
             style={[
               styles.dayCard,
               d === today && styles.dayCardToday,
-              d < today && styles.cellPast,
+              d < today && styles.dayCardPast,
             ]}
           >
             <View style={styles.dayCardHead}>
-              <Text style={styles.dayName}>{d === today ? 'Today' : weekdayName(d)}</Text>
+              <Text style={[styles.dayName, d < today && styles.past]}>
+                {d === today ? 'Today' : weekdayName(d)}
+              </Text>
               <Text variant="meta" tone="muted" style={styles.dayDate}>
                 {shortDate(d)}
               </Text>
@@ -623,6 +621,7 @@ function DayList({
                         timeZone={timeZone}
                         flagged={flagged}
                         onOpen={onOpen}
+                        past={d < today}
                       />
                     ))}
                   </View>
@@ -638,7 +637,7 @@ function DayList({
                   </Text>
                 </View>
                 <View style={styles.dayLaneItems}>
-                  <Dinner meal={dinnerOn(meals, d)} date={d} />
+                  <Dinner meal={dinnerOn(meals, d)} date={d} past={d < today} />
                 </View>
               </View>
             ) : null}
@@ -650,7 +649,7 @@ function DayList({
 }
 
 /** A night's dinner from the meal plan (who cooks, if anyone): opens Meals. */
-function Dinner({ meal, date }: { meal: Meal | null; date: string }) {
+function Dinner({ meal, date, past }: { meal: Meal | null; date: string; past?: boolean }) {
   const people = usePeople();
   const cook = people.byId(meal?.cookMemberId);
   if (!meal) {
@@ -663,11 +662,15 @@ function Dinner({ meal, date }: { meal: Meal | null; date: string }) {
   return (
     <Pressable
       accessibilityRole="link"
-      accessibilityLabel={`${weekdayName(date)} dinner: ${meal.title}${cook ? `, ${cook.isMe ? 'you cook' : `${cook.name} cooks`}` : ''}`}
+      accessibilityLabel={`${meal.title}${cook ? `, ${cook.isMe ? 'you cook' : `${cook.name} cooks`}` : ''}, ${weekdayName(date)} dinner`}
       onPress={() => router.push('/meals')}
-      style={(s: PressState) => [styles.dinner, s.hovered && styles.cardHover]}
+      style={(s: PressState) => [
+        styles.dinner,
+        past && styles.dinnerPast,
+        s.hovered && styles.cardHover,
+      ]}
     >
-      <Text variant="small" numberOfLines={2} style={styles.cardTitle}>
+      <Text variant="small" numberOfLines={2} style={[styles.cardTitle, past && styles.past]}>
         {meal.title}
       </Text>
       {cook ? (
@@ -730,7 +733,13 @@ const styles = StyleSheet.create({
     borderLeftColor: color.hairline,
   },
   cellToday: { backgroundColor: color.surface },
-  cellPast: { opacity: 0.6 },
+  // Days already gone are quieter by color, never by opacity: their text keeps 4.5:1 (the muted
+  // ink on the ground), the member tints and fills step back to the plain ground.
+  past: { color: color.muted },
+  cardPast: { backgroundColor: 'transparent', borderLeftColor: color.line2 },
+  handoffPast: { backgroundColor: 'transparent' },
+  dinnerPast: { backgroundColor: 'transparent', paddingHorizontal: 2 },
+  dayCardPast: { backgroundColor: color.ground },
   card: {
     borderRadius: radius.sm,
     borderWidth: 1.5,
@@ -782,7 +791,6 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.75,
   },
   dinnerIcon: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
   dinner: {
