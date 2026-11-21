@@ -1,7 +1,9 @@
 import {
+  DURATION_CHOICES,
   RULE_LIMITS,
   describeSchedule,
   dueOptions,
+  durationLabel,
   monthStartOptions,
   upcomingOccurrences,
   type NthWeek,
@@ -142,6 +144,8 @@ export default function NewRoutine() {
   const [startOn, setStartOn] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [otherTime, setOtherTime] = useState('');
+  // How long each turn takes, once it has a time (null: no length).
+  const [length, setLength] = useState<number | null>(null);
   const [turns, setTurns] = useState(false);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [rotation, setRotation] = useState<string[]>([]);
@@ -260,6 +264,7 @@ export default function NewRoutine() {
           rule,
           startOn,
           time: timeValue || null,
+          ...(timeValue && length && { durationMinutes: length }),
           ...(turns ? { rotation } : { ownerMemberId: ownerId }),
           ...(subjectId && { subjectMemberId: subjectId }),
         },
@@ -488,6 +493,24 @@ export default function NewRoutine() {
             Write the time like 6:30am or 8pm.
           </Text>
         ) : null}
+        {timeValue ? (
+          <>
+            <Text variant="small" tone="muted">
+              How long
+            </Text>
+            <View style={styles.chips} role="group" aria-label="How long each turn takes">
+              <Chip label="No length" selected={!length} onPress={() => setLength(null)} />
+              {DURATION_CHOICES.map((m) => (
+                <Chip
+                  key={m}
+                  label={durationLabel(m)}
+                  selected={length === m}
+                  onPress={() => setLength(m)}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
       </Group>
 
       <Group label="Who">
@@ -550,6 +573,7 @@ export default function NewRoutine() {
             <Text variant="h3">{title.trim() || 'Your routine'}</Text>
             <Text variant="meta" tone="muted">
               {friendlyTimes(describeSchedule(rule, timeValid ? timeValue : null))}
+              {timeValid && timeValue && length ? ` for ${durationLabel(length)}` : ''}
             </Text>
           </View>
         </View>

@@ -1,9 +1,17 @@
-import { dueOptions, workItemMachine, type WorkItemStatus } from '@familyos/domain';
+import {
+  DURATION_CHOICES,
+  dueOptions,
+  durationLabel,
+  localInstant,
+  workItemMachine,
+  type WorkItemStatus,
+} from '@familyos/domain';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Lock, Repeat2, Send } from 'lucide-react-native';
+import { ArrowLeft, Clock, Lock, Repeat2, Send } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { ContactLink } from '../../../components/contacts/ContactLink';
+import { parseTime } from '../../../components/rhythm/EventSheet';
 import { TaskRow } from '../../../components/tasks/TaskRow';
 import { Avatar, Either } from '../../../design/Avatar';
 import { Button, type PressState } from '../../../design/Button';
@@ -36,10 +44,11 @@ import {
   type WorkItem,
 } from '../../../lib/api';
 import { useCapture } from '../../../lib/capture';
-import { addDays, relativeDay } from '../../../lib/dates';
+import { addDays, clock, relativeDay } from '../../../lib/dates';
 import { useHousehold } from '../../../lib/household';
 import { goBack } from '../../../lib/navigation';
 import { usePeople } from '../../../lib/people';
+import { localParts } from '../../../lib/rhythm';
 import {
   CLOSED,
   STATUS_NOTE,
@@ -49,6 +58,7 @@ import {
   dueDate,
   dueText,
   isDone,
+  timeText,
   useTaskActions,
   whenOf,
 } from '../../../lib/tasks';
@@ -63,6 +73,8 @@ function describe(action: string, payload: { toStatus?: WorkItemStatus; fields?:
   }
   if (action === 'work_item.updated' && payload.fields?.includes('owner_member_id'))
     return 'changed who has it';
+  if (action === 'work_item.updated' && payload.fields?.includes('duration_minutes'))
+    return 'changed the time';
   if (action === 'work_item.updated' && payload.fields?.some((f) => f.startsWith('due')))
     return 'changed the day';
   if (action === 'work_item.updated' && payload.fields?.includes('contact_id'))
@@ -106,6 +118,11 @@ export default function ItemScreen() {
   const [editing, setEditing] = useState(false);
   const [moreStatus, setMoreStatus] = useState(false);
   const [subtask, setSubtask] = useState('');
+  // The time field: open once "Add a time" is pressed (or when the task has a time).
+  const [timeOpen, setTimeOpen] = useState(false);
+  // What's typed in it, until it's set (null: showing the task's own time).
+  const [timeDraft, setTimeDraft] = useState<string | null>(null);
+  const [timeBad, setTimeBad] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The other adult saved the title or notes while this person was editing: both versions kept.
   const [conflict, setConflict] = useState<{
@@ -302,6 +319,62 @@ export default function ItemScreen() {
     setTitle(conflict.theirs.title);
     setNotes(conflict.theirs.description ?? '');
     setConflict(null);
+  };
+
+  // When: a day, and optionally a time with a length. The local wall time of a timed task, and
+  // the day it's on (or today for a task with no day yet).
+  const hhmm = (minutes: number) =>
+    `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  const wallTime = item.dueAt ? hhmm(localParts(item.dueAt, timeZone).minutes) : null;
+  const dueDay = dueDate(item, timeZone);
+  const setFor = (at: Pick<WorkItem, 'dueAt' | 'durationMinutes'>) =>
+    `Set for ${timeText(at, timeZone) ?? ''}`;
+  const moveToDay = (date: string, label: string) =>
+    run(
+      () =>
+        // A timed task keeps its time (and length) on the new day.
+        wallTime
+          ? actions.patch(item, { dueAt: localInstant(date, wallTime, timeZone).toString() })
+          : actions.patch(item, { dueOn: date }),
+      `Moved to ${label.toLowerCase()}`,
+    );
+  const commitTime = () => {
+    if (timeDraft === null) return;
+    const text = timeDraft.trim();
+    if (!text) {
+      // Emptied: nothing to set (Clear time is the button for that).
+      setTimeBad(false);
+      setTimeDraft(null);
+      if (!item.dueAt) setTimeOpen(false);
+      return;
+    }
+    const parsed = parseTime(text);
+    if (!parsed) {
+      setTimeBad(true);
+      return;
+    }
+    setTimeBad(false);
+    setTimeDraft(null);
+    if (parsed === wallTime) return;
+    const dueAt = localInstant(dueDay ?? today, parsed, timeZone).toString();
+    const durationMinutes = item.durationMinutes ?? null;
+    void run(
+      () => actions.patch(item, { dueAt, durationMinutes }),
+      setFor({ dueAt, durationMinutes }),
+    );
+  };
+  const setLength = (minutes: number | null) =>
+    (item.durationMinutes ?? null) !== minutes &&
+    void run(
+      () => actions.patch(item, { durationMinutes: minutes }),
+      setFor({ dueAt: item.dueAt, durationMinutes: minutes }),
+    );
+  const clearTime = () => {
+    setTimeOpen(false);
+    setTimeDraft(null);
+    setTimeBad(false);
+    // The day stays: it becomes an all-day task on the same date.
+    void run(() => actions.patch(item, { dueOn: dueDay ?? today }), 'Time cleared');
   };
 
   const kicker =
@@ -656,14 +729,8 @@ export default function ItemScreen() {
               <Chip
                 key={o.label}
                 label={o.label}
-                selected={item.dueOn === o.date}
-                onPress={() =>
-                  item.dueOn !== o.date &&
-                  void run(
-                    () => actions.patch(item, { dueOn: o.date }),
-                    `Moved to ${o.label.toLowerCase()}`,
-                  )
-                }
+                selected={dueDay === o.date}
+                onPress={() => dueDay !== o.date && void moveToDay(o.date, o.label)}
               />
             ))}
             <Chip
@@ -675,10 +742,75 @@ export default function ItemScreen() {
               }
             />
           </View>
-          {due && !dueOptions(today).some((o) => o.date === item.dueOn) ? (
+          {due && !dueOptions(today).some((o) => o.date === dueDay) ? (
             <Text variant="meta" tone="muted">
               Now: {due}
             </Text>
+          ) : null}
+          {item.type !== 'project' ? (
+            <View style={styles.timeBlock}>
+              <Text variant="kicker" tone="muted">
+                Time
+              </Text>
+              {item.dueAt || timeOpen ? (
+                <View style={styles.chips}>
+                  <TextInput
+                    value={timeDraft ?? (wallTime ? clock(wallTime) : '')}
+                    onChangeText={(t) => {
+                      setTimeDraft(t);
+                      setTimeBad(false);
+                    }}
+                    onBlur={commitTime}
+                    onSubmitEditing={commitTime}
+                    autoFocus={!item.dueAt}
+                    placeholder="5:30pm"
+                    placeholderTextColor={color.faint}
+                    accessibilityLabel="Time, like 5:30pm or 17:30"
+                    accessibilityHint={timeBad ? 'Write the time like 5:30pm or 17:30.' : undefined}
+                    aria-invalid={timeBad}
+                    inputMode="text"
+                    autoCapitalize="none"
+                    maxLength={8}
+                    style={[styles.timeInput, timeBad && styles.timeBad]}
+                  />
+                  <Button title="Set time" size="sm" variant="secondary" onPress={commitTime} />
+                  {item.dueAt ? (
+                    <Button title="Clear time" size="sm" variant="quiet" onPress={clearTime} />
+                  ) : null}
+                </View>
+              ) : (
+                <View style={styles.chips}>
+                  <Chip label="Add a time" icon={Clock} onPress={() => setTimeOpen(true)} />
+                </View>
+              )}
+              {timeBad ? (
+                <Text variant="meta" tone="danger" accessibilityRole="alert">
+                  Write the time like 5:30pm or 17:30.
+                </Text>
+              ) : null}
+              {item.dueAt ? (
+                <>
+                  <Text variant="small" tone="muted">
+                    How long
+                  </Text>
+                  <View style={styles.chips} role="group" aria-label="How long it takes">
+                    <Chip
+                      label="No length"
+                      selected={!item.durationMinutes}
+                      onPress={() => setLength(null)}
+                    />
+                    {DURATION_CHOICES.map((m) => (
+                      <Chip
+                        key={m}
+                        label={durationLabel(m)}
+                        selected={item.durationMinutes === m}
+                        onPress={() => setLength(m)}
+                      />
+                    ))}
+                  </View>
+                </>
+              ) : null}
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -947,4 +1079,19 @@ const styles = StyleSheet.create({
   },
   routineText: { flex: 1 },
   private: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+  timeBlock: { gap: 10, marginTop: 6 },
+  timeInput: {
+    width: 110,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: color.line2,
+    backgroundColor: color.surface,
+    textAlign: 'center',
+    fontFamily: font.uiSemi,
+    fontSize: 15,
+    color: color.ink,
+  },
+  timeBad: { borderColor: color.danger },
 });
