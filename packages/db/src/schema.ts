@@ -123,6 +123,8 @@ export interface WorkItemTable {
   subject_member_id: string | null;
   /** The contact it involves ("plumber" on the renovation). */
   contact_id: ColumnType<string | null, string | null | undefined, string | null>;
+  /** The capturing device's own ID for it, so a retried capture never makes a second item. */
+  client_id: ColumnType<string | null, string | null | undefined, string | null>;
   /** The status it had when it was finished, so undoing the completion restores it. */
   completed_from_status: ColumnType<
     WorkItemStatus | null,

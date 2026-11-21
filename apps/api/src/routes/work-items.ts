@@ -67,6 +67,11 @@ const CreateWorkItem = z
     visibility: z.enum(['household', 'private']).default('household'),
     /** Quick capture lands in the inbox; set false to add a ready-to-do item directly. */
     inbox: z.boolean().default(true),
+    /**
+     * The app's own ID for this capture, the same on every retry: a repeat answers 200 with the
+     * item the first one made, and creates nothing.
+     */
+    clientId: Uuid.optional(),
   })
   .refine((b) => !(b.dueOn && b.dueAt), { message: 'one due date only' });
 
@@ -519,6 +524,20 @@ export function workItemRoutes(deps: Deps) {
     const body = await parseBody(c.req.raw, CreateWorkItem);
     const trx = c.get('trx');
     const member = c.get('member');
+    const alreadyMade = async () => {
+      if (!body.clientId) return null;
+      const made = await trx
+        .selectFrom('app.work_item')
+        .select(ITEM_COLUMNS)
+        .where('household_id', '=', member.householdId)
+        .where('client_id', '=', body.clientId)
+        .executeTakeFirst();
+      if (!made) return null;
+      const [decorated] = await decorateItems(trx, member.householdId, [made]);
+      return c.json({ item: decorated }, 200);
+    };
+    const repeat = await alreadyMade();
+    if (repeat) return repeat;
     if (body.ownerMemberId) await assertAssignable(trx, member.householdId, body.ownerMemberId);
     if (body.subjectMemberId) await assertSubject(trx, member.householdId, body.subjectMemberId);
     if (body.parentId)
@@ -541,9 +560,20 @@ export function workItemRoutes(deps: Deps) {
         contact_id: body.contactId ?? null,
         visibility: body.visibility,
         created_by_member_id: member.id,
+        client_id: body.clientId ?? null,
       })
+      .onConflict((oc) =>
+        oc.columns(['household_id', 'client_id']).where('client_id', 'is not', null).doNothing(),
+      )
       .returning(ITEM_COLUMNS)
-      .executeTakeFirstOrThrow();
+      .executeTakeFirst();
+    if (!item) {
+      // The same capture arrived twice at once: the other request made it.
+      const concurrent = await alreadyMade();
+      if (concurrent) return concurrent;
+      // Taken by an item this member can't see (someone else's private one).
+      throw conflict('client_id_in_use');
+    }
     await recordAudit(trx, {
       householdId: member.householdId,
       actorMemberId: member.id,

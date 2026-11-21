@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createDb, type Database } from '@familyos/db';
 import {
   purgeHouseholds,
@@ -148,6 +149,89 @@ describe.skipIf(!db)('work items, inbox and Today (G2)', () => {
       } finally {
         await purgeHouseholds(requireDb(), [busy.id]);
       }
+    });
+  });
+
+  describe('capturing the same thing twice', () => {
+    it('keeps one item per clientId, per household', async () => {
+      const clientId = randomUUID();
+      const post = (household: string, token: string, title: string, extra = {}) =>
+        request(`/households/${household}/work-items`, {
+          method: 'POST',
+          token,
+          body: { title, clientId, ...extra },
+        });
+      const count = (household: string) =>
+        requireDb()
+          .selectFrom('app.work_item')
+          .select('id')
+          .where('household_id', '=', household)
+          .where('client_id', '=', clientId)
+          .execute();
+
+      const first = await post(h.id, ownerToken, 'Buy stamps');
+      expect(first.status).toBe(201);
+      const made = (await json<{ item: Item }>(first)).item;
+      const before = await auditCount();
+      // A retry, even from the other adult and with edited text, returns what the first made.
+      const again = await post(h.id, adultToken, 'Buy stamps!');
+      expect(again.status).toBe(200);
+      expect((await json<{ item: Item }>(again)).item.id).toBe(made.id);
+      expect(await count(h.id)).toHaveLength(1);
+      expect(await auditCount()).toBe(before);
+
+      // Two at once: one item.
+      const fresh = randomUUID();
+      const both = await Promise.all(
+        [ownerToken, ownerToken].map((token) =>
+          request(`${base()}/work-items`, {
+            method: 'POST',
+            token,
+            body: { title: 'Call the vet', clientId: fresh },
+          }),
+        ),
+      );
+      expect(both.map((r) => r.status).sort()).toEqual([200, 201]);
+      const ids = await Promise.all(both.map(async (r) => (await json<{ item: Item }>(r)).item.id));
+      expect(new Set(ids).size).toBe(1);
+
+      // Another household with the same clientId gets its own item; neither sees the other's.
+      const other = await seedHousehold(requireDb(), 'Elsewhere');
+      try {
+        const otherToken = await tokenOf(other.owner);
+        const theirs = await post(other.id, otherToken, 'Buy stamps');
+        expect(theirs.status).toBe(201);
+        expect((await json<{ item: Item }>(theirs)).item.id).not.toBe(made.id);
+        expect(await count(other.id)).toHaveLength(1);
+        expect(await count(h.id)).toHaveLength(1);
+      } finally {
+        await purgeHouseholds(requireDb(), [other.id]);
+      }
+
+      // A private item's clientId is never revealed to someone who can't see it.
+      const hiddenClientId = randomUUID();
+      const hidden = await request(`${base()}/work-items`, {
+        method: 'POST',
+        token: ownerToken,
+        body: { title: 'Surprise party', clientId: hiddenClientId, visibility: 'private' },
+      });
+      expect(hidden.status).toBe(201);
+      const probe = await request(`${base()}/work-items`, {
+        method: 'POST',
+        token: adultToken,
+        body: { title: 'x', clientId: hiddenClientId },
+      });
+      expect(probe.status).toBe(409);
+      expect(await json(probe)).toEqual({ error: 'client_id_in_use' });
+      expect(
+        (
+          await request(`${base()}/work-items`, {
+            method: 'POST',
+            token: ownerToken,
+            body: { title: 'x', clientId: 'nope' },
+          })
+        ).status,
+      ).toBe(422);
     });
   });
 
