@@ -1,5 +1,6 @@
+import { localInstant, startOfLocalDay } from '@familyos/domain';
 import type { HandoffView, RhythmLaneView } from '../../lib/api';
-import { clock } from '../../lib/dates';
+import { addDays, clock } from '../../lib/dates';
 import { hourMark, localParts, spanOn } from '../../lib/rhythm';
 import type { NextEntry } from './NextUp';
 
@@ -66,17 +67,46 @@ export function contrast(a: string, b: string): number {
 const INK = '#17201B';
 const WHITE = '#FFFFFF';
 
-/** Ink or white, whichever reads better on a filled member color (marigold takes ink). */
-export function readableOn(background: string): string {
-  return contrast(WHITE, background) >= 4.5 ||
-    contrast(WHITE, background) >= contrast(INK, background)
-    ? WHITE
-    : INK;
+function mix(a: string, b: string, t: number): string {
+  const x = rgb(a);
+  const y = rgb(b);
+  return `#${x
+    .map((c, i) => Math.round(c + ((y[i] ?? c) - c) * t))
+    .map((c) => c.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+/** Text on a filled member color: white or ink, whichever reads better. */
+export function textOn(fill: string): string {
+  return contrast(WHITE, fill) >= contrast(INK, fill) ? WHITE : INK;
 }
 
 /**
- * A member color deepened (mixed toward ink) until it reads as text on `background` at 4.5:1,
- * so a coral "5:30" stays recognisably theirs and still passes contrast.
+ * A member color to fill behind text: the color itself when white or ink reads on it at 4.5:1,
+ * else the color deepened just enough for white text (coral, sage and teal sit between the two).
+ * Always pair it with `textOn(solidFill(hex))`.
+ */
+export function solidFill(hex: string): string {
+  if (Math.max(contrast(WHITE, hex), contrast(INK, hex)) >= 4.5) return hex;
+  return readableOn(hex, WHITE);
+}
+
+/**
+ * A member color deepened toward ink until it reads as small text (or an icon beside text) on
+ * `background` at 4.5:1. Keeps the hue, so "5:30" still looks like Maya's.
+ */
+export function readableOn(hex: string, background = WHITE): string {
+  if (contrast(hex, background) >= 4.5) return hex;
+  for (let t = 0.05; t <= 1; t += 0.05) {
+    const c = mix(hex, INK, t);
+    if (contrast(c, background) >= 4.5) return c;
+  }
+  return INK;
+}
+
+/**
+ * Muted text deepened in coarser steps until it reads on a lane or a tint (muted on the lane
+ * fill comes out at 5.01:1).
  */
 export function textShade(hex: string, background = WHITE): string {
   if (contrast(hex, background) >= 4.5) return hex;
@@ -88,6 +118,16 @@ export function textShade(hex: string, background = WHITE): string {
     if (contrast(out, background) >= 4.5) return out;
   }
   return INK;
+}
+
+/** Earlier first by instant (never by the text of a timestamp), then by key for a stable order. */
+export function byStart(
+  a: { startsAt: string; key: string },
+  b: { startsAt: string; key: string },
+): number {
+  return (
+    new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime() || a.key.localeCompare(b.key)
+  );
 }
 
 /** The part of a title before a colon or bracket: "Dinner: sheet-pan salmon" → "Dinner". */
@@ -128,9 +168,20 @@ export interface AwayRail {
 }
 
 /**
+ * The instant of a wall-clock time on a local date (a time that happens twice when the clocks go
+ * back takes the first; midnight at the end of the day is the next day's start).
+ */
+function wallInstant(date: string, minutes: number, timeZone: string): number {
+  if (minutes >= 24 * 60) return startOfLocalDay(addDays(date, 1), timeZone).epochMilliseconds;
+  const hhmm = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  return localInstant(date, hhmm, timeZone).epochMilliseconds;
+}
+
+/**
  * Rows for the vertical day, in time order: hour marks (every hour near something, every third
  * hour through quiet stretches), the day's items and the now-line. The ruler is ordered rather
- * than to scale, so nothing overlaps and the day fits a phone.
+ * than to scale, so nothing overlaps and the day fits a phone. Rows sort by instant, not by the
+ * clock on the wall, so the hour that repeats when the clocks go back stays in order.
  */
 export function verticalDay({
   entries,
@@ -162,7 +213,7 @@ export function verticalDay({
   to = Math.min(to, 24 * 60);
   const busy = [...items.map((p) => p.start), ...(nowMin !== null ? [nowMin] : [])];
   const t = now?.getTime() ?? -Infinity;
-  const rows: (DayRow & { order: number })[] = [];
+  const rows: (DayRow & { order: number; at: number })[] = [];
   for (let m = from; m <= to; m += 60) {
     const near = busy.some((b) => b >= m - 60 && b < m + 60);
     const edge = m === from || m === to;
@@ -176,6 +227,7 @@ export function verticalDay({
       label: hourMark(m, true, true),
       tonight: m === TONIGHT_FROM,
       order: 0,
+      at: wallInstant(date, m, timeZone),
     });
   }
   for (const p of items) {
@@ -189,10 +241,13 @@ export function verticalDay({
       past: ends <= t && starts < t,
       ongoing: starts <= t && ends > t,
       order: 2,
+      // Something that started the day before sits at the top of this one.
+      at: Math.max(starts, wallInstant(date, 0, timeZone)),
     });
   }
-  if (nowMin !== null) rows.push({ kind: 'now', key: 'now', minutes: nowMin, order: 1 });
-  rows.sort((a, b) => a.minutes - b.minutes || a.order - b.order);
+  if (now && nowMin !== null)
+    rows.push({ kind: 'now', key: 'now', minutes: nowMin, order: 1, at: now.getTime() });
+  rows.sort((a, b) => a.at - b.at || a.order - b.order);
   return rows;
 }
 

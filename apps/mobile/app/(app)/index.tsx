@@ -7,7 +7,6 @@ import { DayTimeline } from '../../components/rhythm/DayTimeline';
 import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet';
 import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
 import { NextUp, dayEntries } from '../../components/rhythm/NextUp';
-import { splitTonight } from '../../components/rhythm/today-model';
 import { SinceLastLooked } from '../../components/rhythm/SinceLastLooked';
 import { WeekStrip } from '../../components/rhythm/WeekStrip';
 import { WeekPlanStrip } from '../../components/rhythm/WeekPlanStrip';
@@ -299,30 +298,17 @@ export default function Today() {
   const nextUp =
     rhythm && phone ? (
       ahead ? (
-        <NextUp entries={entries} now={now} timeZone={timeZone} onOpen={openOccurrence} tonight />
+        <NextUp
+          entries={entries}
+          now={now}
+          timeZone={timeZone}
+          onOpen={openOccurrence}
+          tonight
+          onMoreTonight={() => setWholeDay(true)}
+        />
       ) : (
         <Tomorrow occurrences={week?.occurrences ?? []} today={today} onOpen={openOccurrence} />
       )
-    ) : null;
-
-  // Tablet and desktop: the evening as one block beside the lanes.
-  const tonightBlock =
-    rhythm &&
-    !phone &&
-    rhythm.date === rhythm.today &&
-    splitTonight(entries, now, timeZone).tonight.length ? (
-      <View style={styles.block}>
-        <SectionHeader title="Tonight" sub="From 5pm: dinner, bath, bedtime and handoffs" />
-        <View style={styles.blockBody}>
-          <NextUp
-            entries={entries}
-            now={now}
-            timeZone={timeZone}
-            onOpen={openOccurrence}
-            only="tonight"
-          />
-        </View>
-      </View>
     ) : null;
 
   const headsUpBlock =
@@ -562,14 +548,10 @@ export default function Today() {
           {desktop ? (
             <View style={styles.twoCols}>
               <View style={styles.colMain}>{headsUpBlock ?? sinceBlock}</View>
-              <View style={styles.colSide}>
-                {tonightBlock}
-                {headsUpBlock ? sinceBlock : null}
-              </View>
+              <View style={styles.colSide}>{headsUpBlock ? sinceBlock : null}</View>
             </View>
           ) : (
             <>
-              {tonightBlock}
               {headsUpBlock}
               {sinceBlock}
             </>
@@ -622,7 +604,13 @@ function Tomorrow({
         Tomorrow · {weekdayName(tomorrow)}
       </Text>
       {entries.length ? (
-        <NextUp entries={entries} now={new Date(0)} timeZone={timeZone} limit={3} onOpen={onOpen} />
+        <NextUp
+          entries={entries}
+          now={new Date(0)}
+          timeZone={timeZone}
+          label="First things tomorrow"
+          onOpen={onOpen}
+        />
       ) : (
         <View style={styles.dayDone}>
           <Text variant="title">Nothing on the calendar tomorrow yet.</Text>

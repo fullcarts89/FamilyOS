@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import { CalendarDays, Car, CircleCheck, Moon } from 'lucide-react-native';
+import { CalendarDays, Car, ChevronDown, CircleCheck, Moon } from 'lucide-react-native';
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { PressState } from '../../design/Button';
 import { Text } from '../../design/Text';
@@ -8,7 +9,7 @@ import type { Occurrence, RhythmLaneView, RhythmTaskView } from '../../lib/api';
 import type { People, Person } from '../../lib/people';
 import { CARE_VERB, rangeOf, timeOf } from '../../lib/rhythm';
 import { isOpen } from '../../lib/tasks';
-import { splitTonight, textShade } from './today-model';
+import { byStart, readableOn, splitTonight } from './today-model';
 
 export interface NextEntry {
   key: string;
@@ -81,64 +82,86 @@ export function dayEntries(
       });
     }
   }
-  return out.sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.key.localeCompare(b.key));
+  // By instant, so the hour that repeats when the clocks go back sorts right.
+  return out.sort(byStart);
 }
 
 /**
  * Now and the next few things, so the day's responsibilities are visible without scrolling a tall
  * grid. Each row is the time, whose it is (their colors) and what it is. With `tonight`, things
- * that start at or after 5pm household time read as one block under "Tonight": dinner, bath,
- * bedtime and the evening handoffs. `only="tonight"` shows just that block (tablet and desktop).
+ * that start at or after 5pm household time read as one block under "Tonight 5:30–10pm":
+ * dinner, bath, bedtime and the evening handoffs, at most `tonightLimit` of them and then "N more
+ * tonight". `middle` goes between the two (your own late and due-today items on phones).
  */
 export function NextUp({
   entries,
   now,
   timeZone,
-  limit = 4,
+  limit = 3,
+  label = 'Next up today',
   onOpen,
   tonight: group = false,
-  only,
+  tonightLimit = 3,
+  onMoreTonight,
+  middle,
 }: {
   entries: NextEntry[];
   now: Date;
   timeZone: string;
   limit?: number;
+  label?: string;
   onOpen: (o: Occurrence) => void;
   /** Group the evening under a "Tonight" heading. */
   tonight?: boolean;
-  only?: 'tonight';
+  tonightLimit?: number;
+  /** Where "N more tonight" leads (the whole day). */
+  onMoreTonight?: () => void;
+  middle?: ReactNode;
 }) {
   const t = now.getTime();
-  const split = group || only ? splitTonight(entries, now, timeZone) : null;
-  const soon = only
-    ? []
-    : (
-        split?.soon ??
-        entries.filter(
-          (e) => new Date(e.endsAt).getTime() > t || new Date(e.startsAt).getTime() >= t,
-        )
-      ).slice(0, limit);
+  const split = group ? splitTonight(entries, now, timeZone) : null;
+  const soon = (
+    split?.soon ??
+    entries.filter((e) => new Date(e.endsAt).getTime() > t || new Date(e.startsAt).getTime() >= t)
+  ).slice(0, limit);
   const evening = split?.tonight ?? [];
+  const shown = evening.slice(0, tonightLimit);
+  const more = evening.length - shown.length;
+  const first = evening[0];
+  const last = evening.reduce<string | null>((end, e) => {
+    const finish = new Date(e.endsAt) > new Date(e.startsAt) ? e.endsAt : e.startsAt;
+    return !end || new Date(finish) > new Date(end) ? finish : end;
+  }, null);
   return (
-    <View style={styles.card}>
+    <View style={styles.wrap}>
       {soon.length ? (
-        <Rows label="Next up today" entries={soon} t={t} timeZone={timeZone} onOpen={onOpen} />
+        <Rows label={label} entries={soon} t={t} timeZone={timeZone} onOpen={onOpen} />
       ) : null}
-      {evening.length ? (
-        <>
-          {!only ? (
-            <View style={[styles.tonightHead, soon.length > 0 && styles.tonightRule]}>
-              <Moon size={15} strokeWidth={2.4} color={color.ink} />
-              <Text variant="kicker" role="heading" aria-level={3}>
-                Tonight
-              </Text>
-              <Text variant="meta" tone="muted">
-                from 5pm
-              </Text>
-            </View>
+      {middle}
+      {first ? (
+        <View style={styles.tonight}>
+          <View style={styles.tonightHead}>
+            <Moon size={16} strokeWidth={2.4} color={color.ink} />
+            <Text variant="h3" role="heading" aria-level={2}>
+              Tonight
+            </Text>
+            <Text variant="meta" tone="muted">
+              {rangeOf(first.startsAt, last ?? first.startsAt, timeZone)}
+            </Text>
+          </View>
+          <Rows label="Tonight" entries={shown} t={t} timeZone={timeZone} onOpen={onOpen} />
+          {more > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              disabled={!onMoreTonight}
+              onPress={onMoreTonight}
+              style={(s: PressState) => [styles.more, s.hovered && styles.pressed]}
+            >
+              <Text variant="label">{more} more tonight</Text>
+              {onMoreTonight ? <ChevronDown size={16} color={color.ink} strokeWidth={2.4} /> : null}
+            </Pressable>
           ) : null}
-          <Rows label="Tonight" entries={evening} t={t} timeZone={timeZone} onOpen={onOpen} />
-        </>
+        </View>
       ) : null}
     </View>
   );
@@ -158,7 +181,7 @@ function Rows({
   onOpen: (o: Occurrence) => void;
 }) {
   return (
-    <View role="list" aria-label={label}>
+    <View role="list" aria-label={label} style={styles.card}>
       {entries.map((e, i) => {
         const started = new Date(e.startsAt).getTime() <= t;
         const time = timeOf(e.startsAt, timeZone);
@@ -210,7 +233,7 @@ function Rows({
               </View>
               <View style={styles.text}>
                 <View style={styles.titleRow}>
-                  {Icon ? <Icon size={15} strokeWidth={2.4} color={textShade(lead)} /> : null}
+                  {Icon ? <Icon size={15} strokeWidth={2.4} color={readableOn(lead)} /> : null}
                   <Text variant="title" style={styles.title}>
                     {e.title}
                   </Text>
@@ -257,12 +280,14 @@ const styles = StyleSheet.create({
   text: { flex: 1, minWidth: 0, gap: 2 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] - 2 },
   title: { flexShrink: 1 },
-  tonightHead: {
+  wrap: { gap: space[4] },
+  tonight: { gap: space[2] },
+  tonightHead: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
+  more: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space[2],
-    paddingTop: space[4],
-    paddingBottom: space[1],
+    gap: space[2] - 2,
+    minHeight: touch,
+    alignSelf: 'flex-start',
   },
-  tonightRule: { borderTopWidth: 2, borderTopColor: color.ink },
 });

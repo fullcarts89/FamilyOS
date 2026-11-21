@@ -18,7 +18,7 @@ import {
   spanOn,
   timeOf,
 } from '../../lib/rhythm';
-import { readableOn, shortTitle, textShade } from './today-model';
+import { readableOn, shortTitle, solidFill, textOn, textShade } from './today-model';
 
 /** Lane heads (avatar, name, a two-line note) on tablet and desktop. */
 const HEAD = 196;
@@ -85,8 +85,8 @@ function placeLabel(
 /**
  * The day as lanes across time (direction C): a lane per adult, and for each child or pet where
  * they are (home or away) with the handoffs between. Events shared by both adults are bands across
- * every lane. The now-line marks the present; what's past is quieted. Desktop shows names and
- * labels; `compact` (phones) keeps the same shape in a short strip.
+ * every lane. The now-line marks the present; what's past is quieted. Tablet and desktop (phones
+ * read the day as DayColumn).
  */
 export function DayTimeline({
   date,
@@ -96,7 +96,6 @@ export function DayTimeline({
   headsUps,
   people,
   now,
-  compact,
   hidden,
   onToggleLane,
   onOpen,
@@ -109,7 +108,6 @@ export function DayTimeline({
   people: People;
   /** The current instant when `date` is today. */
   now: Date | null;
-  compact?: boolean;
   /** Lanes this viewer hid (member ids); the chips above the lanes show or hide them. */
   hidden?: Set<string>;
   onToggleLane?: (memberId: string) => void;
@@ -127,21 +125,20 @@ export function DayTimeline({
         handoffs,
         headsUps,
         people,
-        compact: !!compact,
         now,
         hidden: hidden ?? NONE,
       }),
-    [date, timeZone, lanes, handoffs, headsUps, people, compact, now, hidden],
+    [date, timeZone, lanes, handoffs, headsUps, people, now, hidden],
   );
 
   // Narrow tablets give the lanes more of the width.
-  const head = compact ? 34 : width < 800 ? HEAD_NARROW : HEAD;
+  const head = width < 800 ? HEAD_NARROW : HEAD;
   const track = Math.max(0, width - head);
   const { from, to } = model.window;
   const x = (m: number) => ((Math.min(Math.max(m, from), to) - from) / (to - from)) * track;
   const nowMin = now ? localParts(now, timeZone).minutes : null;
   const hours: number[] = [];
-  const step = compact ? 180 : 60;
+  const step = 60;
   for (let m = Math.ceil(from / step) * step; m <= to; m += step) hours.push(m);
 
   // Free track to the right of a block in its row, before the next block (or the edge).
@@ -154,7 +151,7 @@ export function DayTimeline({
 
   return (
     <View onLayout={onLayout} accessibilityLabel={`The day’s rhythm, ${model.window.label}`}>
-      {!compact && onToggleLane ? (
+      {onToggleLane ? (
         <View style={styles.chips} role="group" aria-label="Show or hide a lane">
           {model.all.map((p) => {
             const shown = !hidden?.has(p.id);
@@ -202,22 +199,17 @@ export function DayTimeline({
       ) : width > 0 ? (
         <View>
           {/* Hour axis */}
-          <View style={[styles.axis, { marginLeft: head, height: compact ? 16 : 22 }]}>
+          <View style={[styles.axis, { marginLeft: head, height: 22 }]}>
             {hours.map((m, i) => {
               // Keep hour labels clear of the now pill (about 48px wide) by pixels, not minutes.
-              const near = nowMin !== null && Math.abs(x(nowMin) - x(m)) < (compact ? 30 : 46);
+              const near = nowMin !== null && Math.abs(x(nowMin) - x(m)) < 46;
               if (near) return null;
               return (
                 <Text
                   key={m}
                   variant="small"
                   tone="muted"
-                  style={[
-                    styles.hour,
-                    compact && styles.hourCompact,
-                    { left: x(m) - 30 },
-                    m === 12 * 60 && styles.noon,
-                  ]}
+                  style={[styles.hour, { left: x(m) - 30 }, m === 12 * 60 && styles.noon]}
                 >
                   {hourMark(m, i === 0, i === hours.length - 1)}
                 </Text>
@@ -233,19 +225,17 @@ export function DayTimeline({
                   key={lane.person.id}
                   style={[styles.headRow, { height: lane.height, marginBottom: lane.gapAfter }]}
                 >
-                  <Avatar person={lane.person} size={compact ? 22 : 30} />
-                  {!compact ? (
-                    <View style={styles.headText}>
-                      <Text variant="title" style={styles.headName} numberOfLines={1}>
-                        {lane.person.isMe ? 'You' : lane.person.name}
+                  <Avatar person={lane.person} size={30} />
+                  <View style={styles.headText}>
+                    <Text variant="title" style={styles.headName} numberOfLines={1}>
+                      {lane.person.isMe ? 'You' : lane.person.name}
+                    </Text>
+                    {lane.sub ? (
+                      <Text variant="small" tone="muted" numberOfLines={2}>
+                        {lane.sub}
                       </Text>
-                      {lane.sub ? (
-                        <Text variant="small" tone="muted" numberOfLines={2}>
-                          {lane.sub}
-                        </Text>
-                      ) : null}
-                    </View>
-                  ) : null}
+                    ) : null}
+                  </View>
                 </View>
               ))}
             </View>
@@ -257,7 +247,7 @@ export function DayTimeline({
                   key={lane.person.id}
                   style={[
                     styles.lane,
-                    { top: lane.top, height: lane.height, borderRadius: compact ? 7 : radius.md },
+                    { top: lane.top, height: lane.height, borderRadius: radius.md },
                   ]}
                 />
               ))}
@@ -307,18 +297,20 @@ export function DayTimeline({
                         top: s.top + space[1],
                         height: s.height - space[2],
                         paddingLeft: lead,
-                        backgroundColor: away ? s.color : tint(by?.color ?? s.color, 0.16),
-                        borderColor: away ? s.color : tint(by?.color ?? s.color, 0.55),
+                        backgroundColor: away
+                          ? solidFill(s.color)
+                          : tint(by?.color ?? s.color, 0.16),
+                        borderColor: away ? solidFill(s.color) : tint(by?.color ?? s.color, 0.55),
                         borderStyle: away ? 'solid' : 'dashed',
-                        borderRadius: compact ? 5 : radius.sm,
+                        borderRadius: radius.sm,
                       },
                     ]}
                   >
-                    {!compact && fits ? (
+                    {fits ? (
                       <Text
                         variant="small"
                         numberOfLines={1}
-                        color={away ? readableOn(s.color) : color.ink}
+                        color={away ? textOn(solidFill(s.color)) : color.ink}
                         style={styles.segText}
                       >
                         {s.label}
@@ -348,9 +340,9 @@ export function DayTimeline({
               {/* Events in each lane: the words inside when they fit, else beside, never cut */}
               {model.blocks.map((b) => {
                 const left = x(b.start);
-                const w = Math.max(compact ? 8 : 18, x(b.end) - left);
+                const w = Math.max(18, x(b.end) - left);
                 const c = b.color;
-                const label = compact ? null : placeLabel(b, w, roomAfter(b, left + w));
+                const label = placeLabel(b, w, roomAfter(b, left + w));
                 return (
                   <Pressable
                     key={b.key}
@@ -364,10 +356,10 @@ export function DayTimeline({
                         width: w,
                         top: b.top,
                         height: b.height,
-                        borderRadius: compact ? 5 : radius.sm,
+                        borderRadius: radius.sm,
                       },
                       b.care
-                        ? { backgroundColor: c, borderColor: c }
+                        ? { backgroundColor: solidFill(c), borderColor: solidFill(c) }
                         : b.imported
                           ? {
                               backgroundColor: color.surface,
@@ -388,7 +380,7 @@ export function DayTimeline({
                         <Hatch
                           width={w}
                           height={b.height}
-                          radius={compact ? 5 : radius.sm}
+                          radius={radius.sm}
                           stroke={c}
                           background="transparent"
                           outline={false}
@@ -397,11 +389,11 @@ export function DayTimeline({
                     ) : null}
                     {b.care ? (
                       <View style={styles.glyph}>
-                        <Car size={compact ? 11 : 15} strokeWidth={2.4} color={readableOn(c)} />
+                        <Car size={15} strokeWidth={2.4} color={textOn(solidFill(c))} />
                         {label?.where === 'in' ? (
                           <Text
                             variant="small"
-                            color={readableOn(c)}
+                            color={textOn(solidFill(c))}
                             numberOfLines={1}
                             style={styles.careText}
                           >
@@ -412,7 +404,7 @@ export function DayTimeline({
                     ) : label?.where === 'in' ? (
                       <View style={styles.blockInner}>
                         {b.imported && w > 60 ? (
-                          <CalendarDays size={12} color={textShade(c)} strokeWidth={2.2} />
+                          <CalendarDays size={12} color={readableOn(c)} strokeWidth={2.2} />
                         ) : null}
                         <Text variant="small" numberOfLines={1} style={styles.blockText}>
                           {label.text}
@@ -445,90 +437,79 @@ export function DayTimeline({
               {nowMin !== null && nowMin >= from && nowMin <= to ? (
                 <View
                   pointerEvents="none"
-                  style={[
-                    styles.now,
-                    { left: x(nowMin) - 1, height: model.height + (compact ? 10 : 14) },
-                  ]}
+                  style={[styles.now, { left: x(nowMin) - 1, height: model.height + 14 }]}
                   accessibilityLabel={`Now, ${timeOf(now?.toISOString() ?? '', timeZone)}`}
                 >
-                  <View style={[styles.nowPill, compact && styles.nowPillCompact]}>
-                    <Text
-                      variant="small"
-                      color={color.onInk}
-                      style={[styles.nowText, compact && styles.tiny]}
-                    >
+                  <View style={styles.nowPill}>
+                    <Text variant="small" color={color.onInk} style={styles.nowText}>
                       {timeOf(now?.toISOString() ?? '', timeZone).replace(/am|pm/, '')}
                     </Text>
                   </View>
                 </View>
               ) : null}
               {/* Labels beside blocks too short to hold them */}
-              {!compact
-                ? model.blocks.map((b) => {
-                    if (b.care) return null;
-                    const left = x(b.start);
-                    const w = Math.max(18, x(b.end) - left);
-                    const room = roomAfter(b, left + w);
-                    const label = placeLabel(b, w, room);
-                    if (label?.where !== 'out') return null;
-                    return (
-                      <View
-                        key={`out${b.key}`}
-                        pointerEvents="none"
-                        style={[
-                          styles.outside,
-                          {
-                            left: left + w + space[2] - 2,
-                            top: b.top,
-                            height: b.height,
-                            width: room,
-                          },
-                        ]}
-                      >
-                        <View style={styles.outsideText}>
-                          <Text variant="small" numberOfLines={1} style={styles.blockText}>
-                            {label.text}
-                            {label.time === 'inline' ? (
-                              <Text variant="small" color={MUTED_ON_LANE}>
-                                {'  '}
-                                {b.time}
-                              </Text>
-                            ) : null}
+              {model.blocks.map((b) => {
+                if (b.care) return null;
+                const left = x(b.start);
+                const w = Math.max(18, x(b.end) - left);
+                const room = roomAfter(b, left + w);
+                const label = placeLabel(b, w, room);
+                if (label?.where !== 'out') return null;
+                return (
+                  <View
+                    key={`out${b.key}`}
+                    pointerEvents="none"
+                    style={[
+                      styles.outside,
+                      {
+                        left: left + w + space[2] - 2,
+                        top: b.top,
+                        height: b.height,
+                        width: room,
+                      },
+                    ]}
+                  >
+                    <View style={styles.outsideText}>
+                      <Text variant="small" numberOfLines={1} style={styles.blockText}>
+                        {label.text}
+                        {label.time === 'inline' ? (
+                          <Text variant="small" color={MUTED_ON_LANE}>
+                            {'  '}
+                            {b.time}
                           </Text>
-                          {label.time === 'below' ? (
-                            <Text variant="small" color={MUTED_ON_LANE} numberOfLines={1}>
-                              {b.time}
-                            </Text>
-                          ) : null}
-                        </View>
-                      </View>
-                    );
-                  })
-                : null}
+                        ) : null}
+                      </Text>
+                      {label.time === 'below' ? (
+                        <Text variant="small" color={MUTED_ON_LANE} numberOfLines={1}>
+                          {b.time}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </View>
+                );
+              })}
 
               {/* Handoff lines under a child's lane */}
-              {!compact
-                ? handoffPlacement(model.handoffLabels, x, track).map((h) => (
-                    <View
-                      key={`hl${h.key}`}
-                      pointerEvents="none"
-                      style={[styles.handoffLabel, { left: h.left, width: h.width, top: h.top }]}
-                    >
-                      <Text variant="small" numberOfLines={1} style={styles.handoffText}>
-                        <Text variant="small" color={textShade(h.color)} style={styles.handoffTime}>
-                          {h.time}
-                        </Text>
-                        {'  '}
-                        {h.text}
-                      </Text>
-                    </View>
-                  ))
-                : null}
+              {handoffPlacement(model.handoffLabels, x, track).map((h) => (
+                <View
+                  key={`hl${h.key}`}
+                  pointerEvents="none"
+                  style={[styles.handoffLabel, { left: h.left, width: h.width, top: h.top }]}
+                >
+                  <Text variant="small" numberOfLines={1} style={styles.handoffText}>
+                    <Text variant="small" color={readableOn(h.color)} style={styles.handoffTime}>
+                      {h.time}
+                    </Text>
+                    {'  '}
+                    {h.text}
+                  </Text>
+                </View>
+              ))}
             </View>
           </View>
 
           {/* Shared events, named under the timeline; captions that would overlap take a new row */}
-          {!compact && model.together.length > 0
+          {model.together.length > 0
             ? (() => {
                 const placed: { key: string; label: string; left: number; row: number }[] = [];
                 const rowEnds: number[] = [];
@@ -569,7 +550,7 @@ export function DayTimeline({
             : null}
         </View>
       ) : (
-        <View style={{ height: compact ? 120 : 260 }} />
+        <View style={{ height: 260 }} />
       )}
     </View>
   );
@@ -601,7 +582,6 @@ function buildModel({
   handoffs,
   headsUps,
   people,
-  compact,
   now,
   hidden,
 }: {
@@ -611,7 +591,6 @@ function buildModel({
   handoffs: HandoffView[];
   headsUps: HeadsUp[];
   people: People;
-  compact: boolean;
   now: Date | null;
   hidden: Set<string>;
 }) {
@@ -688,17 +667,17 @@ function buildModel({
     return { placed, n: Math.max(1, rows.length) };
   };
 
-  const pad = compact ? 3 : space[1];
-  const caredH = compact ? 22 : touch;
-  const gap = compact ? 5 : space[3];
-  const labelRoom = compact ? 0 : space[5];
+  const pad = space[1];
+  const caredH = touch;
+  const gap = space[3];
+  const labelRoom = space[5];
   const visible = ordered.filter((o) => !hidden.has(o.person.id));
   let y = 0;
   const laneModels = visible.map(({ lane, person }) => {
     const hasHandoffs = handoffs.some((h) => h.careMemberId === person.id);
     const layout = placeLane(lane);
-    const adultH = compact ? 26 : pad * 2 + layout.n * ROW + (layout.n - 1) * 2;
-    const height = lane.caredFor ? caredH : Math.max(compact ? 26 : touch + space[3], adultH);
+    const adultH = pad * 2 + layout.n * ROW + (layout.n - 1) * 2;
+    const height = lane.caredFor ? caredH : Math.max(touch + space[3], adultH);
     const gapAfter = gap + (lane.caredFor && hasHandoffs ? labelRoom : 0);
     const model = { lane, person, top: y, height, gapAfter, sub: '', layout };
     y += height + gapAfter;
@@ -901,7 +880,6 @@ const styles = StyleSheet.create({
   },
   axis: { position: 'relative', marginBottom: space[1] },
   hour: { position: 'absolute', top: 0, width: 60, textAlign: 'center' },
-  hourCompact: { fontSize: 10.5 },
   noon: { color: color.ink },
   body: { flexDirection: 'row' },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: space[3], paddingRight: space[3] },
@@ -928,7 +906,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   segText: { fontFamily: font.uiBold },
-  tiny: { fontSize: 10, lineHeight: 12 },
   bridge: { position: 'absolute', width: space[1], borderRadius: 2 },
   block: {
     position: 'absolute',
@@ -982,7 +959,6 @@ const styles = StyleSheet.create({
     minWidth: touch,
     alignItems: 'center',
   },
-  nowPillCompact: { height: 16, minWidth: 34, paddingHorizontal: 4, top: -4 },
   nowText: { fontFamily: font.uiBold },
   foot: { marginTop: space[3], position: 'relative' },
   footText: { position: 'absolute', width: 200, textAlign: 'center' },

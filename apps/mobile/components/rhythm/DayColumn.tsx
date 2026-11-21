@@ -15,7 +15,8 @@ import {
   minutesLabel,
   railRows,
   readableOn,
-  textShade,
+  solidFill,
+  textOn,
   verticalDay,
 } from './today-model';
 
@@ -225,7 +226,7 @@ export function DayColumn({
             >
               <View style={styles.titleRow}>
                 {Icon ? (
-                  <Icon size={15} strokeWidth={2.4} color={textShade(markColor, color.surface)} />
+                  <Icon size={15} strokeWidth={2.4} color={readableOn(markColor, color.surface)} />
                 ) : null}
                 <Text variant="title" style={styles.title}>
                   {e.title}
@@ -246,7 +247,10 @@ export function DayColumn({
               {awayLine && away ? (
                 <Text
                   variant="meta"
-                  color={textShade(away.person.color, lead ? tint(lead.color, 0.1) : color.surface)}
+                  color={readableOn(
+                    away.person.color,
+                    lead ? tint(lead.color, 0.1) : color.surface,
+                  )}
                 >
                   {awayLine}
                 </Text>
@@ -284,10 +288,10 @@ function Marker({
           styles.markCare,
           hollow
             ? { backgroundColor: color.surface, borderColor: a }
-            : { backgroundColor: a, borderColor: a },
+            : { backgroundColor: solidFill(a), borderColor: solidFill(a) },
         ]}
       >
-        <Car size={12} strokeWidth={2.6} color={hollow ? textShade(a) : readableOn(a)} />
+        <Car size={12} strokeWidth={2.6} color={hollow ? readableOn(a) : textOn(solidFill(a))} />
       </View>
     );
   if (hollow)

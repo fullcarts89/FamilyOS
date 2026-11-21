@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest';
 import type { NextEntry } from '../apps/mobile/components/rhythm/NextUp';
 import {
   awayRails,
+  byStart,
   contrast,
   railRows,
   readableOn,
   shortTitle,
+  solidFill,
   splitTonight,
+  textOn,
   textShade,
   verticalDay,
 } from '../apps/mobile/components/rhythm/today-model';
+import { choosablePalette, color, tint } from '../apps/mobile/design/tokens';
 import type { Person } from '../apps/mobile/lib/people';
 
 // A synthetic household day in Los Angeles (UTC-8 in November).
@@ -146,18 +150,77 @@ describe('the phone’s vertical day', () => {
   });
 });
 
-describe('readable color', () => {
-  it('puts ink on marigold and white on blue', () => {
-    expect(readableOn('#D99A1C')).toBe('#17201B');
-    expect(readableOn('#2F6FB3')).toBe('#FFFFFF');
+describe('the night the clocks go back', () => {
+  // 2026-11-01 in Los Angeles: 1:00–1:59am happens twice (PDT, then PST).
+  const date = '2026-11-01';
+  const firstOneThirty = entry('Feed, first 1:30am', [0, 0], [0, 0], [MAYA]);
+  firstOneThirty.startsAt = firstOneThirty.endsAt = '2026-11-01T08:30:00.000Z'; // 1:30am PDT
+  const secondOneFifteen = entry('Feed, second 1:15am', [0, 0], [0, 0], [THEO]);
+  secondOneFifteen.startsAt = secondOneFifteen.endsAt = '2026-11-01T09:15:00.000Z'; // 1:15am PST
+  const breakfast = entry('Breakfast', [0, 0], [0, 0], [MAYA, THEO]);
+  breakfast.startsAt = '2026-11-01T15:00:00.000Z'; // 7am PST
+  breakfast.endsAt = '2026-11-01T15:30:00.000Z';
+
+  it('keeps the repeated hour in the order it happened', () => {
+    const rows = verticalDay({
+      entries: [breakfast, secondOneFifteen, firstOneThirty],
+      date,
+      timeZone: TZ,
+      now: new Date('2026-11-01T16:00:00.000Z'),
+    });
+    const items = rows.filter((r) => r.kind === 'item').map((r) => r.key);
+    expect(items).toEqual(['Feed, first 1:30am', 'Feed, second 1:15am', 'Breakfast']);
+    // The 1am mark (the first one) comes before both feeds; the now-line after breakfast.
+    const keys = rows.map((r) => r.key);
+    expect(keys.indexOf('h60')).toBeLessThan(keys.indexOf('Feed, first 1:30am'));
+    expect(keys.indexOf('Breakfast')).toBeLessThan(keys.indexOf('now'));
   });
 
-  it('deepens a member color for text until it passes 4.5:1, and leaves dark ones alone', () => {
-    const coral = textShade('#D2553F');
-    expect(coral).not.toBe('#D2553F');
-    expect(contrast(coral, '#FFFFFF')).toBeGreaterThanOrEqual(4.5);
-    expect(textShade('#2F6FB3')).toBe('#2F6FB3');
-    expect(contrast(textShade('#676E68', '#EFECE5'), '#EFECE5')).toBeGreaterThanOrEqual(4.5);
+  it('sorts day entries by instant', () => {
+    expect([breakfast, secondOneFifteen, firstOneThirty].sort(byStart).map((e) => e.key)).toEqual([
+      'Feed, first 1:30am',
+      'Feed, second 1:15am',
+      'Breakfast',
+    ]);
+  });
+});
+
+describe('readable color', () => {
+  it('every color a member can choose carries 4.5:1 text when it is a fill', () => {
+    expect(choosablePalette).toHaveLength(12);
+    for (const hex of choosablePalette) {
+      const fill = solidFill(hex);
+      expect(contrast(textOn(fill), fill), hex).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('keeps a member’s own color as the fill whenever white or ink already reads on it', () => {
+    expect(solidFill('#D99A1C')).toBe('#D99A1C');
+    expect(textOn('#D99A1C')).toBe('#17201B');
+    expect(solidFill('#2F6FB3')).toBe('#2F6FB3');
+    expect(textOn('#2F6FB3')).toBe('#FFFFFF');
+    // Coral sits between the two: deepened just enough for white text.
+    expect(solidFill('#D2553F')).not.toBe('#D2553F');
+    expect(textOn(solidFill('#D2553F'))).toBe('#FFFFFF');
+  });
+
+  it('every member color reads as text on white and on its own tint', () => {
+    for (const hex of choosablePalette) {
+      expect(contrast(readableOn(hex), '#FFFFFF'), hex).toBeGreaterThanOrEqual(4.5);
+      const tinted = tint(hex, 0.1);
+      expect(contrast(readableOn(hex, tinted), tinted), hex).toBeGreaterThanOrEqual(4.5);
+    }
+    // Dark enough already: left alone.
+    expect(readableOn('#2F6FB3')).toBe('#2F6FB3');
+  });
+
+  it('muted text on a lane or a tint keeps its coarser shade (5.01:1 on the lane)', () => {
+    const onLane = textShade(color.muted, color.lane);
+    expect(contrast(onLane, color.lane)).toBeCloseTo(5.01, 2);
+    for (const hex of choosablePalette) {
+      const bg = tint(hex, 0.16);
+      expect(contrast(textShade(color.muted, bg), bg), hex).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it('shortens a title to the part before a colon or bracket', () => {
