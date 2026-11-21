@@ -123,6 +123,8 @@ export async function seedRoutine(
     startOn: string;
     generateFrom?: string;
     time?: string | null;
+    /** Each turn's length, with a time. */
+    durationMinutes?: number | null;
     timezone?: string;
     ownerMemberId?: string | null;
     rotation?: string[];
@@ -151,6 +153,7 @@ export async function seedRoutine(
       timezone: options.timezone ?? 'America/Los_Angeles',
       start_on: options.startOn,
       local_time: options.time ?? null,
+      duration_minutes: options.durationMinutes ?? null,
       rotation: options.rotation ?? [],
       generate_from: options.generateFrom ?? options.startOn,
     })

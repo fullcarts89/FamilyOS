@@ -306,6 +306,7 @@ export async function loadNotificationData(
       'subject_member_id',
       'due_on',
       'due_at',
+      'duration_minutes',
       'recurrence_rule_id',
     ])
     .where('household_id', '=', householdId)
@@ -332,6 +333,7 @@ export async function loadNotificationData(
     subjectMemberId: t.subject_member_id,
     dueOn: t.due_on,
     dueAt: t.due_at === null ? null : iso(t.due_at),
+    durationMinutes: t.duration_minutes,
     recurrenceRuleId: t.recurrence_rule_id,
   }));
 
