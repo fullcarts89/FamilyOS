@@ -6,7 +6,7 @@ import {
   type SeededHousehold,
 } from '@familyos/db/testing';
 import type { Kysely } from 'kysely';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp } from './testing/harness';
 
 // Childcare coverage by request and acceptance (P1-6), through the HTTP API.
@@ -42,7 +42,8 @@ interface Occurrence {
 }
 
 describe.skipIf(!db)('cover requests', () => {
-  const { request, tokenFor } = db ? createTestApp({ db, now: () => NOW }) : createTestApp();
+  let clock = NOW;
+  const { request, tokenFor } = db ? createTestApp({ db, now: () => clock }) : createTestApp();
   let h: SeededHousehold;
   let owner: string;
   let adult: string;
@@ -392,6 +393,138 @@ describe.skipIf(!db)('cover requests', () => {
     expect(theirs.activity.find((a) => a.action === 'event.cover_requested')?.title).toBe(
       'Daycare drop-off',
     );
+  });
+
+  describe('removing a cover', () => {
+    const minutes = (n: number) => new Date(NOW.getTime() + n * 60_000);
+    const cover = (date: string, memberId: string, token: string, eventId = dropOff) =>
+      call(`/events/${eventId}/occurrences/${date}`, {
+        method: 'POST',
+        token,
+        body: { action: 'cover', memberId },
+      });
+    const remove = (date: string, token: string, eventId = dropOff) =>
+      call(`/events/${eventId}/occurrences/${date}`, { method: 'DELETE', token });
+    const auditCount = async () =>
+      (
+        await requireDb()
+          .selectFrom('app.audit_event')
+          .select('id')
+          .where('household_id', '=', h.id)
+          .execute()
+      ).length;
+    /** A refusal: 422 hand_back, the cover still there, nothing audited. */
+    const refused = async (date: string, token: string, eventId = dropOff) => {
+      const before = await auditCount();
+      const res = await remove(date, token, eventId);
+      const exception = await requireDb()
+        .selectFrom('app.event_exception')
+        .select(['kind', 'cover_member_id'])
+        .where('event_id', '=', eventId)
+        .where('occurrence_date', '=', date)
+        .executeTakeFirst();
+      return {
+        status: res.status,
+        body: await res.json(),
+        kind: exception?.kind,
+        audited: (await auditCount()) - before,
+      };
+    };
+    const refusal = { status: 422, body: { error: 'hand_back' }, kind: 'cover', audited: 0 };
+    let thirdAdult: string;
+
+    beforeAll(async () => {
+      const userId = crypto.randomUUID();
+      const third = await requireDb()
+        .insertInto('app.member')
+        .values({
+          household_id: h.id,
+          user_id: userId,
+          display_name: 'Cover Grandpa',
+          role: 'adult',
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      thirdAdult = await tokenFor({ userId, email: `${third.id}@example.test` });
+    });
+    afterEach(() => {
+      clock = NOW;
+    });
+
+    it('lets the usual adult take it back', async () => {
+      expect((await cover('2026-12-01', h.adult.id, adult)).status).toBe(200);
+      clock = minutes(60);
+      expect((await remove('2026-12-01', owner)).status).toBe(200);
+    });
+
+    it('lets the adult who covered it undo within 10 minutes, and not after', async () => {
+      expect((await cover('2026-12-02', h.adult.id, adult)).status).toBe(200);
+      clock = minutes(10);
+      expect((await remove('2026-12-02', adult)).status).toBe(200);
+      clock = NOW;
+      expect((await cover('2026-12-02', h.adult.id, adult)).status).toBe(200);
+      clock = minutes(11);
+      expect(await refused('2026-12-02', adult)).toEqual(refusal);
+    });
+
+    it('refuses anyone else, and a caregiver can’t remove covers at all', async () => {
+      expect((await cover('2026-12-03', h.adult.id, adult)).status).toBe(200);
+      expect(await refused('2026-12-03', thirdAdult)).toEqual(refusal);
+      expect((await remove('2026-12-03', caregiver)).status).toBe(403);
+      // The usual adult still can.
+      expect((await remove('2026-12-03', owner)).status).toBe(200);
+    });
+
+    it('counts a cover that replaced a skip from when it was made', async () => {
+      clock = minutes(-60);
+      expect(
+        (
+          await call(`/events/${dropOff}/occurrences/2026-12-04`, {
+            method: 'POST',
+            body: { action: 'skip' },
+          })
+        ).status,
+      ).toBe(200);
+      clock = NOW;
+      expect((await cover('2026-12-04', h.adult.id, adult)).status).toBe(200);
+      clock = minutes(5);
+      expect((await remove('2026-12-04', adult)).status).toBe(200);
+    });
+
+    it('keeps an accepted cover with the adult who accepted it, past the undo window', async () => {
+      const asked = (
+        await json<{ coverRequest: CoverRequest }>(await ask('2026-12-07', h.adult.id))
+      ).coverRequest;
+      expect((await answer(asked.id, 'accept', adult)).status).toBe(200);
+      clock = minutes(11);
+      expect(await refused('2026-12-07', adult)).toEqual(refusal);
+      expect(await refused('2026-12-07', thirdAdult)).toEqual(refusal);
+      expect((await remove('2026-12-07', owner)).status).toBe(200);
+    });
+
+    it('lets anyone remove a cover that replaced nobody, and a skip as before', async () => {
+      const childOnly = await seedEvent(requireDb(), h, {
+        title: 'Swim lesson',
+        startsAt: '2026-12-08T01:00:00Z',
+        endsAt: '2026-12-08T01:45:00Z',
+        memberIds: [h.child.id],
+        careMemberId: h.child.id,
+        careAction: 'drop_off',
+      });
+      expect((await cover('2026-12-07', h.adult.id, adult, childOnly)).status).toBe(200);
+      clock = minutes(30);
+      expect((await remove('2026-12-07', thirdAdult, childOnly)).status).toBe(200);
+      expect(
+        (
+          await call(`/events/${dropOff}/occurrences/2026-12-08`, {
+            method: 'POST',
+            token: adult,
+            body: { action: 'skip' },
+          })
+        ).status,
+      ).toBe(200);
+      expect((await remove('2026-12-08', thirdAdult)).status).toBe(200);
+    });
   });
 
   it('cancels what a removed member asked or was asked', async () => {

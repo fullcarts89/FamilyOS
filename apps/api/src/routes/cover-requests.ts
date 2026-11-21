@@ -325,6 +325,7 @@ export function coverRequestRoutes(deps: Deps) {
           kind: 'cover',
           cover_member_id: member.id,
           created_by_member_id: member.id,
+          created_at: now(),
         })
         .onConflict((oc) => oc.columns(['event_id', 'occurrence_date']).doNothing())
         .returning('id')

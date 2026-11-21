@@ -93,6 +93,9 @@ const UpdateEvent = z
 
 const AskToCover = z.object({ memberId: Uuid }).strict();
 
+/** How long the adult who covered an occurrence can still undo it themselves. */
+export const COVER_UNDO_MINUTES = 10;
+
 const OccurrenceAction = z
   .object({ action: z.enum(['skip', 'cover']), memberId: Uuid.optional() })
   .strict()
@@ -706,12 +709,15 @@ export function eventRoutes(deps: Deps) {
         kind: body.action,
         cover_member_id: body.memberId ?? null,
         created_by_member_id: member.id,
+        created_at: now(),
       })
       .onConflict((oc) =>
         oc.columns(['event_id', 'occurrence_date']).doUpdateSet({
           kind: body.action,
           cover_member_id: body.memberId ?? null,
           created_by_member_id: member.id,
+          // A cover replacing a skip is new: its undo window starts now.
+          created_at: now(),
         }),
       )
       .execute();
@@ -755,19 +761,45 @@ export function eventRoutes(deps: Deps) {
     );
   });
 
-  // Undo a skip or cover.
+  // Undo a skip or cover. Removing a cover hands the occurrence back to the adults it replaced,
+  // so only they may (they're taking it back), or anyone when it replaced nobody; the adult
+  // covering it may undo their own cover within COVER_UNDO_MINUTES (the toast's Undo). Anyone
+  // else gets 422 hand_back and nothing changes: responsibility moves only with a yes.
   app.delete('/:eventId/occurrences/:date', async (c) => {
     authorize(c, 'event.manage');
     const eventId = uuidParam(c.req.param('eventId'));
     const date = dateParam(c.req.param('date'));
     const trx = c.get('trx');
     const member = c.get('member');
-    await locate(trx, member, eventId, date);
-    const removed = await trx
-      .deleteFrom('app.event_exception')
+    const series = await locate(trx, member, eventId, date);
+    const exception = await trx
+      .selectFrom('app.event_exception')
+      .select(['id', 'kind', 'cover_member_id', 'created_by_member_id', 'created_at'])
       .where('household_id', '=', member.householdId)
       .where('event_id', '=', eventId)
       .where('occurrence_date', '=', date)
+      .forUpdate()
+      .executeTakeFirst();
+    if (!exception) throw notFound();
+    if (exception.kind === 'cover') {
+      // The usual adults the cover replaced (applyCover's replacedMemberIds), still members.
+      const roles = await memberRoles(trx, member.householdId);
+      const caredFor = caredForIn(roles);
+      const replaced = series.memberIds.filter(
+        (id) => roles.has(id) && !caredFor(id) && id !== exception.cover_member_id,
+      );
+      const ownUndo =
+        exception.cover_member_id === member.id &&
+        exception.created_by_member_id === member.id &&
+        now().getTime() - new Date(exception.created_at).getTime() <= COVER_UNDO_MINUTES * 60_000;
+      if (replaced.length > 0 && !replaced.includes(member.id) && !ownUndo) {
+        throw new ApiError(422, 'hand_back');
+      }
+    }
+    const removed = await trx
+      .deleteFrom('app.event_exception')
+      .where('household_id', '=', member.householdId)
+      .where('id', '=', exception.id)
       .returning('kind')
       .executeTakeFirst();
     if (!removed) throw notFound();
