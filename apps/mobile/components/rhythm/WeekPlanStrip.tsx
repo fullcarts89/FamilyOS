@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { ArrowRight, Check, Utensils } from 'lucide-react-native';
+import { ArrowRight, Check, NotebookPen, Utensils, Vote } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Avatar } from '../../design/Avatar';
@@ -13,13 +13,16 @@ import { api, type ResetResponse } from '../../lib/api';
 import { addDays, dayOfWeek } from '../../lib/dates';
 import { useHousehold } from '../../lib/household';
 import { usePeople } from '../../lib/people';
+import { planFacts } from '../reset/coordination';
 
 const mondayOf = (date: string) => addDays(date, 1 - dayOfWeek(date));
 
 /**
- * Today's line from the Weekly Reset: whether this week has a plan, whether the week's care is
- * covered from here on (or what still needs someone), tonight's dinner, and on the weekend a
- * nudge to plan the next week together. Everything comes from the committed plan's real data.
+ * Today's line from the Weekly Reset: whether this week has a plan, its notes (one line, tap for
+ * all of it), whether the week's care is covered from here on (or what still needs someone, a tap
+ * from the Week), the decisions still open (a tap from Decisions), tonight's dinner, and on the
+ * weekend a nudge to plan the next week together. Everything the Reset left open is reachable
+ * from here. All of it comes from the plan's real data.
  */
 export function WeekPlanStrip({ today, version }: { today: string; version: number }) {
   const { household } = useHousehold();
@@ -27,6 +30,7 @@ export function WeekPlanStrip({ today, version }: { today: string; version: numb
   const { phone } = useLayout();
   const [week, setWeek] = useState<ResetResponse | null>(null);
   const [next, setNext] = useState<ResetResponse | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
   const adult = household?.role === 'owner' || household?.role === 'adult';
   const monday = mondayOf(today);
   const weekend = dayOfWeek(today) >= 5;
@@ -54,17 +58,15 @@ export function WeekPlanStrip({ today, version }: { today: string; version: numb
   );
 
   if (!adult || !week) return null;
-  const now = Date.now();
-  const ahead = [...week.events.needsOwner, ...week.events.conflicts].filter(
-    (h) => new Date(h.time).getTime() > now,
-  );
+  const facts = planFacts(week, next, Date.now());
+  const careOpen = facts?.care.count ?? 0;
   const dinner = week.meals.find((m) => m.onDate === today && m.slot === 'dinner');
   const cook = people.byId(dinner?.cookMemberId);
   const committed = !!week.plan?.committedAt;
   const care = people.caredFor.find((p) => p.role === 'child');
   const nextCommitted = !!next?.plan?.committedAt;
 
-  const pieces: { key: string; icon: React.ReactNode; text: string }[] = [];
+  const pieces: { key: string; icon: React.ReactNode; text: string; go?: () => void }[] = [];
   if (committed) {
     pieces.push({
       key: 'plan',
@@ -77,11 +79,16 @@ export function WeekPlanStrip({ today, version }: { today: string; version: numb
     });
   }
   pieces.push(
-    ahead.length
+    careOpen
       ? {
           key: 'care',
           icon: <Hatch width={18} height={12} radius={3} />,
-          text: `${ahead.length === 1 ? 'One drop-off or pickup still needs' : `${ahead.length} drop-offs and pickups still need`} someone`,
+          text: `${careOpen === 1 ? 'One drop-off or pickup still needs' : `${careOpen} drop-offs and pickups still need`} someone`,
+          go: () =>
+            router.push({
+              pathname: '/week',
+              params: facts?.care.first ? { date: facts.care.first } : {},
+            }),
         }
       : {
           key: 'care',
@@ -106,6 +113,15 @@ export function WeekPlanStrip({ today, version }: { today: string; version: numb
       ? `Dinner tonight: ${dinner.title}${cook ? ` · ${cook.isMe ? 'you cook' : `${cook.name} cooks`}` : ''}`
       : 'No dinner planned tonight',
   });
+  if (facts?.decisionsOpen) {
+    pieces.push({
+      key: 'decisions',
+      icon: <Vote size={16} color={color.ink} strokeWidth={2.2} />,
+      text:
+        facts.decisionsOpen === 1 ? 'One decision open' : `${facts.decisionsOpen} decisions open`,
+      go: () => router.push('/decisions'),
+    });
+  }
 
   const nudge =
     weekend && next && !nextCommitted
@@ -118,12 +134,48 @@ export function WeekPlanStrip({ today, version }: { today: string; version: numb
     <FadeIn>
       <View style={[styles.strip, phone && styles.stripPhone]}>
         <View style={[styles.pieces, phone && styles.piecesPhone]}>
-          {pieces.map((p) => (
-            <View key={p.key} style={styles.piece}>
-              {p.icon}
-              <Text variant="label">{p.text}</Text>
-            </View>
-          ))}
+          {pieces.map((p) =>
+            p.go ? (
+              <Pressable
+                key={p.key}
+                accessibilityRole="link"
+                onPress={p.go}
+                style={(s: PressState) => [
+                  styles.piece,
+                  styles.pieceLink,
+                  s.hovered && styles.linkHover,
+                ]}
+              >
+                {p.icon}
+                <Text variant="label" style={styles.underline}>
+                  {p.text}
+                </Text>
+              </Pressable>
+            ) : (
+              <View key={p.key} style={styles.piece}>
+                {p.icon}
+                <Text variant="label">{p.text}</Text>
+              </View>
+            ),
+          )}
+          {facts?.notes ? (
+            <Pressable
+              accessibilityRole="button"
+              aria-expanded={notesOpen}
+              accessibilityLabel={`${facts.notesFor === 'next' ? 'Notes for next week' : 'This week’s notes'}: ${facts.notes}`}
+              accessibilityHint={notesOpen ? 'Shows one line' : 'Shows all of the notes'}
+              onPress={() => setNotesOpen((v) => !v)}
+              style={(s: PressState) => [styles.piece, styles.notes, s.hovered && styles.linkHover]}
+            >
+              <NotebookPen size={16} color={color.ink} strokeWidth={2.2} />
+              <Text variant="label" numberOfLines={notesOpen ? undefined : 1} style={styles.flex}>
+                <Text variant="label" tone="muted">
+                  {facts.notesFor === 'next' ? 'Next week: ' : 'Notes: '}
+                </Text>
+                {facts.notes}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
         <Pressable
           accessibilityRole="link"
@@ -180,6 +232,10 @@ const styles = StyleSheet.create({
   },
   piecesPhone: { flexDirection: 'column' },
   piece: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  pieceLink: { minHeight: touch, cursor: 'pointer' },
+  underline: { textDecorationLine: 'underline', textDecorationColor: color.line2 },
+  notes: { minHeight: touch, flexBasis: '100%', minWidth: 0, cursor: 'pointer' },
+  flex: { flex: 1, minWidth: 0 },
   tick: {
     width: 18,
     height: 18,

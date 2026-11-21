@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
-import { addDays, weekdayName } from '../support/api';
+import { addDays, weekday, weekdayName } from '../support/api';
 import { E2E_DIR, THEO } from '../support/env';
 import { expect, test, toast, type AppDriver } from '../support/fixtures';
 
@@ -144,6 +144,47 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
     }
     const { items } = await mayaApi.get<{ items: { name: string }[] }>('/groceries');
     expect(items.map((i) => i.name)).toContain('Tortillas');
+  });
+
+  test('the plan carries into the week: notes and open decisions on Today, dinners on the Week', async ({
+    app,
+    maya,
+    mayaApi,
+  }) => {
+    const today = await mayaApi.today();
+    const monday = addDays(today, 1 - weekday(today));
+    // This week's notes, as the Reset saves them.
+    const current = await mayaApi.get<{ plan: { notesVersion?: number } | null }>(
+      `/reset?week=${monday}`,
+    );
+    const notes = 'Theo has Wednesday pickup. Grandma visits Friday: tidy the spare room first.';
+    const saved = await mayaApi.request(`/households/${mayaApi.householdId}/reset/notes`, {
+      method: 'PATCH',
+      body: { week: monday, notes, expectedVersion: current.plan?.notesVersion ?? 0 },
+    });
+    expect(saved.status).toBe(200);
+    const open = (await mayaApi.get<{ decisions: unknown[] }>('/decisions?status=open')).decisions
+      .length;
+    expect(open, 'the seed has decisions open').toBeGreaterThan(1);
+
+    // Today's plan line: the notes on one line (all of them on a tap), and the open decisions.
+    await maya.reload();
+    const line = maya.getByRole('button', { name: `This week’s notes: ${notes}` });
+    await expect(line).toBeVisible();
+    await expect(line).toHaveAttribute('aria-expanded', 'false');
+    await line.click();
+    await expect(line).toHaveAttribute('aria-expanded', 'true');
+    await maya.getByRole('link', { name: `${open} decisions open` }).click();
+    await expect(maya).toHaveURL(/\/decisions$/);
+    await expect(maya.getByRole('heading', { name: 'Decisions', level: 1 })).toBeVisible();
+
+    // The Week has each night's dinner from the meal plan.
+    await app.nav(maya, 'Week');
+    await expect(
+      maya.getByRole('link', {
+        name: `${weekdayName(today)} dinner: Sheet-pan salmon, Theo cooks`,
+      }),
+    ).toBeVisible();
   });
 
   test('a decision resolved together', async ({ app, maya, mayaApi }) => {

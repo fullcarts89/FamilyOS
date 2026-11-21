@@ -1,4 +1,5 @@
-import type { Activity, Occurrence, ResetResponse, WeeklyPlan } from '../../lib/api';
+import type { Activity, Meal, Occurrence, ResetResponse, WeeklyPlan } from '../../lib/api';
+import { addDays, dayOfWeek } from '../../lib/dates';
 
 // Two adults, two phones: the pure rules behind asking the other adult to cover a handoff, the
 // Weekly Reset's shared notes, and keeping a refresh from undoing a newer change. No React
@@ -379,4 +380,63 @@ export function keepMine(s: NotesState): NotesState {
 export function takeTheirs(s: NotesState): NotesState {
   if (!s.conflict) return s;
   return { text: s.conflict.theirs, base: s.conflict.theirsVersion, dirty: false, conflict: null };
+}
+
+// -----------------------------------------------------------------------------------------------
+// The week, on Today and in the Week
+
+const mondayOf = (date: string) => addDays(date, 1 - dayOfWeek(date));
+
+/**
+ * The Monday the Week opens on: the week of a date asked for, else this week, except on Sunday,
+ * when this week is all but over and the coming one is what you're planning (UX-3).
+ */
+export function weekToOpen(today: string, asked?: string | null): string {
+  if (asked && /^\d{4}-\d{2}-\d{2}$/.test(asked)) return mondayOf(asked);
+  return dayOfWeek(today) === 7 ? addDays(mondayOf(today), 7) : mondayOf(today);
+}
+
+/** "This week", "Next week" or null (another week: say its dates). */
+export function weekLabel(monday: string, today: string): 'This week' | 'Next week' | null {
+  if (monday === mondayOf(today)) return 'This week';
+  if (monday === addDays(mondayOf(today), 7)) return 'Next week';
+  return null;
+}
+
+/** The planned dinner on a date, if any. */
+export const dinnerOn = (meals: Meal[], date: string) =>
+  meals.find((m) => m.onDate === date && m.slot === 'dinner') ?? null;
+
+/**
+ * Today's plan line: which plan's notes to show (on the weekend, next week's once it's made),
+ * the decisions still open, and what still needs someone in that week (with the first date, so
+ * the line can take you to it).
+ */
+export function planFacts(
+  week: Pick<ResetResponse, 'plan' | 'decisions' | 'events'> | null,
+  next: Pick<ResetResponse, 'plan' | 'decisions' | 'events'> | null,
+  now: number,
+): {
+  notes: string | null;
+  notesFor: 'this' | 'next';
+  decisionsOpen: number;
+  care: { count: number; first: string | null };
+} | null {
+  if (!week) return null;
+  const nextPlanned = !!next?.plan?.committedAt;
+  const focus = nextPlanned && next ? next : week;
+  const ahead = [
+    ...week.events.needsOwner,
+    ...week.events.conflicts,
+    ...(nextPlanned && next ? [...next.events.needsOwner, ...next.events.conflicts] : []),
+  ].filter((h) => new Date(h.time).getTime() > now);
+  const keys = new Map(ahead.map((h) => [h.occurrenceKey, h.time]));
+  const dateOf = (key: string) => key.slice(key.lastIndexOf(':') + 1);
+  const firstKey = [...keys.entries()].sort((a, b) => a[1].localeCompare(b[1]))[0]?.[0];
+  return {
+    notes: focus.plan?.notes?.trim() || null,
+    notesFor: focus === week ? 'this' : 'next',
+    decisionsOpen: week.decisions.length,
+    care: { count: keys.size, first: firstKey ? dateOf(firstKey) : null },
+  };
 }

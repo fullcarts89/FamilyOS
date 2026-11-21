@@ -1,5 +1,5 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { CalendarDays, Car, ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
+import { CalendarDays, Car, ChevronLeft, ChevronRight, Plus, Utensils } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet';
@@ -12,8 +12,20 @@ import { ErrorNotice } from '../../design/Notice';
 import { Page, PageHeader } from '../../design/Page';
 import { Text } from '../../design/Text';
 import { color, font, radius, tint } from '../../design/tokens';
-import { pendingRequest, type WithRequest } from '../../components/reset/coordination';
-import { api, type EventsResponse, type Occurrence, type RhythmResponse } from '../../lib/api';
+import {
+  dinnerOn,
+  pendingRequest,
+  weekLabel,
+  weekToOpen,
+  type WithRequest,
+} from '../../components/reset/coordination';
+import {
+  api,
+  type EventsResponse,
+  type Meal,
+  type Occurrence,
+  type RhythmResponse,
+} from '../../lib/api';
 import { useCapture } from '../../lib/capture';
 import { addDays, dayOfWeek, shortDate, weekdayName } from '../../lib/dates';
 import { trackRequests } from '../../lib/events';
@@ -34,8 +46,10 @@ interface Row {
 }
 
 // Week: the household's seven days as a board (days × lanes): each adult's plans, the drop-offs
-// and pickups (whose, or a hatched "?" when nobody has one or it clashes), pets, and what you do
-// together. Tap anything to see it, cover it or change it; imported events stay read-only.
+// and pickups (whose, or a hatched "?" when nobody has one or it clashes, "asked, waiting" while
+// the other adult hasn't answered), pets, what you do together, and each night's dinner from the
+// meal plan. Tap anything to see it, cover it or change it; imported events stay read-only. On a
+// Sunday it opens on the coming week, the one you're planning.
 export default function Week() {
   const params = useLocalSearchParams<{ date?: string }>();
   const { household, timeZone, members } = useHousehold();
@@ -45,6 +59,7 @@ export default function Week() {
   const [today, setToday] = useState<string | null>(null);
   const [monday, setMonday] = useState<string | null>(null);
   const [data, setData] = useState<EventsResponse | null>(null);
+  const [meals, setMeals] = useState<Meal[]>([]);
   const [error, setError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [sheet, setSheet] = useState<EventTarget | null>(null);
@@ -57,9 +72,7 @@ export default function Week() {
     api<RhythmResponse>(`/households/${household.id}/rhythm`)
       .then((r) => {
         setToday(r.today);
-        setMonday(
-          mondayOf(params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : r.today),
-        );
+        setMonday(weekToOpen(r.today, params.date));
       })
       .catch(() => setError(true));
   }, [household, today, params.date]);
@@ -71,11 +84,15 @@ export default function Week() {
   const load = useCallback(async () => {
     if (!household || !monday) return;
     try {
-      const res = await api<EventsResponse>(
-        `/households/${household.id}/events?from=${monday}&to=${addDays(monday, 6)}`,
-      );
+      const range = `from=${monday}&to=${addDays(monday, 6)}`;
+      const [res, food] = await Promise.all([
+        api<EventsResponse>(`/households/${household.id}/events?${range}`),
+        // The week's dinners from the meal plan; the board works without them.
+        api<{ meals: Meal[] }>(`/households/${household.id}/meals?${range}`).catch(() => null),
+      ]);
       if (!alive.current) return;
       setData(res);
+      if (food) setMeals(food.meals);
       setError(false);
       trackRequests(household.id, household.memberId, res.occurrences);
     } catch {
@@ -160,6 +177,7 @@ export default function Week() {
   const openO = (o: Occurrence) => setSheet({ mode: 'occurrence', occurrence: o });
   const newOn = (date: string, care = false) => setSheet({ mode: 'new', date, care });
   const thisWeek = today && monday === mondayOf(today);
+  const label = today && monday ? weekLabel(monday, today) : null;
   const partnerColors: [string, string] | undefined =
     people.me && people.partner ? [people.me.color, people.partner.color] : undefined;
   const open = headsUps.length;
@@ -170,7 +188,13 @@ export default function Week() {
 
   const header = (
     <PageHeader
-      kicker={monday ? (thisWeek ? 'This week' : `Week of ${shortDate(monday)}`) : 'Week'}
+      kicker={
+        monday
+          ? label === 'Next week' && today && dayOfWeek(today) === 7
+            ? 'Next week · starts tomorrow'
+            : (label ?? `Week of ${shortDate(monday)}`)
+          : 'Week'
+      }
       title={
         monday
           ? `${shortDate(monday)}–${shortDate(addDays(monday, 6)).replace(`${shortDate(monday).split(' ')[0]} `, '')}`
@@ -258,6 +282,7 @@ export default function Week() {
             <DayList
               days={days}
               rows={rows}
+              meals={meals}
               today={today}
               timeZone={timeZone}
               flagged={flagged}
@@ -341,6 +366,33 @@ export default function Week() {
                   ))}
                 </View>
               ))}
+              <View style={styles.boardRow}>
+                <View style={styles.rowHead}>
+                  <View style={styles.dinnerIcon}>
+                    <Utensils size={15} color={color.ink} strokeWidth={2.2} />
+                  </View>
+                  <View style={styles.rowHeadText}>
+                    <Text variant="label" numberOfLines={1}>
+                      Dinners
+                    </Text>
+                    <Text variant="small" tone="muted" numberOfLines={1}>
+                      From the meal plan
+                    </Text>
+                  </View>
+                </View>
+                {days.map((d) => (
+                  <View
+                    key={d}
+                    style={[
+                      styles.cell,
+                      d === today && styles.cellToday,
+                      d < today && styles.cellPast,
+                    ]}
+                  >
+                    <Dinner meal={dinnerOn(meals, d)} date={d} />
+                  </View>
+                ))}
+              </View>
             </View>
           )}
           <View style={styles.legend}>
@@ -487,6 +539,7 @@ function Card({
 function DayList({
   days,
   rows,
+  meals,
   today,
   timeZone,
   flagged,
@@ -495,6 +548,7 @@ function DayList({
 }: {
   days: string[];
   rows: Row[];
+  meals: Meal[];
   today: string;
   timeZone: string;
   flagged: Set<string>;
@@ -547,7 +601,7 @@ function DayList({
                 onPress={() => onNew(d)}
               />
             </View>
-            {filled.length === 0 ? (
+            {filled.length === 0 && !dinnerOn(meals, d) ? (
               <Text variant="meta" tone="faint">
                 Nothing planned
               </Text>
@@ -575,10 +629,56 @@ function DayList({
                 </View>
               ))
             )}
+            {dinnerOn(meals, d) ? (
+              <View style={styles.dayLane}>
+                <View style={styles.dayLaneHead}>
+                  <Utensils size={16} color={color.ink} strokeWidth={2.2} />
+                  <Text variant="small" tone="muted" numberOfLines={1}>
+                    Dinner
+                  </Text>
+                </View>
+                <View style={styles.dayLaneItems}>
+                  <Dinner meal={dinnerOn(meals, d)} date={d} />
+                </View>
+              </View>
+            ) : null}
           </View>
         );
       })}
     </View>
+  );
+}
+
+/** A night's dinner from the meal plan (who cooks, if anyone): opens Meals. */
+function Dinner({ meal, date }: { meal: Meal | null; date: string }) {
+  const people = usePeople();
+  const cook = people.byId(meal?.cookMemberId);
+  if (!meal) {
+    return (
+      <Text variant="small" tone="muted" style={styles.noDinner}>
+        No dinner yet
+      </Text>
+    );
+  }
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={`${weekdayName(date)} dinner: ${meal.title}${cook ? `, ${cook.isMe ? 'you cook' : `${cook.name} cooks`}` : ''}`}
+      onPress={() => router.push('/meals')}
+      style={(s: PressState) => [styles.dinner, s.hovered && styles.cardHover]}
+    >
+      <Text variant="small" numberOfLines={2} style={styles.cardTitle}>
+        {meal.title}
+      </Text>
+      {cook ? (
+        <View style={styles.cook}>
+          <Avatar person={cook} size={14} />
+          <Text variant="small" tone="muted" numberOfLines={1}>
+            {cook.isMe ? 'You cook' : `${cook.name} cooks`}
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
   );
 }
 
@@ -684,6 +784,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     opacity: 0.75,
   },
+  dinnerIcon: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
+  dinner: {
+    borderRadius: radius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 2,
+    backgroundColor: color.lane,
+    cursor: 'pointer',
+  },
+  noDinner: { paddingHorizontal: 2, paddingVertical: 6 },
+  cook: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 20, marginTop: 18, alignItems: 'center' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 },
   legendImported: {

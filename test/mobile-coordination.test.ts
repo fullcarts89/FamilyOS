@@ -11,11 +11,14 @@ import {
   notesFromServer,
   notesSaved,
   notesTyped,
+  planFacts,
   requestView,
   restoreOccurrence,
   STALE_CODES,
   takeTheirs,
   waitingWords,
+  weekLabel,
+  weekToOpen,
   withRequest,
   type ActivityEntry,
   type CoverRequest,
@@ -352,5 +355,57 @@ describe('the Weekly Reset’s notes', () => {
       base: 3,
       dirty: false,
     });
+  });
+});
+
+describe('the week on Today and in the Week', () => {
+  it('opens the coming week on a Sunday, and the asked week otherwise', () => {
+    expect(weekToOpen('2026-11-22')).toBe('2026-11-23'); // Sunday → next Monday
+    expect(weekToOpen('2026-11-21')).toBe('2026-11-16'); // Saturday → this week
+    expect(weekToOpen('2026-11-16')).toBe('2026-11-16'); // Monday
+    expect(weekToOpen('2026-11-22', '2026-11-19')).toBe('2026-11-16'); // a date asked for
+    expect(weekToOpen('2026-11-22', 'nonsense')).toBe('2026-11-23');
+    expect(weekLabel('2026-11-23', '2026-11-22')).toBe('Next week');
+    expect(weekLabel('2026-11-16', '2026-11-22')).toBe('This week');
+    expect(weekLabel('2026-11-30', '2026-11-22')).toBeNull();
+  });
+
+  it('puts the plan’s notes, open decisions and what needs someone on Today', () => {
+    const o = pickup();
+    const week = {
+      ...resetWith(o),
+      plan: { notes: ' Theo takes Wednesday ', committedAt: '2026-11-15T20:00:00Z' },
+      decisions: [{ id: 'd1' }, { id: 'd2' }],
+    } as unknown as ResetResponse;
+    const now = new Date('2026-11-21T18:00:00Z').getTime();
+    expect(planFacts(week, null, now)).toEqual({
+      notes: 'Theo takes Wednesday',
+      notesFor: 'this',
+      decisionsOpen: 2,
+      care: { count: 1, first: '2026-11-26' },
+    });
+    // On the weekend, once next week has a plan, its notes and its open handoffs show.
+    const next = {
+      ...resetWith(
+        pickup({
+          key: `${EVENT}:2026-11-30`,
+          date: '2026-11-30',
+          startsAt: '2026-12-01T01:30:00Z',
+        }),
+      ),
+      plan: { notes: 'Grandma visits', committedAt: '2026-11-21T19:00:00Z' },
+      decisions: [{ id: 'd1' }, { id: 'd2' }],
+    } as unknown as ResetResponse;
+    expect(planFacts(week, next, now)).toMatchObject({
+      notes: 'Grandma visits',
+      notesFor: 'next',
+      care: { count: 2, first: '2026-11-26' },
+    });
+    // What's already past isn't open any more.
+    expect(planFacts(week, null, new Date('2026-11-28T00:00:00Z').getTime())?.care).toEqual({
+      count: 0,
+      first: null,
+    });
+    expect(planFacts(null, null, now)).toBeNull();
   });
 });

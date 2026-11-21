@@ -1121,7 +1121,7 @@ export default function Reset() {
               <View style={styles.openNote}>
                 <Hatch width={18} height={12} radius={3} />
                 <Text variant="meta" style={styles.flex}>
-                  {open} You can still make it your plan: they stay marked on Today until they’re
+                  {open} You can still make it your plan: Today keeps them in view until they’re
                   sorted.
                 </Text>
               </View>
