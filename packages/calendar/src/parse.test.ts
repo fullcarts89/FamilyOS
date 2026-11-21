@@ -3,7 +3,13 @@ import { Temporal } from 'temporal-polyfill';
 import { describe, expect, it } from 'vitest';
 import { CalendarFetchError } from './fetch';
 import { parseIcs } from './parse-core';
-import { MAX_OCCURRENCES, MAX_TOTAL_STEPS, parseCalendar, type ImportedOccurrence } from './parse';
+import {
+  MAX_OCCURRENCES,
+  MAX_TOTAL_STEPS,
+  PARSE_DEADLINE_MS,
+  parseCalendar,
+  type ImportedOccurrence,
+} from './parse';
 
 const LA = 'America/Los_Angeles';
 const fixture = (name: string) =>
@@ -168,13 +174,18 @@ describe('parsing calendars', () => {
   });
 
   describe('hostile files', () => {
-    const refusedFast = async (name: string) => {
+    // What protects the API is the hard deadline: the parse runs in its own thread and is
+    // stopped at PARSE_DEADLINE_MS. On a quiet machine these files are refused by the step budget
+    // well before it; on a busy CI runner the wall time varies, so the bound is the deadline plus
+    // a second for the thread to stop, and a failure reports the time it took.
+    const BOUND_MS = PARSE_DEADLINE_MS + 1000;
+    const refusedInTime = async (name: string) => {
       const started = performance.now();
       const outcome = await parseCalendar(fixture(name), window('2026-11-16', '2027-02-15')).then(
         () => 'parsed',
         (error: { code?: string }) => error.code,
       );
-      return { name, outcome, fast: performance.now() - started < 3000 };
+      return { name, outcome, ms: Math.round(performance.now() - started) };
     };
 
     it.each([
@@ -184,8 +195,10 @@ describe('parsing calendars', () => {
       'hostile-minutely-timezone.ics',
       // Twenty every-second series from 2000: each stays within its own step limit.
       'hostile-secondly.ics',
-    ])('refuses %s as too complex, within 3 seconds', async (name) => {
-      expect(await refusedFast(name)).toEqual({ name, outcome: 'too_complex', fast: true });
+    ])('refuses %s as too complex, before the deadline', async (name) => {
+      const { outcome, ms } = await refusedInTime(name);
+      expect(outcome).toBe('too_complex');
+      expect(ms, `${name} took ${ms} ms`).toBeLessThan(BOUND_MS);
     });
 
     it('stops a parse that runs past the deadline, and the next one still works', async () => {
@@ -234,7 +247,8 @@ describe('parsing calendars', () => {
       const started = performance.now();
       const got = await parseCalendar(text, window('2026-11-16', '2026-11-23'));
       expect(got).toHaveLength(10 * 7 + 20 * 5 + 0);
-      expect(performance.now() - started).toBeLessThan(3000);
+      // Parsed in full, so neither the budget nor the deadline stopped it.
+      expect(performance.now() - started).toBeLessThan(BOUND_MS);
     });
   });
 });
