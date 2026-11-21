@@ -298,6 +298,90 @@ describe.skipIf(!db)('Weekly Reset', () => {
     expect(audit.map((r) => r.action)).toEqual(['weekly_plan.committed']);
   });
 
+  it('saves notes as they are typed and refuses a save based on notes the other adult replaced', async () => {
+    const week = '2026-12-07';
+    type Plan = { notes: string | null; notesVersion: number; committedAt: string | null };
+    const save = (body: Record<string, unknown>, token = owner) =>
+      call('/reset/notes', { method: 'PATCH', token, body: { week, ...body } });
+
+    const first = await save({ notes: 'Theo has Thursday', expectedVersion: 0 });
+    expect(first.status).toBe(200);
+    expect((await json<{ plan: Plan }>(first)).plan).toMatchObject({
+      notes: 'Theo has Thursday',
+      notesVersion: 1,
+      committedAt: null,
+    });
+    // The adult started from version 1 and saves first.
+    const theirs = await save(
+      { notes: 'Theo has Thursday; Maya Friday', expectedVersion: 1 },
+      adult,
+    );
+    expect((await json<{ plan: Plan }>(theirs)).plan.notesVersion).toBe(2);
+    // The owner's save, also based on version 1, is stale: nothing changes and the answer says
+    // what the notes now are.
+    const stale = await save({ notes: 'Theo has Thursday and Friday', expectedVersion: 1 });
+    expect(stale.status).toBe(409);
+    expect(await json(stale)).toEqual({
+      error: 'version_conflict',
+      plan: expect.objectContaining({ notes: 'Theo has Thursday; Maya Friday', notesVersion: 2 }),
+    });
+    // Retrying a save that already landed is a no-op, whatever version it names.
+    const retry = await save(
+      { notes: 'Theo has Thursday; Maya Friday', expectedVersion: 1 },
+      adult,
+    );
+    expect(retry.status).toBe(200);
+    expect((await json<{ plan: Plan }>(retry)).plan.notesVersion).toBe(2);
+
+    // Committing doesn't make a notes save stale; a stale commit that changes notes is refused.
+    const commit = await call('/reset/commit', { method: 'POST', body: { week } });
+    expect((await json<{ plan: Plan }>(commit)).plan).toMatchObject({ notesVersion: 2 });
+    expect(
+      (
+        await call('/reset/commit', {
+          method: 'POST',
+          body: { week, notes: 'Something else', expectedNotesVersion: 1 },
+        })
+      ).status,
+    ).toBe(409);
+    const cleared = await save({ notes: '  ', expectedVersion: 2 }, adult);
+    expect((await json<{ plan: Plan }>(cleared)).plan).toMatchObject({
+      notes: null,
+      notesVersion: 3,
+    });
+    expect((await save({ notes: 'x', expectedVersion: 3 }, caregiver)).status).toBe(403);
+    expect((await save({ notes: 'x'.repeat(2001), expectedVersion: 3 })).status).toBe(422);
+
+    const audit = await requireDb()
+      .selectFrom('app.audit_event as a')
+      .innerJoin('app.weekly_plan as p', 'p.id', 'a.entity_id')
+      .select(['a.action', 'a.payload'])
+      .where('a.household_id', '=', h.id)
+      .where('p.week_start', '=', week)
+      .orderBy('a.id')
+      .execute();
+    expect(audit.map((a) => a.action)).toEqual([
+      'weekly_plan.updated',
+      'weekly_plan.updated',
+      'weekly_plan.committed',
+      'weekly_plan.updated',
+    ]);
+    expect(JSON.stringify(audit)).not.toContain('Theo');
+  });
+
+  it('lets both adults save the first notes at once: one lands, the other is told', async () => {
+    const week = '2026-12-14';
+    const [a, b] = await Promise.all([
+      call('/reset/notes', { method: 'PATCH', body: { week, notes: 'A', expectedVersion: 0 } }),
+      call('/reset/notes', {
+        method: 'PATCH',
+        token: adult,
+        body: { week, notes: 'B', expectedVersion: 0 },
+      }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+  });
+
   describe('carry-forward', () => {
     it('moves, clears, assigns and cancels in one all-or-nothing request', async () => {
       const items = await json<{ items: Item[] }>(await call('/work-items'));

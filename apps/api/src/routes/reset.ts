@@ -31,6 +31,22 @@ const Commit = z
   .object({
     week: LocalDate,
     notes: z.string().trim().min(1).max(2000).nullish(),
+    /** Optional: the notes version the client last saw; checked only if the notes change. */
+    expectedNotesVersion: z.number().int().min(0).optional(),
+  })
+  .strict();
+/** Notes saved as they're typed. Empty text clears them. */
+const SaveNotes = z
+  .object({
+    week: LocalDate,
+    notes: z
+      .string()
+      .trim()
+      .max(2000)
+      .nullable()
+      .transform((v) => (v === '' ? null : v)),
+    /** The plan's notesVersion the edit started from: 0 before any notes were saved. */
+    expectedVersion: z.number().int().min(0),
   })
   .strict();
 
@@ -48,12 +64,30 @@ const PLAN_COLUMNS = [
   'id',
   'week_start as weekStart',
   'notes',
+  'notes_version as notesVersion',
   'committed_at as committedAt',
   'committed_by_member_id as committedByMemberId',
   'version',
   'created_at as createdAt',
   'updated_at as updatedAt',
 ] as const;
+
+async function planView(trx: Transaction<Database>, householdId: string, week: string) {
+  const plan = await trx
+    .selectFrom('app.weekly_plan')
+    .select(PLAN_COLUMNS)
+    .where('household_id', '=', householdId)
+    .where('week_start', '=', week)
+    .executeTakeFirst();
+  return plan
+    ? {
+        ...plan,
+        committedAt: iso(plan.committedAt),
+        createdAt: iso(plan.createdAt),
+        updatedAt: iso(plan.updatedAt),
+      }
+    : null;
+}
 
 function weekParam(value: string | undefined, today: string): string {
   if (value === undefined) return defaultResetWeek(today);
@@ -97,13 +131,7 @@ async function assembleReset(
     .execute();
   const roles = await memberRoles(trx, householdId);
 
-  const plan =
-    (await trx
-      .selectFrom('app.weekly_plan')
-      .select(PLAN_COLUMNS)
-      .where('household_id', '=', householdId)
-      .where('week_start', '=', week)
-      .executeTakeFirst()) ?? null;
+  const plan = await planView(trx, householdId, week);
 
   // ------------------------------------------------------------------------------------------
   // Looking back at the week that's ending
@@ -408,12 +436,7 @@ async function assembleReset(
 
   return {
     week: { start: week, end: weekEnd, timezone },
-    plan: plan && {
-      ...plan,
-      committedAt: iso(plan.committedAt),
-      createdAt: iso(plan.createdAt),
-      updatedAt: iso(plan.updatedAt),
-    },
+    plan,
     members,
     lookBack,
     unfinished,
@@ -454,6 +477,84 @@ export function resetRoutes(deps: Deps) {
     return c.json({ today: local, ...(await assembleReset(trx, member, week, local)) });
   });
 
+  // Save the week's notes (autosave while typing), without committing the plan. The client
+  // names the notesVersion its edit started from; if the other adult saved different notes
+  // since, nothing is written and the answer is 409 with the plan as it now is, so the client
+  // can show both. Saving the notes the plan already has is a no-op 200, so a retry is safe.
+  app.patch('/notes', async (c) => {
+    authorize(c, 'reset.run');
+    const body = await parseBody(c.req.raw, SaveNotes);
+    if (!isWeekStart(body.week)) throw new ApiError(422, 'invalid_week');
+    const trx = c.get('trx');
+    const member = c.get('member');
+    const lockPlan = () =>
+      trx
+        .selectFrom('app.weekly_plan')
+        .select(['id', 'notes', 'notes_version', 'version'])
+        .where('household_id', '=', member.householdId)
+        .where('week_start', '=', body.week)
+        .forUpdate()
+        .executeTakeFirst();
+    const audited = (id: string, notesVersion: number) =>
+      recordAudit(trx, {
+        householdId: member.householdId,
+        actorMemberId: member.id,
+        entityType: 'weekly_plan',
+        entityId: id,
+        action: 'weekly_plan.updated',
+        payload: { week: body.week, fields: ['notes'], notesVersion },
+        requestId: c.get('requestId'),
+      });
+    const stale = async () =>
+      c.json(
+        { error: 'version_conflict', plan: await planView(trx, member.householdId, body.week) },
+        409,
+      );
+
+    let existing = await lockPlan();
+    if (!existing) {
+      if (body.notes === null) {
+        return c.json({ plan: null });
+      }
+      if (body.expectedVersion !== 0) return stale();
+      const row = await trx
+        .insertInto('app.weekly_plan')
+        .values({
+          household_id: member.householdId,
+          week_start: body.week,
+          notes: body.notes,
+          notes_version: 1,
+        })
+        .onConflict((oc) => oc.columns(['household_id', 'week_start']).doNothing())
+        .returning('id')
+        .executeTakeFirst();
+      if (row) {
+        await audited(row.id, 1);
+        return c.json({ plan: await planView(trx, member.householdId, body.week) });
+      }
+      // The other adult's first save landed first.
+      existing = await lockPlan();
+      if (!existing) throw conflict();
+    }
+    if (body.notes === existing.notes) {
+      return c.json({ plan: await planView(trx, member.householdId, body.week) });
+    }
+    if (body.expectedVersion !== existing.notes_version) return stale();
+    await trx
+      .updateTable('app.weekly_plan')
+      .set({
+        notes: body.notes,
+        notes_version: existing.notes_version + 1,
+        version: existing.version + 1,
+        updated_at: now(),
+      })
+      .where('id', '=', existing.id)
+      .where('household_id', '=', member.householdId)
+      .execute();
+    await audited(existing.id, existing.notes_version + 1);
+    return c.json({ plan: await planView(trx, member.householdId, body.week) });
+  });
+
   // Commit the week's plan. Idempotent: committing again keeps the first commit's time and
   // author, and only saves notes that changed.
   app.post('/commit', async (c) => {
@@ -465,7 +566,7 @@ export function resetRoutes(deps: Deps) {
     const lockPlan = () =>
       trx
         .selectFrom('app.weekly_plan')
-        .select(['id', 'notes', 'committed_at', 'version'])
+        .select(['id', 'notes', 'notes_version', 'committed_at', 'version'])
         .where('household_id', '=', member.householdId)
         .where('week_start', '=', body.week)
         .forUpdate()
@@ -490,6 +591,7 @@ export function resetRoutes(deps: Deps) {
           household_id: member.householdId,
           week_start: body.week,
           notes: body.notes ?? null,
+          notes_version: body.notes ? 1 : 0,
           committed_at: now(),
           committed_by_member_id: member.id,
         })
@@ -505,12 +607,26 @@ export function resetRoutes(deps: Deps) {
     }
     const notesChanged =
       existing !== undefined && body.notes !== undefined && body.notes !== existing.notes;
+    if (
+      existing &&
+      notesChanged &&
+      body.expectedNotesVersion !== undefined &&
+      body.expectedNotesVersion !== existing.notes_version
+    ) {
+      return c.json(
+        { error: 'version_conflict', plan: await planView(trx, member.householdId, body.week) },
+        409,
+      );
+    }
     if (existing && (existing.committed_at === null || notesChanged)) {
       const committing = existing.committed_at === null;
       await trx
         .updateTable('app.weekly_plan')
         .set({
-          ...(notesChanged && { notes: body.notes ?? null }),
+          ...(notesChanged && {
+            notes: body.notes ?? null,
+            notes_version: existing.notes_version + 1,
+          }),
           ...(committing && { committed_at: now(), committed_by_member_id: member.id }),
           version: existing.version + 1,
           updated_at: now(),

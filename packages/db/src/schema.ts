@@ -414,6 +414,8 @@ export interface WeeklyPlanTable {
   /** The Monday the week starts on, in the household's timezone. */
   week_start: LocalDate;
   notes: string | null;
+  /** Bumped each time the notes change; a notes save names the one it was based on. */
+  notes_version: Generated<number>;
   committed_at: Timestamp | null;
   committed_by_member_id: string | null;
   version: Generated<number>;
