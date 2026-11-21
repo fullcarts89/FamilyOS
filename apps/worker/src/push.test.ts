@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { EXPO_PUSH_URL, PushRequestError, expoPushSender, type PushMessage } from './push';
+import {
+  EXPO_PUSH_URL,
+  PushRequestError,
+  expoPushSender,
+  pushSenderFor,
+  type PushMessage,
+} from './push';
 
 const message = (n: number, urgent = false): PushMessage => ({
   to: `ExponentPushToken[device${n}]`,
@@ -90,5 +96,16 @@ describe('Expo push sender', () => {
         new PushRequestError(code),
       );
     }
+  });
+});
+
+describe('choosing the sender', () => {
+  it('sends nothing in production without EXPO_ACCESS_TOKEN', () => {
+    expect(pushSenderFor({ NODE_ENV: 'production' })).toBeNull();
+    expect(pushSenderFor({ NODE_ENV: 'production', EXPO_ACCESS_TOKEN: '' })).toBeNull();
+    expect(pushSenderFor({ NODE_ENV: 'production', EXPO_ACCESS_TOKEN: 'x' })).not.toBeNull();
+    // Development and tests may send unauthenticated (Expo projects without push security).
+    expect(pushSenderFor({ NODE_ENV: 'development' })).not.toBeNull();
+    expect(pushSenderFor({})).not.toBeNull();
   });
 });

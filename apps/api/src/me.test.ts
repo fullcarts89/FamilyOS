@@ -78,7 +78,7 @@ describe.skipIf(!db)('me and activity', () => {
         sound: false,
         morningTime: '07:30',
         weeklyReset: { weekday: 7, time: '19:00' },
-        hideDetails: false,
+        hideDetails: true,
         version: 0,
       });
       const patch = (body: Record<string, unknown>, token = owner) =>
@@ -126,14 +126,14 @@ describe.skipIf(!db)('me and activity', () => {
           expectedVersion: current.version,
           morningTime: '06:45',
           weeklyReset: { weekday: 5, time: '20:30' },
-          hideDetails: true,
+          hideDetails: false,
         },
       });
       expect(res.status).toBe(200);
       expect((await json<{ state: State }>(res)).state).toMatchObject({
         morningTime: '06:45',
         weeklyReset: { weekday: 5, time: '20:30' },
-        hideDetails: true,
+        hideDetails: false,
         version: current.version + 1,
       });
       const audit = await requireDb()

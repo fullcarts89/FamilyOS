@@ -344,7 +344,8 @@ describe.skipIf(!db)('the notifier role', () => {
           quietHours: { start: '22:00', end: '06:30' },
           partnerChanges: false,
           weeklyReset: { weekday: 7, time: '19:00' },
-          hideDetails: false,
+          // Lock-screen details stay hidden unless the member turns them on.
+          hideDetails: true,
         }),
       },
     ]);

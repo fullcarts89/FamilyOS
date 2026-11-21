@@ -25,8 +25,9 @@ alter table app.member_state
   -- ISO weekday (1 = Monday … 7 = Sunday).
   add column weekly_reset_day smallint not null default 7 check (weekly_reset_day between 1 and 7),
   add column weekly_reset_time time(0) not null default '19:00',
-  -- Generic text ("Your morning check-in is ready") instead of names and titles.
-  add column hide_details boolean not null default false;
+  -- Generic text ("Your morning check-in is ready") instead of names and titles. On unless the
+  -- member turns it off: push text passes through Expo and Apple, and lock screens are seen.
+  add column hide_details boolean not null default true;
 
 -- Partner changes are opt-in.
 alter table app.member_state

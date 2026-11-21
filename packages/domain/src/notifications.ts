@@ -64,7 +64,9 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   morningTime: '07:30',
   weeklyReset: { weekday: 7, time: '19:00' },
   quietHours: null,
-  hideDetails: false,
+  // Push text passes through Expo and Apple and shows on lock screens: no children's names or
+  // places unless the member asks for them.
+  hideDetails: true,
 };
 
 /** A notification due longer ago than this (the worker was down) is dropped, not sent late. */

@@ -34,6 +34,10 @@ plus a realistic household, every pre-existing row unchanged after the new migra
    - `WORKER_DATABASE_URL` and `WORKER_DATABASE_PASSWORD`: the worker's own login, so
      `deploy/start.mjs` runs the worker inside the app service (routines, calendar sync,
      notifications). The worker login was enabled at first setup.
+   - `EXPO_ACCESS_TOKEN`: an Expo access token for the project, with push security turned on
+     in the Expo project settings. Required in production: without it the worker sends no
+     push notifications and logs `notifications off: EXPO_ACCESS_TOKEN is not set` every five
+     minutes (everything else keeps running). `deploy/start.mjs` gives it to the worker only.
 3. The old empty `worker` service in Railway is unused and can be deleted later.
 
 ## 4. Deploy and verify

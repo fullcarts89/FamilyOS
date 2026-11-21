@@ -28,7 +28,8 @@ interface Claimed {
 export function sendNotifications(
   db: Kysely<Database>,
   options: {
-    sender: PushSender;
+    /** Null: sending is off. Nothing is planned or recorded, so nothing is lost. */
+    sender: PushSender | null;
     now?: () => Date;
     households?: () => Promise<{ id: string }[]>;
   },
@@ -40,7 +41,14 @@ export function sendNotifications(
       withNotifierContext(db, null, (trx) =>
         trx.selectFrom('app.household').select('id').execute(),
       ));
+  const sender = options.sender;
   return async (_payload, helpers) => {
+    if (!sender) {
+      helpers.logger.error(
+        'notifications off: EXPO_ACCESS_TOKEN is not set (required in production); nothing sent',
+      );
+      return;
+    }
     const households = await listHouseholds();
     const counts = { sent: 0, skipped: 0, failed: 0, tokensRemoved: 0, householdsFailed: 0 };
     for (const { id: householdId } of households) {
@@ -101,7 +109,7 @@ export function sendNotifications(
         );
         let tickets: PushTicket[];
         try {
-          tickets = await options.sender.send(
+          tickets = await sender.send(
             messages.map(({ to, title, body, data, urgent }) => ({
               to,
               title,

@@ -91,7 +91,7 @@ function stateView(row: Awaited<ReturnType<typeof loadState>>) {
     weeklyReset: row
       ? { weekday: row.weekly_reset_day, time: row.weekly_reset_time.slice(0, 5) }
       : DEFAULT_WEEKLY_RESET,
-    hideDetails: row?.hide_details ?? false,
+    hideDetails: row?.hide_details ?? true,
     version: row?.version ?? 0,
   };
 }

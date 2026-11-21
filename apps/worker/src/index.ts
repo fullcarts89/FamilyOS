@@ -2,7 +2,7 @@ import { parseCalendarKey } from '@familyos/calendar';
 import { createDb, databaseUrl } from '@familyos/db';
 import { run } from 'graphile-worker';
 import { z } from 'zod';
-import { expoPushSender } from './push';
+import { pushSenderFor } from './push';
 import { CRONTAB, createTaskList } from './tasks';
 
 const env = z
@@ -24,7 +24,10 @@ const env = z
           return false;
         }
       }),
-    /** Only if the Expo project requires push security; sending works without it otherwise. */
+    /**
+     * Expo's push security token. Required in production: without it the worker sends no
+     * notifications (it logs an error each run and keeps running).
+     */
     EXPO_ACCESS_TOKEN: z.string().min(1).optional(),
   })
   .safeParse(process.env);
@@ -44,9 +47,10 @@ const runner = await run({
     ...(env.data.CALENDAR_ENCRYPTION_KEY && {
       calendarKey: parseCalendarKey(env.data.CALENDAR_ENCRYPTION_KEY),
     }),
-    pushSender: expoPushSender(
-      env.data.EXPO_ACCESS_TOKEN ? { accessToken: env.data.EXPO_ACCESS_TOKEN } : {},
-    ),
+    pushSender: pushSenderFor({
+      NODE_ENV: process.env.NODE_ENV,
+      EXPO_ACCESS_TOKEN: env.data.EXPO_ACCESS_TOKEN,
+    }),
   }),
   crontab: CRONTAB,
 });

@@ -188,12 +188,12 @@ Not implemented yet; the widget already calls it and falls back to the app's sna
 | Weekly Reset reminder | the chosen weekday and time, only while that week's plan isn't committed (adults) | "The week of Mon, Nov 23 doesn't have a plan yet. Ready when you are." |
 
 - **Quiet hours** are always respected. The check-in, the Weekly Reset reminder and partner changes wait until quiet hours end (the check-in only the same day). A handoff reminder is never deferred, because after the handoff it is useless: it goes only while the member is outside quiet hours and the handoff is still ahead (quiet hours ending 07:00 before a 07:15 drop-off still give a reminder at 07:00).
-- **Hide details on lock screen** sends generic text ("Your morning check-in is ready", "You have a handoff in 30 minutes", "There are changes that affect you").
+- **Hide details on lock screen** is on by default (push text passes through Expo and Apple) and sends generic text ("Your morning check-in is ready", "You have a handoff in 30 minutes", "There are changes that affect you").
 - A private item's title is never sent to someone who can't see it.
 - **Never twice:** each notification has a key in `notification_log`, written before sending. Delivery is at most once: a failed send is recorded, not retried. One due more than two hours ago (the worker was down) is dropped. Push receipts aren't checked yet; a `DeviceNotRegistered` ticket deletes the token.
 - **Least privilege:** the worker sends as `familyos_notifier`, one household per transaction, with only tokens, preferences, the log, care events (no titles, notes or other events), task fields, tonight's dinner, settled decisions and votes, whether the week is planned, and audit IDs.
 
-**Worker configuration:** nothing required. `EXPO_ACCESS_TOKEN` (optional) only if the Expo project turns on push security; it is a secret (worker environment only, never `EXPO_PUBLIC_*`).
+**Worker configuration:** `EXPO_ACCESS_TOKEN`, required in production (turn on push security in the Expo project). Without it the production worker sends no notifications and logs an error each run. It is a secret (worker environment only, never `EXPO_PUBLIC_*`).
 
 ## Risks and known gaps
 

@@ -9,14 +9,15 @@ import { syncCalendars } from './sync-calendars';
 
 export function createTaskList(
   db: Kysely<Database>,
-  options: { calendarKey?: Buffer; pushSender?: PushSender } = {},
+  /** pushSender null: sending is off (production without EXPO_ACCESS_TOKEN). */
+  options: { calendarKey?: Buffer; pushSender?: PushSender | null } = {},
 ): TaskList {
   return {
     heartbeat: heartbeat(db),
     materialize_routines: materializeRoutines(db),
     sync_calendars: syncCalendars(db, options.calendarKey ? { key: options.calendarKey } : {}),
     send_notifications: sendNotifications(db, {
-      sender: options.pushSender ?? expoPushSender(),
+      sender: options.pushSender === undefined ? expoPushSender() : options.pushSender,
     }),
   };
 }

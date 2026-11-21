@@ -104,7 +104,8 @@ describe.skipIf(!url)('send_notifications', () => {
         created_by_member_id: h.owner.id,
       })
       .execute();
-    // The owner wants partner changes; the adult keeps the defaults.
+    // The owner wants partner changes and details on the lock screen; the adult keeps the
+    // defaults (generic text).
     await db
       .insertInto('app.member_state')
       .values({
@@ -118,6 +119,7 @@ describe.skipIf(!url)('send_notifications', () => {
         },
         quiet_hours_start: '22:00',
         quiet_hours_end: '06:30',
+        hide_details: false,
         updated_at: clock,
       })
       .execute();
@@ -162,7 +164,10 @@ describe.skipIf(!url)('send_notifications', () => {
       data: { kind: 'morning_checkin', householdId: h.id },
       urgent: false,
     });
-    expect(byToken[ADULT_PHONE]?.body).toBe('Today: dinner: Salmon (you)');
+    expect(byToken[ADULT_PHONE]).toMatchObject({
+      title: 'Good morning',
+      body: 'Your morning check-in is ready.',
+    });
     expect(byToken[ADULT_OLD_PHONE]).toBeDefined();
     const rows = await log();
     expect(rows).toHaveLength(2);
@@ -264,5 +269,17 @@ describe.skipIf(!url)('send_notifications', () => {
     ]) {
       expect(logged).not.toContain(secret);
     }
+  });
+});
+
+describe('send_notifications with sending off', () => {
+  it('logs why and plans, records and sends nothing', async () => {
+    const info = vi.fn();
+    const error = vi.fn();
+    const households = vi.fn(async () => [{ id: 'h' }]);
+    const task = sendNotifications({} as Kysely<Database>, { sender: null, households });
+    await task({}, { logger: { info, error }, job: { id: '1' } } as unknown as JobHelpers);
+    expect(households).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('EXPO_ACCESS_TOKEN is not set'));
   });
 });

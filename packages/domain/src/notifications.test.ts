@@ -73,12 +73,15 @@ const emptyContext: PartnerContext = {
   careEvents: new Map(),
 };
 
+/** Most cases check the wording, so they show details (off by default). */
+const DETAILED: NotificationSettings = { ...DEFAULT_NOTIFICATION_SETTINGS, hideDetails: false };
+
 function input(overrides: Partial<NotificationPlanInput> = {}): NotificationPlanInput {
   return {
     memberId: 'maya',
     now: pst('07:30'),
     timeZone: LA,
-    settings: DEFAULT_NOTIFICATION_SETTINGS,
+    settings: DETAILED,
     members,
     occurrences: occurrencesFor([dropOff()]),
     tasks: [task('pay-daycare'), task('book-dentist')],
@@ -91,7 +94,7 @@ function input(overrides: Partial<NotificationPlanInput> = {}): NotificationPlan
   };
 }
 const settings = (changes: Partial<NotificationSettings>): NotificationSettings => ({
-  ...DEFAULT_NOTIFICATION_SETTINGS,
+  ...DETAILED,
   ...changes,
 });
 const kinds = (i: NotificationPlanInput) => planNotifications(i).map((p) => p.kind);
@@ -601,5 +604,71 @@ describe('Weekly Reset reminder', () => {
     expect(reset({ now: '2026-03-09T02:00:00Z' })).toMatchObject([
       { dedupeKey: 'weekly_reset_reminder:2026-03-08' },
     ]);
+  });
+});
+
+describe('with default settings', () => {
+  it('puts no name, place or title on the lock screen', () => {
+    // Partner changes are opt-in; switched on here, details left at their default.
+    const defaults: NotificationSettings = {
+      ...DEFAULT_NOTIFICATION_SETTINGS,
+      partnerChanges: true,
+    };
+    expect(DEFAULT_NOTIFICATION_SETTINGS.hideDetails).toBe(true);
+    const context: PartnerContext = {
+      ...emptyContext,
+      items: new Map([
+        [
+          'car',
+          {
+            id: 'car',
+            title: 'Car registration',
+            ownerMemberId: 'theo',
+            createdByMemberId: 'maya',
+            visibility: 'household',
+          },
+        ],
+      ]),
+    };
+    const audit: NotifierAuditRow[] = [
+      {
+        id: '10',
+        actorMemberId: 'theo',
+        action: 'work_item.updated',
+        entityType: 'work_item',
+        entityId: 'car',
+        payload: { fields: ['owner_member_id'], fromOwnerMemberId: 'maya', ownerMemberId: 'theo' },
+        createdAt: pst('07:00'),
+      },
+    ];
+    const planned = [
+      ...planNotifications(
+        input({ now: pst('07:30'), settings: defaults, audit, partnerContext: context }),
+      ),
+      ...planNotifications(input({ now: pst('07:50'), settings: defaults })),
+      ...planNotifications(input({ now: pst('19:05', '2026-11-15'), settings: defaults })),
+    ];
+    expect([...new Set(planned.map((p) => p.kind))].sort()).toEqual([
+      'handoff_reminder',
+      'morning_checkin',
+      'partner_changes',
+      'weekly_reset_reminder',
+    ]);
+    const text = planned.flatMap((p) => (p.message ? [p.message.title, p.message.body] : []));
+    expect(text.length).toBeGreaterThanOrEqual(8);
+    for (const word of [
+      'June',
+      'Maya',
+      'Theo',
+      'Sam',
+      'Little Oaks',
+      'drop-off',
+      'salmon',
+      'pay-daycare',
+      'Car registration',
+    ]) {
+      expect({ word, found: text.filter((t) => t.includes(word)) }).toEqual({ word, found: [] });
+    }
+    expect(text).toContain('You have a handoff in 25 minutes.');
   });
 });

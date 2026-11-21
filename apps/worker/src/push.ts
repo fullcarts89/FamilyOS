@@ -113,3 +113,16 @@ export function expoPushSender(
     },
   };
 }
+
+/**
+ * The sender the worker uses, or null when it must not send. In production every push needs
+ * EXPO_ACCESS_TOKEN: without it, Expo accepts pushes for the project from anyone holding a
+ * device's token, so the worker sends none (and says so) rather than run unprotected.
+ */
+export function pushSenderFor(env: {
+  NODE_ENV?: string | undefined;
+  EXPO_ACCESS_TOKEN?: string | undefined;
+}): PushSender | null {
+  if (env.EXPO_ACCESS_TOKEN) return expoPushSender({ accessToken: env.EXPO_ACCESS_TOKEN });
+  return env.NODE_ENV === 'production' ? null : expoPushSender();
+}
