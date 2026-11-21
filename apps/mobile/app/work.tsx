@@ -1,3 +1,4 @@
+import { isAssignableRole } from '@familyos/domain';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator } from 'react-native';
@@ -42,7 +43,7 @@ export default function Work() {
   if (!household) return null;
   const groups = [
     ...members
-      .filter((m) => m.role !== 'child')
+      .filter((m) => isAssignableRole(m.role))
       .map((m) => ({ title: m.displayName, id: m.id as string | null })),
     { title: 'Unassigned', id: null },
   ];

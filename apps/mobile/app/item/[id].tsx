@@ -2,6 +2,7 @@ import {
   STATUS_ACTIONS,
   STATUS_PRESENTATION,
   describeDue,
+  isAssignableRole,
   workItemMachine,
   type WorkItemStatus,
 } from '@familyos/domain';
@@ -152,7 +153,7 @@ export default function ItemScreen() {
       ) : (
         <Section title="Owner" row>
           {members
-            .filter((m) => m.role !== 'child')
+            .filter((m) => isAssignableRole(m.role))
             .map((m) => (
               <Chip
                 key={m.id}

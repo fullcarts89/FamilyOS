@@ -17,7 +17,9 @@ export const HouseholdExportSchema = z.object({
     z.object({
       id: z.uuid(),
       displayName: z.string(),
-      role: z.enum(['owner', 'adult', 'caregiver', 'child']),
+      // Today 'owner', 'adult', 'caregiver' or 'child'. Any other role (a newer release's pets,
+      // say) is exported as stored, so a rolled-back app can still export the household.
+      role: z.string(),
       status: z.enum(['active', 'removed']),
       createdAt: Timestamp,
       removedAt: Timestamp.nullable(),

@@ -3,6 +3,7 @@ import {
   describeSchedule,
   dueOptions,
   formatDue,
+  isAssignableRole,
   monthStartOptions,
   upcomingOccurrences,
   type NthWeek,
@@ -148,7 +149,7 @@ export default function NewRoutine() {
   }, [rule, startOn, today, turns, rotation, ownerId]);
 
   if (!household) return null;
-  const adults = members.filter((m) => m.role !== 'child');
+  const adults = members.filter((m) => isAssignableRole(m.role));
   const limit = rule ? RULE_LIMITS[rule.freq] : 1;
   const unit = UNITS[kind];
   const ready =

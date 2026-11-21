@@ -1,3 +1,4 @@
+import { isAssignableRole } from '@familyos/domain';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -32,7 +33,7 @@ export default function Inbox() {
   );
 
   if (!household) return null;
-  const assignable = members.filter((m) => m.role !== 'child');
+  const assignable = members.filter((m) => isAssignableRole(m.role));
 
   const act = async (item: WorkItem, action: 'accept' | 'discard') => {
     setError(null);
