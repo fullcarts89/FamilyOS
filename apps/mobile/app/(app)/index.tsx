@@ -6,6 +6,7 @@ import { AllDay } from '../../components/rhythm/AllDay';
 import { DayColumn } from '../../components/rhythm/DayColumn';
 import { DayTimeline } from '../../components/rhythm/DayTimeline';
 import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet';
+import type { CoverRequestLists } from '../../components/reset/coordination';
 import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
 import { NextUp, dayEntries } from '../../components/rhythm/NextUp';
 import { allDayOn, readableOn, type LateCounts } from '../../components/rhythm/today-model';
@@ -398,26 +399,38 @@ export default function Today() {
       )
     ) : null;
 
+  // Requests to cover something, asked of me: GET /events sends them with the week. One about a
+  // handoff with no heads-up of its own still needs its row (Accept / Decline), so it counts too.
+  const askedOfMe = (
+    (week as { coverRequests?: CoverRequestLists } | null)?.coverRequests?.askedOfMe ?? []
+  ).filter((r) => occurrences.has(`${r.eventId}:${r.date}`)).length;
+  // HeadsUps loads the requests itself and checks again every few seconds while Today is open;
+  // when they change, Today reloads (so the block appears, or goes, with the right rows).
+  const headsUpList = rhythm ? (
+    <HeadsUps
+      items={headsUps}
+      today={today}
+      timeZone={timeZone}
+      people={people}
+      occurrence={(k) => occurrences.get(k)}
+      workItem={(id) => items?.find((i) => i.id === id)}
+      onCover={(o, id) => occurrenceActions.cover(o, id, { today })}
+      onOpen={openOccurrence}
+      onComplete={actions.complete}
+      onAssign={actions.assign}
+    />
+  ) : null;
   const headsUpBlock =
-    rhythm && headsUps.length > 0 ? (
+    rhythm && (headsUps.length > 0 || askedOfMe > 0) ? (
       <View style={styles.block}>
         <SectionHeader title="Heads-ups" sub="Worth sorting before they bite" />
-        <View style={styles.blockBody}>
-          <HeadsUps
-            items={headsUps}
-            today={today}
-            timeZone={timeZone}
-            people={people}
-            occurrence={(k) => occurrences.get(k)}
-            workItem={(id) => items?.find((i) => i.id === id)}
-            onCover={(o, id) => occurrenceActions.cover(o, id, { today })}
-            onOpen={openOccurrence}
-            onComplete={actions.complete}
-            onAssign={actions.assign}
-          />
-        </View>
+        <View style={styles.blockBody}>{headsUpList}</View>
       </View>
     ) : null;
+  // Nothing to sort yet: HeadsUps stays mounted, out of sight, so a request that comes in while
+  // Today is open is noticed (it draws nothing itself until Today has reloaded around it).
+  const headsUpWatch =
+    headsUpList && !headsUpBlock ? <View style={styles.hidden}>{headsUpList}</View> : null;
 
   const partnerName = people.partner?.name;
   const sinceBlock =
@@ -657,6 +670,7 @@ export default function Today() {
               {sinceBlock}
             </>
           )}
+          {headsUpWatch}
           {whoBlock}
           {weekBlock}
         </FadeIn>
@@ -757,6 +771,7 @@ const styles = StyleSheet.create({
   headText: { flex: 1, gap: space[2] - 2, minWidth: 0, paddingTop: space[1] },
   headSide: { width: 400, flexShrink: 0 },
   stack: { gap: space[4] },
+  hidden: { display: 'none' },
   allDay: { marginBottom: space[4] },
   headline: {
     fontFamily: font.display,

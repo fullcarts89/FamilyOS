@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 import pg from 'pg';
-import { Api, DONE, addDays, weekday } from '../support/api';
-import { DATABASE_URL, MAYA, TIME_ZONE } from '../support/env';
+import { Api, DONE, addDays, weekday, type Occurrence } from '../support/api';
+import { DATABASE_URL, MAYA, THEO, TIME_ZONE } from '../support/env';
 import { expect, greeting, test, toast } from '../support/fixtures';
 import { createAccount, createHousehold, e2eEmail } from '../support/stack';
 
@@ -442,5 +442,77 @@ test.describe('Today: the day on a phone', () => {
     await expect(
       day.getByRole('button', { name: /Work call\..*clashes with You pick June up/ }),
     ).toBeVisible();
+  });
+});
+
+test.describe('Today: a request to cover', () => {
+  test('shows on Theo’s Today with Accept and Decline, even when he has no other heads-ups', async ({
+    app,
+    mayaApi,
+  }) => {
+    const today = await mayaApi.today();
+    const hid = mayaApi.householdId;
+    // Clear what would otherwise put a heads-up on Theo's Today: the planning meeting that
+    // clashes with Thursday's pickup, open decisions with a due date, routine turns gone by.
+    await sql(
+      `delete from app.event where household_id = $1 and title like 'Quarterly planning%'`,
+      [hid],
+    );
+    await sql(`update app.decision set due_on = null where household_id = $1`, [hid]);
+    await sql(
+      `update app.work_item set status = 'done_unverified', completed_at = now()
+        where household_id = $1 and recurrence_rule_id is not null and occurrence_on < $2
+          and status::text not in ('verified_complete', 'done_unverified', 'cancelled')`,
+      [hid, today],
+    );
+    const theoApi = await Api.as(THEO.email);
+    // Maya's next daycare pickup still to come (weekdays at 5:30pm), within the week Today loads.
+    const ahead = Array.from({ length: 6 }, (_, i) => addDays(today, i));
+    let pickup: Occurrence | undefined;
+    for (const date of ahead) {
+      pickup = (await mayaApi.occurrences(date, date)).find(
+        (o) =>
+          o.careAction === 'pick_up' &&
+          o.memberIds.includes(mayaApi.memberId) &&
+          new Date(o.startsAt).getTime() > Date.now() + 10 * 60_000,
+      );
+      if (pickup) break;
+    }
+    if (!pickup) throw new Error('the demo should have a pickup of Maya’s this week');
+
+    // Theo's Today, open before anything is asked: nothing to sort.
+    const theo = await app.as(THEO.email);
+    await expect(theo.getByRole('heading', { name: 'Who’s on what' })).toBeVisible();
+    await expect(theo.getByRole('heading', { name: 'Heads-ups' })).toHaveCount(0);
+
+    // Maya asks him to cover it.
+    const asked = await mayaApi.request(
+      `/households/${hid}/events/${pickup.eventId}/occurrences/${pickup.date}/cover-requests`,
+      { method: 'POST', body: { memberId: theoApi.memberId } },
+    );
+    expect(asked.status).toBe(201);
+
+    // Still open, his Today notices within seconds: the ask, with Accept and Decline.
+    const ask = theo.getByRole('button', { name: /^Maya asked you to cover June’s pickup/ });
+    await expect(ask).toBeVisible({ timeout: 20_000 });
+    await expect(theo.getByRole('heading', { name: 'Heads-ups' })).toBeVisible();
+    await expect(theo.getByRole('button', { name: 'Decline', exact: true })).toBeVisible();
+
+    // A fresh look (another device) shows it straight away, and Accept hands it over.
+    const again = await app.as(THEO.email);
+    await expect(
+      again.getByRole('button', { name: /^Maya asked you to cover June’s pickup/ }),
+    ).toBeVisible();
+    await again.getByRole('button', { name: 'Accept', exact: true }).click();
+    await expect(toast(again, 'You have June’s pickup now')).toBeVisible();
+    await expect
+      .poll(
+        async () =>
+          (await mayaApi.occurrences(pickup.date, pickup.date)).find((o) => o.key === pickup.key)
+            ?.cover?.memberId,
+      )
+      .toBe(theoApi.memberId);
+    // Nothing left to sort: the block goes.
+    await expect(again.getByRole('heading', { name: 'Heads-ups' })).toHaveCount(0);
   });
 });
