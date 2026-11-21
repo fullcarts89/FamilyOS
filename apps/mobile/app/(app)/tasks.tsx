@@ -8,11 +8,11 @@ import { Avatar, Either } from '../../design/Avatar';
 import type { PressState } from '../../design/Button';
 import { useLayout } from '../../design/layout';
 import { FadeIn, SkeletonRows, Skeleton, useCelebrate } from '../../design/motion';
-import { ErrorNotice } from '../../design/Notice';
+import { LoadNotice } from '../../design/Notice';
 import { Page, PageHeader } from '../../design/Page';
 import { Text } from '../../design/Text';
 import { color, radius, shadow, touch } from '../../design/tokens';
-import type { WorkItem } from '../../lib/api';
+import { failureKind, type WorkItem } from '../../lib/api';
 import { useCapture } from '../../lib/capture';
 import { useHousehold } from '../../lib/household';
 import { usePeople, type Person } from '../../lib/people';
@@ -122,7 +122,7 @@ export default function Tasks() {
         title: p.isMe ? 'You' : p.name,
         sub: p.isMe ? 'On you' : `${p.name}’s handling`,
       })),
-      { key: 'shared', person: null, title: 'Shared', sub: 'Up for grabs · either of you' },
+      { key: 'shared', person: null, title: 'Shared', sub: 'For either of you' },
     ],
     [people.assignable],
   );
@@ -229,12 +229,9 @@ export default function Tasks() {
             : 'Everything open in the household, by who has it. Hand something over in one tap.'
         }
       />
-      {error ? (
+      {error && !(items && failureKind(error) === 'offline') ? (
         <View style={styles.notice}>
-          <ErrorNotice
-            message={items ? 'Couldn’t refresh. Showing what we had.' : 'Couldn’t load your tasks.'}
-            onRetry={load}
-          />
+          <LoadNotice error={error} what="your tasks" hasData={!!items} onRetry={load} />
         </View>
       ) : null}
 

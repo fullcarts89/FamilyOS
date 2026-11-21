@@ -32,12 +32,12 @@ import {
   useAcknowledgment,
   useCelebrate,
 } from '../../design/motion';
-import { ErrorNotice } from '../../design/Notice';
+import { LoadNotice } from '../../design/Notice';
 import { Page } from '../../design/Page';
 import { SectionHeader } from '../../design/Section';
 import { Text } from '../../design/Text';
 import { color, font, radius, shadow, space, touch } from '../../design/tokens';
-import type { Occurrence, WorkItem } from '../../lib/api';
+import { failureKind, type Occurrence, type WorkItem } from '../../lib/api';
 import { SETUP_KEY } from '../../lib/acknowledgments';
 import { useCapture } from '../../lib/capture';
 import { greetingFor, longDate, shortDate, weekdayName } from '../../lib/dates';
@@ -68,7 +68,7 @@ export default function Today() {
   const { timeZone } = useHousehold();
   const people = usePeople();
   const { desktop, phone } = useLayout();
-  const { open, version } = useCapture();
+  const { open, version, shortcuts } = useCapture();
   const data = useTodayData();
   const { household } = useHousehold();
   // A new household's owner, alone in it, gets the guided setup first (once; skippable).
@@ -321,8 +321,8 @@ export default function Today() {
       <Text variant="body" tone="muted" style={styles.captureText}>
         Add something for the household…
       </Text>
-      {!phone ? (
-        <View style={styles.kbd}>
+      {!phone && shortcuts ? (
+        <View style={styles.kbd} aria-hidden>
           <Text variant="small" tone="muted">
             N
           </Text>
@@ -444,7 +444,7 @@ export default function Today() {
       title: p.isMe ? 'You' : `${p.name}’s handling`,
       sub: p.isMe ? 'Late, today and this week' : `What ${p.name} has this week`,
     })),
-    { key: null, person: null, title: 'Up for grabs', sub: 'Either of you' },
+    { key: null, person: null, title: 'Shared', sub: 'For either of you' },
   ];
   // Keep each column short: a routine's missed turns and the first few by urgency, then at most
   // three undated ("Anytime"); the rest live in Tasks.
@@ -578,16 +578,9 @@ export default function Today() {
     <Page refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
       {header}
 
-      {error ? (
+      {error && !(rhythm && failureKind(error) === 'offline') ? (
         <View style={styles.blockTight}>
-          <ErrorNotice
-            message={
-              rhythm
-                ? 'Couldn’t refresh. Pull down or try again.'
-                : 'Couldn’t load today. Check your connection.'
-            }
-            onRetry={load}
-          />
+          <LoadNotice error={error} what="today" hasData={!!rhythm} onRetry={load} />
         </View>
       ) : null}
 

@@ -118,7 +118,7 @@ export default function Inbox() {
                   />
                 ))}
                 <Chip
-                  label="Either of us"
+                  label="Shared"
                   leading={<Either size={18} />}
                   selected={chosen === null}
                   onPress={() => setOwners({ ...owners, [item.id]: null })}

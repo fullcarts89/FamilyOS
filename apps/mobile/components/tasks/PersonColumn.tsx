@@ -105,7 +105,7 @@ export function PersonColumn({
             ? 'Nothing on your list. Enjoy it.'
             : person
               ? `Nothing on ${person.name}’s list right now.`
-              : 'Nothing up for grabs.'}
+              : 'Nothing shared right now.'}
         </Text>
       ) : (
         <>

@@ -16,6 +16,22 @@ import { toGif } from './record';
 
 export type Section = 'Today' | 'Week' | 'Tasks' | 'Reset' | 'Household';
 
+/** Each section's link in the main navigation (its accessible name). */
+const LINKS: Record<Section, string> = {
+  Today: 'Today',
+  Week: 'Week',
+  Tasks: 'Tasks',
+  Reset: 'Weekly Reset',
+  Household: 'Household',
+};
+
+/** What a journey can add to a fresh browser (on top of the project's viewport). */
+export interface ContextExtras {
+  reducedMotion?: 'reduce' | 'no-preference';
+  /** Install Playwright's fake clock before the app loads: at the real time, or at this one. */
+  clock?: boolean | Date;
+}
+
 const PATHS: Record<Section, string> = {
   Today: '/',
   Week: '/week',
@@ -61,10 +77,12 @@ export class AppDriver {
   }
 
   /** A new, signed-out browser (its own storage, like another device). */
-  async open(path = '/'): Promise<Page> {
+  async open(path = '/', extras: ContextExtras = {}): Promise<Page> {
     const use = this.info.project.use;
     const viewport = use.viewport ?? { width: 1440, height: 900 };
+    const { clock, ...contextOptions } = extras;
     const context = await this.browser.newContext({
+      ...contextOptions,
       baseURL: BASE_URL,
       viewport,
       ...(use.deviceScaleFactor !== undefined && { deviceScaleFactor: use.deviceScaleFactor }),
@@ -81,6 +99,7 @@ export class AppDriver {
     });
     this.contexts.push(context);
     const page = await context.newPage();
+    if (clock) await page.clock.install(clock instanceof Date ? { time: clock } : {});
     this.started.set(page, Date.now());
     const where = () => new URL(page.url()).pathname;
     page.on('console', (m) => {
@@ -103,31 +122,24 @@ export class AppDriver {
   }
 
   /** A fresh browser signed in as this person, on Today. */
-  async as(email: string, password = DEMO_PASSWORD): Promise<Page> {
-    const page = await this.open('/sign-in');
+  async as(email: string, password = DEMO_PASSWORD, extras: ContextExtras = {}): Promise<Page> {
+    const page = await this.open('/sign-in', extras);
     await this.signIn(page, email, password);
     return page;
   }
 
+  /** The main navigation: the top bar's links on desktop, the bottom bar's on phones. */
+  mainNav(page: Page): Locator {
+    return page.getByRole('navigation', { name: 'Main' });
+  }
+
   /** Goes to a section with the app's own navigation (top bar on desktop, bottom bar on phone). */
   async nav(page: Page, section: Section): Promise<void> {
-    if (section === 'Household') {
-      // Desktop: a top-bar link. Phone: the household button in the header.
-      await (
-        this.phone
-          ? page.getByRole('link', { name: 'Household', exact: true })
-          : page.getByRole('menubar', { name: 'Main' }).getByRole('link', { name: 'Household' })
-      ).click();
-    } else if (this.phone) {
-      await page
-        .getByRole('tablist', { name: 'Main' })
-        .getByRole('tab', { name: section, exact: true })
-        .click();
+    if (section === 'Household' && this.phone) {
+      // Phone: the household button in the header (desktop: a top-bar link).
+      await page.getByRole('link', { name: 'Household', exact: true }).click();
     } else {
-      await page
-        .getByRole('menubar', { name: 'Main' })
-        .getByRole('link', { name: section, exact: true })
-        .click();
+      await this.mainNav(page).getByRole('link', { name: LINKS[section], exact: true }).click();
     }
     // Screens stay mounted (hidden) in the navigation stack: wait until this one is showing, so
     // a locator never settles on the same row in the screen we just left.

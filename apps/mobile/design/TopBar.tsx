@@ -2,10 +2,11 @@ import { router, usePathname, type Href } from 'expo-router';
 import { ChevronDown, Plus } from 'lucide-react-native';
 import { useRef, useState, type ComponentRef } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { useCapture } from '../lib/capture';
 import { useHousehold } from '../lib/household';
 import { usePeople } from '../lib/people';
 import { Avatar } from './Avatar';
-import { type PressState } from './Button';
+import { HitArea, hitSlopFor, type PressState } from './Button';
 import { useLayout } from './layout';
 import { Mark } from './Mark';
 import { Text } from './Text';
@@ -13,6 +14,10 @@ import { color, radius, shadow } from './tokens';
 
 export interface NavItem {
   label: string;
+  /** Where the full label doesn't fit (the phone's bottom bar); the accessible name stays `label`. */
+  short?: string;
+  /** How More's accessible name lists it ("meals"). */
+  spoken?: string;
   href: Href;
   /** Path prefixes that also count as this section. */
   match: string[];
@@ -26,13 +31,14 @@ export const NAV: NavItem[] = [
   { label: 'Today', href: '/', match: ['/', '/inbox'] },
   { label: 'Week', href: '/week', match: ['/week'] },
   { label: 'Tasks', href: '/tasks', match: ['/tasks', '/item', '/routine', '/work', '/routines'] },
-  { label: 'Reset', href: '/reset', match: ['/reset'] },
-  { label: 'Household', href: '/household', match: ['/household'] },
+  { label: 'Weekly Reset', short: 'Reset', href: '/reset', match: ['/reset'] },
+  { label: 'Household', href: '/household', match: ['/household'], spoken: 'household' },
 ];
 
 export const MORE: NavItem[] = [
   {
     label: 'Meals & groceries',
+    spoken: 'meals',
     href: '/meals',
     match: ['/meals'],
     hint: 'Dinners and the shared list',
@@ -58,6 +64,14 @@ export const MORE: NavItem[] = [
 export const moreFor = (role: string | undefined) =>
   MORE.filter((m) => !m.adultsOnly || role !== 'caregiver');
 
+/** More's accessible name, listing only what this person will find there ("More: meals and contacts"). */
+export function moreLabel(items: NavItem[]): string {
+  const names = items.map((m) => m.spoken ?? m.label.toLowerCase());
+  const list =
+    names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+  return list ? `More: ${list}` : 'More';
+}
+
 export function isActive(item: NavItem, pathname: string): boolean {
   return item.match.some((m) => (m === '/' ? pathname === '/' : pathname.startsWith(m)));
 }
@@ -71,6 +85,8 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const moreRef = useRef<ComponentRef<typeof View>>(null);
   const moreActive = MORE.some((m) => isActive(m, pathname));
+  const more = moreFor(household?.role);
+  const { shortcuts, captureButton } = useCapture();
   const shown = people.all.filter((p) => p.role !== 'caregiver').slice(0, 4);
 
   const openMenu = () => {
@@ -78,7 +94,7 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
   };
 
   return (
-    <View style={styles.bar} accessibilityRole="toolbar">
+    <View style={styles.bar} role="banner">
       <View style={styles.left}>
         <Pressable
           accessibilityRole="link"
@@ -86,6 +102,7 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
           onPress={() => router.navigate('/')}
           style={(s: PressState) => [styles.brand, s.hovered && styles.hover]}
         >
+          <HitArea slop={NAV_SLOP} />
           <Mark colors={people.all.map((p) => p.color)} />
           <Text variant="h3" style={styles.brandText} numberOfLines={1}>
             {household?.name ?? 'FamilyOS'}
@@ -116,7 +133,7 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
         ) : null}
       </View>
 
-      <View style={styles.nav} accessibilityRole="menubar" aria-label="Main">
+      <View style={styles.nav} role="navigation" aria-label="Main">
         {NAV.map((item) => {
           const on = isActive(item, pathname);
           return (
@@ -131,7 +148,13 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
                 !on && s.hovered && styles.navHover,
               ]}
             >
-              <Text variant="label" tone={on ? 'ink' : 'muted'}>
+              <HitArea slop={NAV_SLOP} />
+              <Text
+                variant="label"
+                tone={on ? 'ink' : 'muted'}
+                numberOfLines={1}
+                maxFontSizeMultiplier={1.4}
+              >
                 {item.label}
               </Text>
             </Pressable>
@@ -141,7 +164,8 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
         <View ref={moreRef} collapsable={false}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="More: meals, decisions, contacts and budgets"
+            accessibilityLabel={moreLabel(more)}
+            aria-haspopup="menu"
             aria-expanded={!!menu}
             onPress={openMenu}
             style={(s: PressState) => [
@@ -150,7 +174,8 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
               !moreActive && s.hovered && styles.navHover,
             ]}
           >
-            <Text variant="label" tone={moreActive ? 'ink' : 'muted'}>
+            <HitArea slop={NAV_SLOP} />
+            <Text variant="label" tone={moreActive ? 'ink' : 'muted'} maxFontSizeMultiplier={1.4}>
               More
             </Text>
             <ChevronDown size={14} strokeWidth={2.4} color={moreActive ? color.ink : color.muted} />
@@ -161,7 +186,8 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
       <View style={styles.right}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Capture something (N)"
+          accessibilityLabel={shortcuts ? 'Capture something (N)' : 'Capture something'}
+          ref={captureButton}
           onPress={onCapture}
           style={(s: PressState) => [
             styles.capture,
@@ -170,11 +196,11 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
           ]}
         >
           <Plus size={18} strokeWidth={2.4} color={color.onInk} />
-          <Text variant="label" color={color.onInk}>
+          <Text variant="label" color={color.onInk} maxFontSizeMultiplier={1.4}>
             Capture
           </Text>
-          {desktop ? (
-            <View style={styles.kbd}>
+          {desktop && shortcuts ? (
+            <View style={styles.kbd} aria-hidden>
               <Text variant="small" color={color.onInk} style={styles.kbdText}>
                 N
               </Text>
@@ -183,7 +209,13 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
         </Pressable>
       </View>
 
-      <Modal visible={!!menu} transparent animationType="none" onRequestClose={() => setMenu(null)}>
+      <Modal
+        visible={!!menu}
+        transparent
+        animationType="none"
+        onRequestClose={() => setMenu(null)}
+        aria-label="More"
+      >
         <Pressable
           accessibilityLabel="Close menu"
           style={StyleSheet.absoluteFill}
@@ -194,7 +226,7 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
             role="menu"
             style={[styles.menu, { top: menu.y, left: Math.max(12, menu.x - 240) }]}
           >
-            {moreFor(household?.role).map((item) => (
+            {more.map((item) => (
               <Pressable
                 key={item.label}
                 role="menuitem"
@@ -221,6 +253,9 @@ export function TopBar({ onCapture }: { onCapture: () => void }) {
     </View>
   );
 }
+
+/** The nav's 38pt pills reach 44pt into the bar's own padding (web). */
+const NAV_SLOP = hitSlopFor(38, 44);
 
 const styles = StyleSheet.create({
   bar: {
@@ -272,7 +307,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.lane,
   },
   navItem: {
-    height: 38,
+    minHeight: 38,
     paddingHorizontal: 16,
     borderRadius: radius.pill,
     flexDirection: 'row',
@@ -288,7 +323,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    height: 44,
+    minHeight: 44,
     paddingLeft: 16,
     paddingRight: 12,
     borderRadius: radius.pill,

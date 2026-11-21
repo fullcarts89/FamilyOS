@@ -23,11 +23,19 @@ export function CaptureSheet({
   initialOwner,
   onClose,
   onCreated,
+  visible = true,
+  onExited,
+  onSaved,
 }: {
   /** undefined: me; null: either of you; else a member id. */
   initialOwner: string | null | undefined;
   onClose: () => void;
   onCreated: () => void;
+  visible?: boolean;
+  /** After the sheet's exit fade. */
+  onExited?: () => void;
+  /** After a successful save (before the sheet closes). */
+  onSaved?: () => void;
 }) {
   const { household } = useHousehold();
   const people = usePeople();
@@ -44,6 +52,10 @@ export function CaptureSheet({
   const [projects, setProjects] = useState<WorkItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // One save at a time: Enter pressed again (or the button) while saving does nothing.
+  const saving = useRef(false);
+  // One id per capture, reused if it's retried, so the API makes it once (POST /work-items).
+  const clientId = useRef(newClientId()).current;
 
   useEffect(() => {
     if (!household) return;
@@ -86,13 +98,16 @@ export function CaptureSheet({
   const targets: (Person | null)[] = [...people.assignable.slice(0, phone ? 2 : 3), null];
 
   const save = async (inbox: boolean) => {
-    if (!household || !parsed.title) return;
+    if (!household || !parsed.title || saving.current) return;
+    saving.current = true;
     setBusy(true);
     setError(null);
+    let saved = false;
     try {
       const { item } = await api<{ item: WorkItem }>(`/households/${household.id}/work-items`, {
         method: 'POST',
         body: {
+          clientId,
           title: parsed.title,
           type: project ? 'project' : 'task',
           inbox,
@@ -102,42 +117,55 @@ export function CaptureSheet({
           ...(parsed.important && { priority: 1 }),
         },
       });
+      saved = true;
       onCreated();
+      onSaved?.();
       onClose();
       const where = inbox
         ? 'the inbox'
         : owner === null
-          ? 'up for grabs'
+          ? 'Shared'
           : ownerPerson?.isMe
             ? 'your list'
             : `${ownerPerson?.name ?? 'their'}’s list`;
       toast.show(`Added to ${where}: ${item.title}`, {
         undo: async () => {
-          await api(`/households/${household.id}/work-items/${item.id}`, {
-            method: 'PATCH',
-            body: { expectedVersion: item.version, status: 'cancelled' },
-          }).catch(() => undefined);
+          try {
+            await api(`/households/${household.id}/work-items/${item.id}`, {
+              method: 'PATCH',
+              body: { expectedVersion: item.version, status: 'cancelled' },
+            });
+          } catch (caught) {
+            // Never a silent failure: it's still there, so say so.
+            toast.show(`Couldn’t undo adding “${item.title}”. It’s still on the list.`, {
+              error: true,
+              detail: errorMessage(caught),
+            });
+          }
           onCreated();
         },
       });
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
+      // Still open after a failure: the same capture can be tried again (same id).
+      if (!saved) saving.current = false;
       setBusy(false);
     }
   };
 
   const submitLabel =
     owner === null
-      ? 'Add to up for grabs'
+      ? 'Add to Shared'
       : ownerPerson?.isMe
         ? 'Add to your list'
         : `Add to ${ownerPerson?.name ?? 'their'}’s list`;
 
   return (
     <Sheet
-      visible
+      visible={visible}
       onClose={onClose}
+      onExited={onExited}
       label="Capture something for the household"
       title="What needs doing?"
       width={600}
@@ -156,8 +184,8 @@ export function CaptureSheet({
               size="sm"
               icon={Inbox}
               disabled={!parsed.title || busy}
-              onPress={() => save(true)}
-              accessibilityLabel="Put it in the inbox to sort later"
+              onPress={() => void save(true)}
+              accessibilityLabel="Put in the inbox, to sort later"
             />
             <Button
               title={submitLabel}
@@ -165,7 +193,7 @@ export function CaptureSheet({
               iconRight
               busy={busy}
               disabled={!parsed.title}
-              onPress={() => save(false)}
+              onPress={() => void save(false)}
             />
           </View>
         </>
@@ -181,7 +209,7 @@ export function CaptureSheet({
         accessibilityHint="Type @ and a name, a day like tomorrow, or # and a project"
         maxLength={500}
         returnKeyType="done"
-        onSubmitEditing={() => parsed.title && void save(false)}
+        onSubmitEditing={() => void save(false)}
         style={[styles.input, phone && styles.inputPhone]}
       />
 
@@ -206,7 +234,7 @@ export function CaptureSheet({
               accessibilityRole="radio"
               accessibilityState={{ checked: on }}
               aria-checked={on}
-              accessibilityLabel={p ? (p.isMe ? 'You' : p.name) : 'Either of you'}
+              accessibilityLabel={p ? (p.isMe ? 'You' : p.name) : 'Shared'}
               onPress={() => {
                 setPicked(id);
                 // Tapping a target overrides a typed @name.
@@ -221,12 +249,12 @@ export function CaptureSheet({
               <View style={styles.targetTop}>
                 {p ? <Avatar person={p} size={22} /> : <Either size={22} />}
                 <Text variant="h3" style={styles.targetName} numberOfLines={1}>
-                  {p ? (p.isMe ? 'You' : p.name) : 'Either'}
+                  {p ? (p.isMe ? 'You' : p.name) : 'Shared'}
                 </Text>
               </View>
               {!phone ? (
                 <Text variant="small" tone="muted">
-                  {p ? (p.isMe ? 'On you' : `${p.name}’s handling`) : 'Up for grabs'}
+                  {p ? (p.isMe ? 'On you' : `${p.name}’s handling`) : 'Either of you'}
                 </Text>
               ) : null}
               <View style={styles.ghost}>
@@ -284,6 +312,17 @@ export function CaptureSheet({
       </View>
     </Sheet>
   );
+}
+
+/** A v4 UUID for the capture's `clientId` (the platform's own where there is one). */
+function newClientId(): string {
+  const native = globalThis.crypto?.randomUUID?.();
+  if (native) return native;
+  const hex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16));
+  hex[12] = '4';
+  hex[16] = ((parseInt(hex[16] ?? '0', 16) & 0x3) | 0x8).toString(16);
+  const h = hex.join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
 const styles = StyleSheet.create({

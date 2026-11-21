@@ -1,7 +1,7 @@
 import { router, usePathname } from 'expo-router';
 import { ChevronRight, Plus } from 'lucide-react-native';
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useHousehold } from '../lib/household';
 import { usePeople } from '../lib/people';
@@ -10,7 +10,8 @@ import type { PressState } from './Button';
 import { Mark } from './Mark';
 import { Text } from './Text';
 import { Sheet } from './Sheet';
-import { NAV, isActive, moreFor, type NavItem } from './TopBar';
+import { bottomBar, fab, fabBottom } from './chrome';
+import { NAV, isActive, moreFor, moreLabel, type NavItem } from './TopBar';
 import { color, radius, shadow } from './tokens';
 
 /** Phone header: the household, and its people (which open Household). */
@@ -19,7 +20,7 @@ export function PhoneHeader() {
   const people = usePeople();
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+    <View style={[styles.header, { paddingTop: insets.top + 6 }]} role="banner">
       <Pressable
         accessibilityRole="link"
         accessibilityLabel={`${household?.name ?? 'Household'}, today`}
@@ -27,7 +28,7 @@ export function PhoneHeader() {
         style={styles.brand}
       >
         <Mark size={24} colors={people.all.map((p) => p.color)} />
-        <Text variant="h3" numberOfLines={1} style={styles.brandText}>
+        <Text variant="h3" numberOfLines={1} style={styles.brandText} maxFontSizeMultiplier={1.4}>
           {household?.name ?? 'FamilyOS'}
         </Text>
       </Pressable>
@@ -43,7 +44,10 @@ export function PhoneHeader() {
   );
 }
 
-/** Phone: Today, Week, Tasks and Reset at thumb's reach; everything else under More. */
+/**
+ * Phone: Today, Week, Tasks and the Weekly Reset at thumb's reach (plain links, the current one
+ * marked); everything else under More, a button that opens a sheet.
+ */
 export function BottomBar() {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
@@ -56,36 +60,49 @@ export function BottomBar() {
   const moreOn = extra.some((m) => isActive(m, pathname));
   return (
     <View
-      accessibilityRole="tablist"
+      role="navigation"
       aria-label="Main"
-      style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 10) }]}
+      style={[styles.bar, { paddingBottom: Math.max(insets.bottom, bottomBar.pad) }]}
     >
       {NAV.slice(0, 4).map((item) => {
         const on = isActive(item, pathname);
         return (
           <Pressable
             key={item.label}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: on }}
-            aria-selected={on}
+            accessibilityRole="link"
+            accessibilityLabel={item.label}
+            aria-current={on ? 'page' : undefined}
+            {...nativeSelected(on)}
             onPress={() => router.navigate(item.href)}
             style={[styles.tab, on && styles.tabOn]}
           >
-            <Text variant="label" color={on ? color.onInk : color.muted} style={styles.tabText}>
-              {item.label}
+            <Text
+              variant="label"
+              color={on ? color.onInk : color.muted}
+              style={styles.tabText}
+              numberOfLines={1}
+              maxFontSizeMultiplier={1.3}
+            >
+              {item.short ?? item.label}
             </Text>
           </Pressable>
         );
       })}
       <Pressable
-        accessibilityRole="tab"
-        accessibilityState={{ selected: moreOn }}
-        aria-selected={moreOn}
-        accessibilityLabel="More: household, meals, decisions, contacts and budgets"
+        accessibilityRole="button"
+        accessibilityLabel={moreLabel(extra)}
+        aria-haspopup="dialog"
+        aria-expanded={more}
         onPress={() => setMore(true)}
         style={[styles.tab, moreOn && styles.tabOn]}
       >
-        <Text variant="label" color={moreOn ? color.onInk : color.muted} style={styles.tabText}>
+        <Text
+          variant="label"
+          color={moreOn ? color.onInk : color.muted}
+          style={styles.tabText}
+          numberOfLines={1}
+          maxFontSizeMultiplier={1.3}
+        >
           More
         </Text>
       </Pressable>
@@ -121,6 +138,13 @@ export function BottomBar() {
   );
 }
 
+/**
+ * iPhone and Android read "selected" from accessibilityState; the web uses aria-current or
+ * aria-pressed instead (aria-selected is only allowed on tabs and options).
+ */
+export const nativeSelected = (on: boolean) =>
+  Platform.OS === 'web' ? {} : { accessibilityState: { selected: on } };
+
 /** The floating capture button on phones. */
 export function CaptureFab({ onPress }: { onPress: () => void }) {
   const insets = useSafeAreaInsets();
@@ -131,7 +155,7 @@ export function CaptureFab({ onPress }: { onPress: () => void }) {
       onPress={onPress}
       style={(s: PressState) => [
         styles.fab,
-        { bottom: Math.max(insets.bottom, 10) + 70 },
+        { bottom: fabBottom(insets.bottom) },
         s.pressed && { transform: [{ scale: 0.94 }] },
       ]}
     >
@@ -165,7 +189,7 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    height: 44,
+    minHeight: 44,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -186,9 +210,9 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 16,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: fab.size,
+    height: fab.size,
+    borderRadius: fab.size / 2,
     backgroundColor: color.ink,
     alignItems: 'center',
     justifyContent: 'center',

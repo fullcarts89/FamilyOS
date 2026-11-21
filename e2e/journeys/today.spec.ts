@@ -36,7 +36,7 @@ async function sql<R extends pg.QueryResultRow = pg.QueryResultRow>(
 async function fullyOnScreen(page: Page, target: Locator, phone: boolean): Promise<boolean> {
   const box = await target.boundingBox();
   const bottom = phone
-    ? ((await page.getByRole('tablist', { name: 'Main' }).boundingBox())?.y ?? 0)
+    ? ((await page.getByRole('navigation', { name: 'Main' }).boundingBox())?.y ?? 0)
     : (page.viewportSize()?.height ?? 0);
   return !!box && box.y >= 0 && box.y + box.height <= bottom;
 }

@@ -10,7 +10,7 @@ import {
   Send,
 } from 'lucide-react-native';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { CalendarSheet } from '../../components/household/CalendarSheet';
 import { MemberSheet, type MemberTarget } from '../../components/household/MemberSheet';
 import { parseTime } from '../../components/rhythm/EventSheet';
@@ -38,6 +38,7 @@ import {
   type MemberState,
 } from '../../lib/api';
 import { clock } from '../../lib/dates';
+import { useCapture } from '../../lib/capture';
 import { useHousehold } from '../../lib/household';
 import { useMemberState } from '../../lib/member-state';
 import { usePeople, type Person } from '../../lib/people';
@@ -585,6 +586,7 @@ const NOTIFY: { key: keyof MemberState['notifications']; title: string; line: st
 
 function Settings({ timeZone }: { timeZone: string }) {
   const haptics = useHaptics();
+  const { shortcuts, setShortcuts } = useCapture();
   const toast = useToast();
   const { state, update } = useMemberState();
   const [lockScreen, setLockScreen] = useState(() => widgetsAvailable && widgetLockScreenVisible());
@@ -658,6 +660,14 @@ function Settings({ timeZone }: { timeZone: string }) {
               setLockScreen(v);
               setWidgetLockScreenVisible(v);
             },
+          )
+        : null}
+      {Platform.OS === 'web'
+        ? row(
+            'Keyboard shortcuts',
+            'N or C opens capture. Turn off if single keys get pressed by accident (this device).',
+            shortcuts,
+            setShortcuts,
           )
         : null}
       <GroupLabel label="Notifications" />
