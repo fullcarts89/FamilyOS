@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useCelebrate, useHaptics } from '../design/motion';
 import { useToast } from '../design/Toast';
 import { api, errorMessage, type Decision } from './api';
+import { usePressTick } from './events';
 import { useHousehold } from './household';
 import { usePeople } from './people';
 
@@ -22,6 +23,7 @@ export function useDecisionActions(onChange: (d: Decision) => void) {
   const people = usePeople();
   const toast = useToast();
   const haptics = useHaptics();
+  const tick = usePressTick();
   const { celebrate } = useCelebrate();
   const base = household ? `/households/${household.id}/decisions` : '';
 
@@ -41,7 +43,8 @@ export function useDecisionActions(onChange: (d: Decision) => void) {
   const vote = useCallback(
     async (d: Decision, optionId: string): Promise<Decision | null> => {
       const me = people.me?.id ?? '';
-      haptics.light();
+      // A tick under the finger now; the success haptic once the server has the vote.
+      tick();
       onChange({
         ...d,
         myVoteOptionId: optionId,
@@ -59,6 +62,7 @@ export function useDecisionActions(onChange: (d: Decision) => void) {
         onChange(decision);
         if (decision.status === 'decided') settled(decision);
         else {
+          haptics.light();
           const waiting = decision.waitingOn
             .map((id) => people.byId(id))
             .filter((p) => p && !p.isMe)
@@ -80,7 +84,7 @@ export function useDecisionActions(onChange: (d: Decision) => void) {
         return null;
       }
     },
-    [base, people, haptics, onChange, toast, settled],
+    [base, people, haptics, tick, onChange, toast, settled],
   );
 
   /** On one screen, both agree out loud: settle it on the option you both chose. */

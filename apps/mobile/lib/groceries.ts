@@ -1,9 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { useHaptics } from '../design/motion';
 import { useToast } from '../design/Toast';
 import { api, errorMessage, type GroceryAisle, type GroceryItem } from './api';
-import { guessAisle, splitDetail } from './grocery-words';
+import { usePressTick } from './events';
+import { AISLE_LABEL, guessAisle, splitDetail } from './grocery-words';
 import { useHousehold } from './household';
+
+/**
+ * Brings a just-added item into view in the list (the web: the row is found by its checkbox's
+ * label). Phones show the confirmation; the list sits under the field there.
+ */
+function reveal(name: string) {
+  if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+  requestAnimationFrame(() => {
+    const rows = document.querySelectorAll<HTMLElement>(
+      `[role="checkbox"][aria-label="Check off ${CSS.escape(name)}"]`,
+    );
+    const row = rows[rows.length - 1];
+    const reduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    row?.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
+  });
+}
 
 /**
  * The shared grocery list. Checking off is instant (the row strikes through at once and stays
@@ -14,6 +32,7 @@ export function useGroceries({ poll = 0 }: { poll?: number } = {}) {
   const { household } = useHousehold();
   const toast = useToast();
   const haptics = useHaptics();
+  const tick = usePressTick();
   const [items, setItems] = useState<GroceryItem[] | null>(null);
   const [error, setError] = useState(false);
   const pending = useRef(0);
@@ -44,7 +63,8 @@ export function useGroceries({ poll = 0 }: { poll?: number } = {}) {
   const toggle = useCallback(
     async (item: GroceryItem) => {
       const checking = item.checkedAt === null;
-      if (checking) haptics.light();
+      // A tick under the finger now; the success haptic once the server has it.
+      tick();
       put({ ...item, checkedAt: checking ? new Date().toISOString() : null });
       pending.current += 1;
       try {
@@ -53,6 +73,7 @@ export function useGroceries({ poll = 0 }: { poll?: number } = {}) {
           { method: 'POST' },
         );
         put(res.item);
+        if (checking) haptics.light();
       } catch (caught) {
         put(item);
         toast.show(`Couldn’t ${checking ? 'check off' : 'uncheck'} ${item.name}.`, {
@@ -63,7 +84,7 @@ export function useGroceries({ poll = 0 }: { poll?: number } = {}) {
         pending.current -= 1;
       }
     },
-    [base, haptics, toast],
+    [base, haptics, tick, toast],
   );
 
   const add = useCallback(
@@ -89,6 +110,11 @@ export function useGroceries({ poll = 0 }: { poll?: number } = {}) {
           body: { name, ...(detail && { detail }), aisle: temp.aisle },
         });
         setItems((all) => (all ? all.map((i) => (i.id === temp.id ? res.item : i)) : all));
+        // Where it went, in a word ("Added to Dairy & eggs"), and the row in view.
+        toast.show(`Added to ${AISLE_LABEL[res.item.aisle]}`, {
+          detail: res.item.detail ? `${res.item.name}, ${res.item.detail}` : res.item.name,
+        });
+        reveal(res.item.name);
         return true;
       } catch (caught) {
         setItems((all) => (all ? all.filter((i) => i.id !== temp.id) : all));

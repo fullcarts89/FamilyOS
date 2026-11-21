@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useToast } from '../design/Toast';
 import { api, ApiRequestError, errorMessage, type Meal } from './api';
+import { weekdayName } from './dates';
 import { useHousehold } from './household';
 
 /** Dinner titles from recent weeks, most used first: the family's own ideas, nothing invented. */
@@ -88,6 +89,12 @@ export function useMealActions(
           ).meal;
         }
         setMeals((all) => (saved ? [...others(all), saved] : others(all)));
+        // A short confirmation once it's saved (a new dinner, or a different one).
+        if (saved && (!existing || existing.title !== saved.title)) {
+          toast.show(`${existing ? 'Changed' : 'Planned'} ${weekdayName(date)}’s dinner`, {
+            detail: saved.title,
+          });
+        }
         onSaved?.();
         return true;
       } catch (caught) {

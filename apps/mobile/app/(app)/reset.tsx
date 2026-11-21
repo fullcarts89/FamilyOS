@@ -242,7 +242,7 @@ export default function Reset() {
   const sortLoose = async (item: WorkItem, action: SortAction) => {
     const label = choiceLabel(item, action);
     setChoices((c) => ({ ...c, [item.id]: { action, label, before: item } }));
-    haptics.light();
+    tick();
     try {
       await writing(async () => {
         const v = item.version;
@@ -268,6 +268,7 @@ export default function Reset() {
         for (const s of saved) cache.current.set(s.id, s);
         reset.putItems(saved);
       });
+      haptics.light();
       if (action.kind === 'hand') {
         const p = people.byId(action.to);
         const from = people.byId(item.ownerMemberId);
@@ -298,6 +299,7 @@ export default function Reset() {
       : before.dueOn
         ? { action: 'due', value: before.dueOn }
         : { action: 'clear_due' };
+    tick();
     try {
       await writing(async () => {
         let saved: WorkItem[];
@@ -324,6 +326,7 @@ export default function Reset() {
         for (const s of saved) cache.current.set(s.id, s);
         reset.putItems(saved);
       });
+      haptics.light();
       setChoices((c) => without(c, [item.id]));
     } catch (caught) {
       toast.show('Couldn’t undo that.', { error: true, detail: errorMessage(caught) });
@@ -340,7 +343,7 @@ export default function Reset() {
         rest.map((i) => [i.id, { action: { kind: 'keep' as const }, label, before: i }]),
       ),
     }));
-    haptics.light();
+    tick();
     try {
       await writing(async () => {
         const saved = await bulk(
@@ -349,6 +352,7 @@ export default function Reset() {
         for (const s of saved) cache.current.set(s.id, s);
         reset.putItems(saved);
       });
+      haptics.light();
       toast.show(
         `Kept ${rest.length === 1 ? 'one more' : `${rest.length} more`} for ${keepOn === today ? 'today' : weekdayName(keepOn)}`,
         {

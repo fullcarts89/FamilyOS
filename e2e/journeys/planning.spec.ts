@@ -187,6 +187,44 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
     ).toBeVisible();
   });
 
+  test('meals and groceries: adding says where it went, and shows it', async ({
+    app,
+    maya,
+    mayaApi,
+  }) => {
+    const today = await mayaApi.today();
+    const monday = addDays(today, 1 - weekday(today));
+    const days = [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(monday, i));
+    const dinnersOn = async (from: string) =>
+      (
+        await mayaApi.get<{ meals: { onDate: string; slot: string }[] }>(
+          `/meals?from=${from}&to=${addDays(from, 6)}`,
+        )
+      ).meals.filter((m) => m.slot === 'dinner');
+    const planned = await dinnersOn(monday);
+    let open = days.find((d) => d >= today && !planned.some((m) => m.onDate === d));
+    await openMore(app, maya, 'Meals & groceries');
+    if (!open) {
+      // This week is all planned: the next one has open nights.
+      const next = await dinnersOn(addDays(monday, 7));
+      open = days.map((d) => addDays(d, 7)).find((d) => !next.some((m) => m.onDate === d));
+      await maya.getByRole('button', { name: 'Next week' }).click();
+    }
+    if (!open) throw new Error('the seed leaves a night or two open');
+    const field = maya.getByLabel(`Dinner on ${weekdayName(open)}`);
+    await field.click();
+    await field.fill('Lentil curry');
+    await field.press('Enter');
+    await expect(toast(maya, `Planned ${weekdayName(open)}’s dinner`)).toBeVisible();
+
+    if (app.phone) await maya.getByRole('tab', { name: /^Groceries/ }).click();
+    const add = maya.getByLabel('Add to the grocery list');
+    await add.fill('Oat milk');
+    await add.press('Enter');
+    await expect(toast(maya, 'Added to Dairy & eggs')).toBeVisible();
+    await expect(maya.getByRole('checkbox', { name: 'Check off Oat milk' })).toBeInViewport();
+  });
+
   test('a decision resolved together', async ({ app, maya, mayaApi }) => {
     const question = 'Which preschool for June next fall?';
     const { decisions } = await mayaApi.get<{ decisions: Decisionish[] }>('/decisions?status=open');
