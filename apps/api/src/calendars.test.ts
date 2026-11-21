@@ -26,10 +26,9 @@ function requireDb() {
 // Monday 2026-11-16, 07:00 in Los Angeles.
 const NOW = new Date('2026-11-16T15:00:00Z');
 const SECRET = 'private-0123456789abcdef'; // gitleaks:allow
-const google = readFileSync(
-  new URL('../../../packages/calendar/src/fixtures/google.ics', import.meta.url),
-  'utf8',
-);
+const fixture = (name: string) =>
+  readFileSync(new URL(`../../../packages/calendar/src/fixtures/${name}`, import.meta.url), 'utf8');
+const google = fixture('google.ics');
 
 interface Calendar {
   id: string;
@@ -152,6 +151,81 @@ describe.skipIf(!db)('calendar subscriptions', () => {
         .where('household_id', '=', h.id)
         .execute(),
     ).toEqual([]);
+  });
+
+  it('refuses a hostile calendar as too complex while the API keeps answering', async () => {
+    feed = fixture('hostile-impossible-rule.ics');
+    let served: () => void = () => undefined;
+    const fetched = new Promise<void>((resolve) => (served = resolve));
+    duringFetch = async () => served();
+    try {
+      let addedAt = 0;
+      const adding = call('/calendars', {
+        method: 'POST',
+        body: { label: 'Hostile', url: address, memberId: h.owner.id },
+      }).then((res) => {
+        addedAt = performance.now();
+        return res;
+      });
+      await fetched;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // The parse is running now, in its worker thread; the event loop is free.
+      const timings: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        const started = performance.now();
+        expect((await request('/health')).status).toBe(200);
+        timings.push(performance.now() - started);
+      }
+      const healthDoneAt = performance.now();
+      const res = await adding;
+      expect({ status: res.status, body: await res.json() }).toEqual({
+        status: 422,
+        body: { error: 'too_complex' },
+      });
+      expect(healthDoneAt).toBeLessThan(addedAt);
+      expect(Math.max(...timings)).toBeLessThan(200);
+    } finally {
+      feed = google;
+      duringFetch = null;
+    }
+    expect(
+      await requireDb()
+        .selectFrom('app.calendar_source')
+        .select('id')
+        .where('household_id', '=', h.id)
+        .execute(),
+    ).toEqual([]);
+  });
+
+  it('keeps a household to 20 calendars', async () => {
+    const full = await seedHousehold(requireDb(), 'Calendars Full');
+    try {
+      await requireDb()
+        .insertInto('app.calendar_source')
+        .values(
+          Array.from({ length: 20 }, (_, i) => ({
+            household_id: full.id,
+            member_id: full.owner.id,
+            label: `Calendar ${i}`,
+            url_ciphertext: Buffer.alloc(32, 1),
+            url_nonce: Buffer.alloc(12, 2),
+            url_hint: 'example.test/…',
+            created_by_member_id: full.owner.id,
+          })),
+        )
+        .execute();
+      const res = await request(`/households/${full.id}/calendars`, {
+        method: 'POST',
+        token: await tokenOf(full.owner),
+        body: { label: 'One more', url: address, memberId: full.owner.id },
+      });
+      expect({ status: res.status, body: await res.json() }).toEqual({
+        status: 422,
+        body: { error: 'too_many_calendars' },
+      });
+    } finally {
+      await purgeHouseholds(requireDb(), [full.id]);
+    }
   });
 
   it('adds a calendar, stores the address only encrypted, and imports its events', async () => {
@@ -286,6 +360,15 @@ describe.skipIf(!db)('calendar subscriptions', () => {
     expect(body.result).toMatchObject({ status: 'error', errorCode: 'http_500' });
     expect(body.calendar).toMatchObject({ status: 'error', lastErrorCode: 'http_500' });
     expect((await imported()).length).toBe(count);
+
+    // A calendar that turns hostile is recorded the same way, with its own code.
+    feed = fixture('hostile-secondly.ics');
+    const hostile = await call(`/calendars/${calendar.id}/sync`, { method: 'POST' });
+    feed = google;
+    expect(
+      (await json<{ calendar: Calendar; result: { errorCode: string } }>(hostile)).calendar,
+    ).toMatchObject({ status: 'error', lastErrorCode: 'too_complex' });
+    expect((await imported()).length).toBe(count);
   });
 
   it('holds no database connection while the calendar answers: add, new address, sync now', async () => {
@@ -411,6 +494,7 @@ describe.skipIf(!db)('calendar subscriptions', () => {
       .execute();
     expect(audit.map((a) => a.action)).toEqual([
       'calendar.added',
+      'calendar.synced',
       'calendar.synced',
       'calendar.synced',
       'calendar.synced',

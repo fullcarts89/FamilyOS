@@ -59,6 +59,27 @@ export const CALENDAR_COLUMNS = [
   'created_at as createdAt',
 ] as const;
 
+/** Calendar subscriptions per household: each is fetched and parsed about every 30 minutes. */
+export const MAX_CALENDARS = 20;
+
+/** Refuses a new calendar past the cap. `lock` serializes concurrent adds by the household row. */
+async function assertRoom(trx: Transaction<Database>, householdId: string, lock: boolean) {
+  if (lock) {
+    await trx
+      .selectFrom('app.household')
+      .select('id')
+      .where('id', '=', householdId)
+      .forUpdate()
+      .executeTakeFirst();
+  }
+  const { count } = await trx
+    .selectFrom('app.calendar_source')
+    .select((eb) => eb.fn.countAll<string>().as('count'))
+    .where('household_id', '=', householdId)
+    .executeTakeFirstOrThrow();
+  if (Number(count) >= MAX_CALENDARS) throw new ApiError(422, 'too_many_calendars');
+}
+
 const timezoneOf = async (trx: Transaction<Database>, householdId: string) =>
   (
     await trx
@@ -216,6 +237,7 @@ export function calendarFetchRoutes(deps: Deps) {
       requireKey();
       const body = await parseBody(c.req.raw, AddCalendar);
       await assertOwner(trx, m.householdId, body.memberId);
+      await assertRoom(trx, m.householdId, false);
       return { body, timeZone: await timezoneOf(trx, m.householdId) };
     });
     const { body, timeZone } = checked;
@@ -229,6 +251,7 @@ export function calendarFetchRoutes(deps: Deps) {
     const result = await inHousehold(deps, scope, async (trx, m) => {
       manager(m);
       await assertOwner(trx, m.householdId, body.memberId);
+      await assertRoom(trx, m.householdId, true);
       await trx
         .insertInto('app.calendar_source')
         .values({

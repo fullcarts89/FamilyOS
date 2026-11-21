@@ -25,7 +25,7 @@ export type FetchErrorCode =
   | `http_${number}`;
 
 export class CalendarFetchError extends Error {
-  constructor(readonly code: FetchErrorCode | 'not_calendar' | 'too_many_events') {
+  constructor(readonly code: FetchErrorCode | 'not_calendar' | 'too_many_events' | 'too_complex') {
     super(code);
     this.name = 'CalendarFetchError';
   }

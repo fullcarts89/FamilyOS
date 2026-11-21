@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { Temporal } from 'temporal-polyfill';
 import { describe, expect, it } from 'vitest';
 import { CalendarFetchError } from './fetch';
-import { MAX_OCCURRENCES, parseCalendar, type ImportedOccurrence } from './parse';
+import { parseIcs } from './parse-core';
+import { MAX_OCCURRENCES, MAX_TOTAL_STEPS, parseCalendar, type ImportedOccurrence } from './parse';
 
 const LA = 'America/Los_Angeles';
 const fixture = (name: string) =>
@@ -16,8 +17,8 @@ const brief = (list: ImportedOccurrence[]) =>
   list.map((o) => [o.uid, o.recurrenceId, o.title, o.startsAt, o.endsAt, o.allDay]);
 
 describe('parsing calendars', () => {
-  it('reads a Google calendar: UTC times, recurring with EXDATE, a moved and a cancelled instance, all-day', () => {
-    const got = parseCalendar(fixture('google.ics'), window('2026-11-16', '2026-11-27'));
+  it('reads a Google calendar: UTC times, recurring with EXDATE, a moved and a cancelled instance, all-day', async () => {
+    const got = await parseCalendar(fixture('google.ics'), window('2026-11-16', '2026-11-27'));
     expect(brief(got)).toEqual([
       [
         'standup@google.com',
@@ -58,8 +59,8 @@ describe('parsing calendars', () => {
     expect(JSON.stringify(got)).not.toContain('agenda');
   });
 
-  it('keeps wall-clock times of recurring events across a DST change', () => {
-    const got = parseCalendar(fixture('google.ics'), window('2026-10-26', '2026-11-03'));
+  it('keeps wall-clock times of recurring events across a DST change', async () => {
+    const got = await parseCalendar(fixture('google.ics'), window('2026-10-26', '2026-11-03'));
     expect(got.filter((o) => o.uid === 'standup@google.com').map((o) => o.startsAt)).toEqual([
       '2026-10-26T16:30:00Z', // 09:30 PDT
       '2026-10-28T16:30:00Z',
@@ -67,8 +68,8 @@ describe('parsing calendars', () => {
     ]);
   });
 
-  it('reads an iCloud calendar: TZID with VTIMEZONE, a date with no end, floating times', () => {
-    const got = parseCalendar(fixture('icloud.ics'), window('2026-11-16', '2026-11-22'));
+  it('reads an iCloud calendar: TZID with VTIMEZONE, a date with no end, floating times', async () => {
+    const got = await parseCalendar(fixture('icloud.ics'), window('2026-11-16', '2026-11-22'));
     expect(brief(got)).toEqual(
       [
         [
@@ -102,8 +103,8 @@ describe('parsing calendars', () => {
     );
   });
 
-  it('uses the file’s own VTIMEZONE for non-IANA TZIDs (Outlook)', () => {
-    const got = parseCalendar(fixture('outlook.ics'), window('2026-11-16', '2026-11-22'));
+  it('uses the file’s own VTIMEZONE for non-IANA TZIDs (Outlook)', async () => {
+    const got = await parseCalendar(fixture('outlook.ics'), window('2026-11-16', '2026-11-22'));
     expect(brief(got)).toEqual([
       [
         '040000008200E00074C5B7101A82E0080000000',
@@ -116,15 +117,15 @@ describe('parsing calendars', () => {
     ]);
   });
 
-  it('refuses text that is not a calendar', () => {
+  it('refuses text that is not a calendar', async () => {
     for (const text of ['<html>Sign in</html>', '', 'BEGIN:VCARD\r\nEND:VCARD\r\n']) {
-      expect(() => parseCalendar(text, window('2026-11-16', '2026-11-22'))).toThrow(
+      await expect(parseCalendar(text, window('2026-11-16', '2026-11-22'))).rejects.toThrow(
         CalendarFetchError,
       );
     }
   });
 
-  it('caps how many occurrences one calendar can produce', () => {
+  it('caps how many occurrences one calendar can produce', async () => {
     const many = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
@@ -139,13 +140,13 @@ describe('parsing calendars', () => {
       ]).flat(),
       'END:VCALENDAR',
     ].join('\r\n');
-    expect(() => parseCalendar(many, window('2026-11-01', '2026-11-30'))).toThrow(
+    await expect(parseCalendar(many, window('2026-11-01', '2026-11-30'))).rejects.toThrow(
       expect.objectContaining({ code: 'too_many_events' }),
     );
     expect(MAX_OCCURRENCES).toBe(5000);
   });
 
-  it('gives events without a UID a stable one, and cleans titles', () => {
+  it('gives events without a UID a stable one, and cleans titles', async () => {
     const text = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
@@ -159,10 +160,81 @@ describe('parsing calendars', () => {
       'END:VEVENT',
       'END:VCALENDAR',
     ].join('\r\n');
-    const a = parseCalendar(text, window('2026-11-16', '2026-11-22'));
-    const b = parseCalendar(text, window('2026-11-16', '2026-11-22'));
+    const a = await parseCalendar(text, window('2026-11-16', '2026-11-22'));
+    const b = await parseCalendar(text, window('2026-11-16', '2026-11-22'));
     expect(a.map((o) => o.title)).toEqual(['Lunch with Sam', 'Busy']);
     expect(a[0]?.uid).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(a.map((o) => o.uid)).toEqual(b.map((o) => o.uid));
+  });
+
+  describe('hostile files', () => {
+    const refusedFast = async (name: string) => {
+      const started = performance.now();
+      const outcome = await parseCalendar(fixture(name), window('2026-11-16', '2027-02-15')).then(
+        () => 'parsed',
+        (error: { code?: string }) => error.code,
+      );
+      return { name, outcome, fast: performance.now() - started < 3000 };
+    };
+
+    it.each([
+      // One impossible rule: ical.js looks for February 30th for ever inside a single step.
+      'hostile-impossible-rule.ics',
+      // A VTIMEZONE that changes every minute since 1601, expanded on the first time it converts.
+      'hostile-minutely-timezone.ics',
+      // Twenty every-second series from 2000: each stays within its own step limit.
+      'hostile-secondly.ics',
+    ])('refuses %s as too complex, within 3 seconds', async (name) => {
+      expect(await refusedFast(name)).toEqual({ name, outcome: 'too_complex', fast: true });
+    });
+
+    it('stops a parse that runs past the deadline, and the next one still works', async () => {
+      await expect(
+        parseCalendar(fixture('hostile-secondly.ics'), window('2026-11-16', '2026-11-22'), {
+          deadlineMs: 50,
+        }),
+      ).rejects.toThrow(expect.objectContaining({ code: 'too_complex' }));
+      expect(
+        await parseCalendar(fixture('outlook.ics'), window('2026-11-16', '2026-11-22')),
+      ).toHaveLength(1);
+    });
+
+    it('keeps the step budget inside ical.js, even when parsing in this thread', () => {
+      expect(() =>
+        parseIcs(fixture('hostile-impossible-rule.ics'), window('2026-11-16', '2027-02-15')),
+      ).toThrow(expect.objectContaining({ code: 'too_complex' }));
+      expect(MAX_TOTAL_STEPS).toBe(150_000);
+    });
+
+    it('still reads a large real-looking calendar well within the budget', async () => {
+      // Forty series: ten daily for three years, twenty weekdays for seven, ten monthly for ten.
+      const series = (uid: string, start: string, rule: string) => [
+        'BEGIN:VEVENT',
+        `UID:${uid}`,
+        `DTSTART;TZID=America/New_York:${start}`,
+        `DTEND;TZID=America/New_York:${start.slice(0, 9)}${String(Number(start.slice(9, 11)) + 1).padStart(2, '0')}0000`,
+        `RRULE:${rule}`,
+        'SUMMARY:Series',
+        'END:VEVENT',
+      ];
+      const text = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        ...Array.from({ length: 10 }, (_, i) => series(`d${i}`, '20231106T090000', 'FREQ=DAILY')),
+        ...Array.from({ length: 20 }, (_, i) =>
+          series(`w${i}`, '20191104T100000', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'),
+        ),
+        ...Array.from({ length: 10 }, (_, i) =>
+          series(`m${i}`, '20161101T110000', 'FREQ=MONTHLY;BYMONTHDAY=1'),
+        ),
+      ]
+        .flat()
+        .concat('END:VCALENDAR')
+        .join('\r\n');
+      const started = performance.now();
+      const got = await parseCalendar(text, window('2026-11-16', '2026-11-23'));
+      expect(got).toHaveLength(10 * 7 + 20 * 5 + 0);
+      expect(performance.now() - started).toBeLessThan(3000);
+    });
   });
 });
