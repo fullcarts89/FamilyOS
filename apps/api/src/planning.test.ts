@@ -104,6 +104,21 @@ describe.skipIf(!db)('planning: decisions, meals, groceries, contacts', () => {
       });
     });
 
+    it("shows the other adult's votes and settled decisions in their partner's activity", async () => {
+      const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      type Line = { action: string; title: string; actorMemberId: string };
+      const lines = async (token: string) =>
+        (await json<{ activity: Line[] }>(await call(`/activity?since=${since}`, { token })))
+          .activity;
+      const mine = (await lines(owner)).filter((a) => a.action.startsWith('decision.'));
+      expect(mine.map((a) => [a.action, a.title, a.actorMemberId])).toEqual([
+        ['decision.decided', 'Which preschool for June next fall?', h.adult.id],
+        ['decision.voted', 'Which preschool for June next fall?', h.adult.id],
+        ['decision.voted', 'Which preschool for June next fall?', h.adult.id],
+      ]);
+      // Decisions are the adults': a caregiver's activity has none.
+      expect((await lines(caregiver)).some((a) => a.action.startsWith('decision.'))).toBe(false);
+    });
     it('lets an adult make the call, checks versions and options', async () => {
       const d = await create({
         question: 'Holiday at whose parents?',

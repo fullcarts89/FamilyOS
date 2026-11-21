@@ -18,6 +18,8 @@ const SOURCE_ACTIONS = [
   'event.cover_requested',
   'event.cover_accepted',
   'event.cover_declined',
+  'decision.voted',
+  'decision.decided',
   'member.child_added',
   'member.pet_added',
   'member.joined',
@@ -34,6 +36,8 @@ export type ActivityAction =
   | 'event.cover_requested'
   | 'event.cover_accepted'
   | 'event.cover_declined'
+  | 'decision.voted'
+  | 'decision.decided'
   | 'member.added';
 
 /** Cover request audit actions and the activity line each becomes. */
@@ -49,8 +53,8 @@ const str = (value: unknown) => (typeof value === 'string' ? value : null);
 
 /**
  * What the household did recently (GET /activity?since=ISO): completions, assignments, turns
- * swapped, covers and cover requests (asked, accepted, declined), and new members, newest
- * first, from the audit trail. Titles come from the
+ * swapped, covers and cover requests (asked, accepted, declined), decisions voted on and
+ * settled, and new members, newest first, from the audit trail. Titles come from the
  * items as they are now, read under the caller's row-level security, so a private item's
  * activity never shows to anyone who can't see the item. Nothing is taken from audit payloads
  * except IDs and statuses. The caller's own actions are left out unless `includeMine=true`.
@@ -105,6 +109,7 @@ export function activityRoutes(deps: Deps) {
     const itemIds = ids('work_item');
     const eventIds = ids('event');
     const memberIds = ids('member');
+    const decisionIds = ids('decision');
     // Read under row-level security: private items the caller can't see are simply absent.
     const items = itemIds.length
       ? await trx
@@ -120,6 +125,15 @@ export function activityRoutes(deps: Deps) {
           .select(['id', 'title'])
           .where('household_id', '=', me.householdId)
           .where('id', 'in', eventIds)
+          .execute()
+      : [];
+    // Adults only (row-level security): a caregiver's activity has no decisions.
+    const decisions = decisionIds.length
+      ? await trx
+          .selectFrom('app.decision')
+          .select(['id', 'question'])
+          .where('household_id', '=', me.householdId)
+          .where('id', 'in', decisionIds)
           .execute()
       : [];
     const members = memberIds.length
@@ -171,6 +185,11 @@ export function activityRoutes(deps: Deps) {
         title = event.title;
         // Who was asked.
         memberId = str(payload.askedMemberId);
+      } else if (row.entity_type === 'decision') {
+        const decision = decisions.find((d) => d.id === row.entity_id);
+        if (!decision) continue;
+        action = row.action === 'decision.decided' ? 'decision.decided' : 'decision.voted';
+        title = decision.question;
       } else if (row.entity_type === 'member') {
         const member = members.find((m) => m.id === row.entity_id);
         if (!member) continue;
