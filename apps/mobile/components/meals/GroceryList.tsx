@@ -163,7 +163,7 @@ export function GroceryList({
                 />
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={done ? `Uncheck ${item.name}` : `Check off ${item.name}`}
+                  accessibilityLabel={`${done ? 'Uncheck' : 'Check off'} ${item.name}${item.detail ? `, ${item.detail}` : ''}${done && by && !by.isMe ? `, in ${by.name}’s cart` : ''}`}
                   onPress={() => onToggle(item)}
                   style={styles.itemText}
                 >

@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { Pause, Play, Plus, Repeat2 } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Button, type PressState } from '../../design/Button';
+import { Button, HitArea, hitSlopFor, type PressState } from '../../design/Button';
 import { EmptyState } from '../../design/EmptyState';
 import { Hatch } from '../../design/Hatch';
 import { requestWidgetRefresh } from '../../native/WidgetSync';
@@ -20,7 +20,8 @@ import {
   type RoutineListEntry,
   type WorkItem,
 } from '../../lib/api';
-import { relativeDay } from '../../lib/dates';
+import { readableOn } from '../../design/contrast';
+import { friendlyTimes, relativeDay } from '../../lib/dates';
 import { useHousehold } from '../../lib/household';
 import { usePeople, type Person } from '../../lib/people';
 import { DONE, isDone } from '../../lib/tasks';
@@ -326,13 +327,20 @@ function RoutineRing({
           onPress={() => router.push({ pathname: '/routine/[id]', params: { id: entry.id } })}
         >
           {(s: PressState) => (
-            <Text variant="h3" style={[styles.title, s.hovered && styles.underline]}>
-              {entry.title}
-            </Text>
+            <>
+              <HitArea slop={TITLE_SLOP} />
+              <Text variant="h3" style={[styles.title, s.hovered && styles.underline]}>
+                {entry.title}
+              </Text>
+            </>
           )}
         </Pressable>
         <Text variant="meta" tone="muted">
-          <Text variant="meta" color={turn?.color ?? color.ink} style={styles.whose}>
+          <Text
+            variant="meta"
+            color={turn ? readableOn(turn.color, color.ground) : color.ink}
+            style={styles.whose}
+          >
             {whose}
           </Text>
           {' · '}
@@ -340,13 +348,27 @@ function RoutineRing({
         </Text>
         <Text variant="small" tone="muted" numberOfLines={2}>
           {after ? `Then ${after.isMe ? 'you' : after.name} · ` : ''}
-          {entry.summary}
+          {friendlyTimes(entry.summary)}
           {people.byId(entry.subjectMemberId)
             ? ` · for ${people.byId(entry.subjectMemberId)?.name}`
             : ''}
         </Text>
         {history.length > 0 ? (
-          <View style={styles.history} accessibilityLabel="Recent turns">
+          <View
+            style={styles.history}
+            role="img"
+            accessibilityLabel={`Recent turns: ${history
+              .map((h) => {
+                const by = people.byId(h.completedByMemberId ?? h.ownerMemberId);
+                const who = by ? (by.isMe ? 'you' : by.name) : 'anyone';
+                return isDone(h)
+                  ? `${who}, done`
+                  : (h.occurrenceOn ?? today) < today
+                    ? `${who}, missed`
+                    : `${who}, open`;
+              })
+              .join('; ')}`}
+          >
             {history.map((h) => {
               const by = people.byId(h.completedByMemberId ?? h.ownerMemberId);
               const c = by?.color ?? color.faint;
@@ -406,6 +428,7 @@ function RoutineRing({
                 onPress={pause}
                 style={(s: PressState) => [styles.pause, s.hovered && styles.pauseHover]}
               >
+                <HitArea slop={hitSlopFor(34)} />
                 <Pause size={15} strokeWidth={2.2} color={color.muted} />
               </Pressable>
             </>
@@ -415,6 +438,9 @@ function RoutineRing({
     </View>
   );
 }
+
+/** A title link's text line is short: its tap area reaches 44pt (web). */
+const TITLE_SLOP = { top: 11, bottom: 11, left: 0, right: 0 };
 
 const styles = StyleSheet.create({
   section: { marginTop: 48 },

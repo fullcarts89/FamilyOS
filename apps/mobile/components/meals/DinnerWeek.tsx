@@ -162,10 +162,11 @@ function DinnerRow({
   );
 
   return (
-    <View style={[styles.row, last && styles.rowLast, past && styles.past]}>
+    <View style={[styles.row, last && styles.rowLast]}>
       <View style={styles.main}>
         <View style={styles.day}>
-          <Text style={[styles.dayName, isToday && styles.dayToday]}>
+          {/* Past nights are quieter by color, never by fading the row (it stays readable). */}
+          <Text style={[styles.dayName, isToday && styles.dayToday, past && styles.pastDay]}>
             {isToday ? 'Tonight' : weekdayName(date).slice(0, 3)}
           </Text>
           <Text variant="small" tone="muted">
@@ -250,7 +251,7 @@ const styles = StyleSheet.create({
   },
   row: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: color.hairline, gap: 8 },
   rowLast: { borderBottomWidth: 0 },
-  past: { opacity: 0.55 },
+  pastDay: { color: color.muted },
   main: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   day: { width: 58 },
   dayName: { fontFamily: font.display, fontSize: 17, lineHeight: 21, color: color.ink },

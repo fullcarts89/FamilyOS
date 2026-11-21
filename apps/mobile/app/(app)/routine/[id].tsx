@@ -17,7 +17,7 @@ import { useToast } from '../../../design/Toast';
 import { color } from '../../../design/tokens';
 import { api, errorMessage, type RoutineDetail, type UpcomingOccurrence } from '../../../lib/api';
 import { useCapture } from '../../../lib/capture';
-import { relativeDay, shortDate, weekdayName } from '../../../lib/dates';
+import { friendlyTimes, relativeDay, shortDate, weekdayName } from '../../../lib/dates';
 import { useHousehold } from '../../../lib/household';
 import { goBack } from '../../../lib/navigation';
 import { usePeople, type Person } from '../../../lib/people';
@@ -197,7 +197,7 @@ export default function RoutineScreen() {
             </Text>
             <Text variant="hero">{routine.title}</Text>
             <Text variant="lead" tone="muted">
-              {routine.summary}
+              {friendlyTimes(routine.summary)}
               {rotation.length > 1
                 ? `. Turns: ${rotation.map((p) => (p.isMe ? 'you' : p.name)).join(' → ')}.`
                 : turn

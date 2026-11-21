@@ -195,7 +195,7 @@ export default function Contacts() {
                       <View key={c.id} style={styles.card}>
                         <Pressable
                           accessibilityRole="button"
-                          accessibilityLabel={`${c.name}${roleLine(c) ? `, ${roleLine(c)}` : ''}`}
+                          accessibilityLabel={`${c.name}${roleLine(c) ? `, ${roleLine(c)}` : ''}${forWho ? `, for ${forWho.isMe ? 'you' : forWho.name}` : ''}`}
                           accessibilityHint="Opens the contact"
                           onPress={() => setSheet({ mode: 'view', contact: c })}
                           style={(s: PressState) => [styles.cardMain, s.hovered && styles.hover]}

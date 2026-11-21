@@ -26,7 +26,8 @@ import { useToast } from '../../../design/Toast';
 import { color, font, radius } from '../../../design/tokens';
 import { api, errorMessage, type Routine, type TodayResponse } from '../../../lib/api';
 import { useCapture } from '../../../lib/capture';
-import { clock, relativeDay, shortDate } from '../../../lib/dates';
+import { clock, friendlyTimes, relativeDay, shortDate } from '../../../lib/dates';
+import { parseTime } from '../../../components/rhythm/EventSheet';
 import { useHousehold } from '../../../lib/household';
 import { goBack } from '../../../lib/navigation';
 import { usePeople, type Person } from '../../../lib/people';
@@ -187,8 +188,10 @@ export default function NewRoutine() {
     }
   }, [kind, interval, weekdays, monthlyMode, dayOfMonth, nth, weekday]);
 
-  const timeValue = otherTime.trim() ? otherTime.trim() : time;
-  const timeValid = !timeValue || /^([01]\d|2[0-3]):[0-5]\d$/.test(timeValue);
+  // Typed like the rest of the app ("6:30am", "8pm"); 24-hour ("20:00") works too.
+  const typedTime = otherTime.trim() ? parseTime(otherTime) : null;
+  const timeValue = otherTime.trim() ? typedTime : time;
+  const timeValid = !otherTime.trim() || !!typedTime;
 
   // The same expander the server uses, so the preview is what will happen.
   const preview = useMemo(() => {
@@ -261,7 +264,7 @@ export default function NewRoutine() {
           ...(subjectId && { subjectMemberId: subjectId }),
         },
       });
-      toast.show(`Routine set up: ${routine.title}`, { detail: routine.summary });
+      toast.show(`Routine set up: ${routine.title}`, { detail: friendlyTimes(routine.summary) });
       changed();
       router.replace({ pathname: '/routine/[id]', params: { id: routine.id } });
     } catch (caught) {
@@ -472,17 +475,17 @@ export default function NewRoutine() {
           <TextInput
             value={otherTime}
             onChangeText={setOtherTime}
-            maxLength={5}
-            placeholder="Other, e.g. 06:30"
+            maxLength={8}
+            placeholder="Other, e.g. 6:30am"
             placeholderTextColor={color.faint}
-            accessibilityLabel="Another time, 24-hour, like 06:30"
+            accessibilityLabel="Another time, like 6:30am"
             keyboardType="numbers-and-punctuation"
             style={[styles.timeInput, !timeValid && { borderColor: color.danger }]}
           />
         </View>
         {!timeValid ? (
           <Text variant="meta" tone="danger">
-            Use a 24-hour time like 06:30.
+            Write the time like 6:30am or 8pm.
           </Text>
         ) : null}
       </Group>
@@ -546,7 +549,7 @@ export default function NewRoutine() {
           <View style={styles.previewText}>
             <Text variant="h3">{title.trim() || 'Your routine'}</Text>
             <Text variant="meta" tone="muted">
-              {describeSchedule(rule, timeValid ? timeValue : null)}
+              {friendlyTimes(describeSchedule(rule, timeValid ? timeValue : null))}
             </Text>
           </View>
         </View>

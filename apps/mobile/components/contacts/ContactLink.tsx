@@ -123,7 +123,6 @@ export function ContactLink({
       ) : canEdit ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Link a contact"
           onPress={() => setPicking(true)}
           style={(s: PressState) => [styles.add, s.hovered && styles.addHover]}
         >

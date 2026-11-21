@@ -72,6 +72,17 @@ export function clock(hhmm: string): string {
   return m ? `${hour}:${String(m).padStart(2, '0')}${suffix}` : `${hour}${suffix}`;
 }
 
+/**
+ * A schedule line from the API or the domain ("Every Monday at 20:00") in the app's one time
+ * format: "Every Monday at 8pm".
+ */
+export function friendlyTimes(text: string): string {
+  return text.replace(
+    /\bat ([01]\d|2[0-3]):([0-5]\d)\b/g,
+    (_, h: string, m: string) => `at ${clock(`${h}:${m}`)}`,
+  );
+}
+
 /** The greeting for the household's local hour. */
 export function greetingFor(hour: number): string {
   if (hour < 5) return 'Good evening';
