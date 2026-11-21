@@ -178,7 +178,8 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
       return;
     }
     // Desktop: every step is at least 44px tall, and a step's badge reads at 4.5:1 or better
-    // (the muted ink on white, not the faint ink on the lane).
+    // (the muted ink on a white pill, not the faint ink on the lane). The ratio is checked, not
+    // a fixed colour, so the design tokens can move.
     const steps = maya.getByRole('tablist', { name: 'Chapters' }).getByRole('tab');
     await expect(steps).toHaveCount(6);
     for (let i = 0; i < 6; i++) {
@@ -189,7 +190,8 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
       text: getComputedStyle(el).color,
       ground: getComputedStyle(el.parentElement as Element).backgroundColor,
     }));
-    expect(colors).toEqual({ text: 'rgb(103, 110, 104)', ground: 'rgb(255, 255, 255)' });
+    expect(colors.ground).toBe('rgb(255, 255, 255)');
+    expect(contrastOf(colors.text, colors.ground)).toBeGreaterThanOrEqual(4.5);
   });
 
   test('the plan carries into the week: notes and open decisions on Today, dinners on the Week', async ({
@@ -502,6 +504,19 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
     expect(budget.categories.find((c) => c.category === 'Groceries')?.actual).toBe(903.42);
   });
 });
+
+/** WCAG contrast between two computed colours ("rgb(r, g, b)"). */
+function contrastOf(a: string, b: string): number {
+  const lum = (css: string) => {
+    const [r = 0, g = 0, bl = 0] = (css.match(/\d+(\.\d+)?/g) ?? []).map(Number).map((v) => {
+      const c = v / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [x, y] = [lum(a), lum(b)];
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
 
 interface Decisionish {
   id: string;

@@ -86,7 +86,7 @@ export function ChapterSteps({
               {c.title}
             </Text>
             {s?.badge ? (
-              // On a white pill: the muted text reads at 5.2:1 here (4.4:1 on the lane).
+              // On a white pill, the muted text reads at 6:1 (5.1:1 on the lane around it).
               <View style={styles.badge}>
                 <Text variant="small" tone="muted" numberOfLines={1}>
                   {s.badge}
