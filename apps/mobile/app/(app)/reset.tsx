@@ -1,12 +1,25 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, ArrowRight, Check, Hourglass, Plus, Utensils } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { Pressable, StyleSheet, View, type ScrollView } from 'react-native';
+import {
+  Pressable,
+  Text as RNText,
+  StyleSheet,
+  View,
+  type ScrollView,
+  type StyleProp,
+  type TextStyle,
+} from 'react-native';
 import { DecisionCard } from '../../components/decisions/DecisionCard';
 import { NewDecision } from '../../components/decisions/NewDecision';
 import { DinnerWeek } from '../../components/meals/DinnerWeek';
 import { GroceryAdd, GroceryList } from '../../components/meals/GroceryList';
-import { ChapterHead } from '../../components/reset/ChapterHead';
+import {
+  ChapterFocus,
+  ChapterHead,
+  focusTarget,
+  useChapterFocus,
+} from '../../components/reset/ChapterHead';
 import {
   ChapterSteps,
   ChapterTransition,
@@ -103,6 +116,8 @@ export default function Reset() {
     Number.isInteger(initial) && initial >= OPENING && initial <= DONE ? initial : OPENING,
   );
   const [dir, setDir] = useState<1 | -1>(1);
+  // Set once someone moves between chapters: the new chapter's title takes the focus then.
+  const [moved, setMoved] = useState(false);
   const [play, setPlay] = useState(false);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const [chooser, setChooser] = useState<Occurrence | null>(null);
@@ -130,6 +145,7 @@ export default function Reset() {
   const go = useCallback(
     (i: number) => {
       setDir(i >= step ? 1 : -1);
+      setMoved(true);
       setStep(i);
       router.setParams({ chapter: String(i) });
       scroll.current?.scrollTo({ y: 0, animated: false });
@@ -763,11 +779,11 @@ export default function Reset() {
             {greetingFor(hour)}
             {greetingNames ? `, ${greetingNames}.` : '.'}
           </Text>
-          <Text style={[styles.openingTitle, phone && styles.openingTitlePhone]}>
+          <OpeningTitle style={[styles.openingTitle, phone && styles.openingTitlePhone]}>
             {data.plan?.committedAt
               ? 'This week already has a plan.'
               : `Let’s plan ${range} together.`}
-          </Text>
+          </OpeningTitle>
           <Text variant="lead" tone="muted" style={styles.openingLead}>
             {data.plan?.committedAt
               ? `${people.byId(data.plan.committedByMemberId)?.name ?? 'You'} made it your plan on ${weekdayName(localParts(data.plan.committedAt, timeZone).date)}. Look it over, or change anything that’s moved.`
@@ -1232,9 +1248,11 @@ export default function Reset() {
             )}
           </View>
         ) : null}
-        <ChapterTransition key={step} direction={dir}>
-          {body}
-        </ChapterTransition>
+        <ChapterFocus.Provider value={moved}>
+          <ChapterTransition key={step} direction={dir}>
+            {body}
+          </ChapterTransition>
+        </ChapterFocus.Provider>
       </Page>
       {phone && chapter ? (
         <PhoneChapterBar
@@ -1348,6 +1366,16 @@ export default function Reset() {
   );
 }
 
+/** The opening's title: it takes the focus when you come back to the opening. */
+function OpeningTitle({ style, children }: { style: StyleProp<TextStyle>; children: string }) {
+  const ref = useChapterFocus<ComponentRef<typeof RNText>>();
+  return (
+    <RNText ref={ref} {...focusTarget} style={style}>
+      {children}
+    </RNText>
+  );
+}
+
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   flex: { flex: 1, minWidth: 0 },
@@ -1376,7 +1404,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    minHeight: 40,
+    minHeight: 44,
     paddingLeft: 6,
     paddingRight: 14,
     borderRadius: radius.pill,

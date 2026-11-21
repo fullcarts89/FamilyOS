@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { ArrowRight } from 'lucide-react-native';
-import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import type { ComponentRef, ReactNode } from 'react';
+import { Pressable, StyleSheet, Text as RNText, View } from 'react-native';
 import { Avatar, Either } from '../../design/Avatar';
 import { Button, type PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
@@ -18,6 +18,7 @@ import { currentAdult } from '../../lib/reset';
 import { completionLine, shortWeekday, weekRange } from '../../lib/reset-words';
 import { localParts, timeOf } from '../../lib/rhythm';
 import { dueDate, isOpen } from '../../lib/tasks';
+import { focusTarget, useChapterFocus } from './ChapterHead';
 import { pendingRequest, type WithRequest } from './coordination';
 import { careOccurrences, careWhat } from './Cover';
 import { PlanMoment } from './PlanMoment';
@@ -54,6 +55,7 @@ export function Complete({
   const plan = data.plan;
   const by = people.byId(plan?.committedByMemberId);
   const when = plan?.committedAt ? localParts(plan.committedAt, timeZone) : null;
+  const titleRef = useChapterFocus<ComponentRef<typeof RNText>>();
 
   // Decided in the last two weeks: the look back's and anything settled since.
   const decided = decisions.filter(
@@ -111,9 +113,14 @@ export function Complete({
             <Text variant="kicker" tone="muted">
               {weekRange(data.week.start, data.week.end)}
             </Text>
-            <Text style={[styles.title, phone && styles.titlePhone]} accessibilityRole="header">
+            <RNText
+              ref={titleRef}
+              {...focusTarget}
+              style={[styles.title, phone && styles.titlePhone]}
+              accessibilityRole="header"
+            >
               Your week has a plan.
-            </Text>
+            </RNText>
             <Text variant="lead" style={styles.line}>
               {completionLine(data.unresolved)}
             </Text>

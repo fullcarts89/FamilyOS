@@ -146,6 +146,52 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
     expect(items.map((i) => i.name)).toContain('Tortillas');
   });
 
+  test('Weekly Reset chapters: the new chapter’s title takes the focus; steps are 44px', async ({
+    app,
+    maya,
+  }) => {
+    await app.nav(maya, 'Reset');
+    await maya.getByRole('button', { name: 'Begin with a look back' }).click();
+    const look = maya.getByRole('heading', { name: 'What we got done together' });
+    await expect(look).toBeFocused();
+    const titles: [string, string][] = [
+      ['Loose ends', 'What carries into the week?'],
+      ['Decide together', 'What needs both of you?'],
+      ['Cover June', 'Who has June, and when?'],
+      ['Dinners', 'What’s for dinner this week?'],
+      ['Our plan', 'Make it our plan'],
+    ];
+    for (const [chapter, title] of titles) {
+      await (
+        app.phone
+          ? maya.getByRole('button', { name: `Next: ${chapter}` })
+          : maya.getByRole('button', { name: chapter, exact: true })
+      ).click();
+      await expect(maya.getByRole('heading', { name: title })).toBeFocused();
+    }
+    if (app.phone) {
+      // The chapter bar's buttons are thumb-sized.
+      for (const name of ['Previous chapter', 'Capture something']) {
+        const box = await maya.getByRole('button', { name }).last().boundingBox();
+        expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+      return;
+    }
+    // Desktop: every step is at least 44px tall, and a step's badge reads at 4.5:1 or better
+    // (the muted ink on white, not the faint ink on the lane).
+    const steps = maya.getByRole('tablist', { name: 'Chapters' }).getByRole('tab');
+    await expect(steps).toHaveCount(6);
+    for (let i = 0; i < 6; i++) {
+      expect((await steps.nth(i).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    const badge = steps.filter({ hasText: /open$/ }).getByText(/open$/);
+    const colors = await badge.evaluate((el) => ({
+      text: getComputedStyle(el).color,
+      ground: getComputedStyle(el.parentElement as Element).backgroundColor,
+    }));
+    expect(colors).toEqual({ text: 'rgb(103, 110, 104)', ground: 'rgb(255, 255, 255)' });
+  });
+
   test('the plan carries into the week: notes and open decisions on Today, dinners on the Week', async ({
     app,
     maya,

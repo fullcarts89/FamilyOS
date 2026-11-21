@@ -86,9 +86,12 @@ export function ChapterSteps({
               {c.title}
             </Text>
             {s?.badge ? (
-              <Text variant="small" tone="faint" numberOfLines={1}>
-                {s.badge}
-              </Text>
+              // On a white pill: the muted text reads at 5.2:1 here (4.4:1 on the lane).
+              <View style={styles.badge}>
+                <Text variant="small" tone="muted" numberOfLines={1}>
+                  {s.badge}
+                </Text>
+              </View>
             ) : null}
           </Pressable>
         );
@@ -157,7 +160,7 @@ export function PhoneChapterBar({
           icon={ArrowLeft}
           label="Previous chapter"
           variant="outline"
-          size={42}
+          size={44}
           disabled={!onBack}
           onPress={() => onBack?.()}
         />
@@ -173,14 +176,14 @@ export function PhoneChapterBar({
           icon={Plus}
           label="Capture something"
           variant="outline"
-          size={42}
+          size={44}
           onPress={onCapture}
         />
         <IconButton
           icon={ArrowRight}
           label={nextLabel}
           variant="ink"
-          size={42}
+          size={44}
           disabled={!onNext}
           onPress={() => onNext?.()}
         />
@@ -241,7 +244,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    height: 40,
+    minHeight: 44,
     paddingLeft: 6,
     paddingRight: 14,
     borderRadius: radius.pill,
@@ -262,6 +265,12 @@ const styles = StyleSheet.create({
   nDone: { backgroundColor: color.muted, borderColor: color.muted },
   nPast: { borderColor: color.muted },
   nText: { fontSize: 12 },
+  badge: {
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+    backgroundColor: color.surface,
+  },
   progress: { gap: 6 },
   segments: { flexDirection: 'row', gap: 4 },
   segment: { flex: 1, height: 4, borderRadius: 2, backgroundColor: color.line2 },
@@ -276,7 +285,7 @@ const styles = StyleSheet.create({
     borderTopColor: color.hairline,
   },
   bar: {
-    height: 58,
+    height: 60,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
