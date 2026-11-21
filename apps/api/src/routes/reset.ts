@@ -3,6 +3,7 @@ import {
   buildLookBack,
   buildWeekRhythm,
   defaultResetWeek,
+  dueThrough,
   expandEvents,
   isAssignableRole,
   isCalendarRule,
@@ -428,12 +429,12 @@ async function assembleReset(
   const unresolved = unresolvedForWeek({
     week: weekRhythm,
     openDecisions: openDecisions.map((d) => ({ id: d.id, dueOn: d.dueOn })),
-    // Only what is actually late counts as unresolved; something due today isn't yet.
-    overdue: unfinished.filter((i) =>
-      i.dueOn !== null
-        ? i.dueOn < today
-        : i.dueAt !== null && i.dueAt < instantOf(today, timezone).toISOString(),
-    ),
+    // Only what is actually late counts as unresolved; something due today isn't yet (nor a
+    // time block still under way past midnight).
+    overdue: unfinished.filter((i) => {
+      const through = dueThrough(i, timezone)?.toString();
+      return through !== undefined && through < today;
+    }),
     timeZone: timezone,
   });
 
