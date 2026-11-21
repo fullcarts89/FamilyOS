@@ -1,6 +1,7 @@
 import { Temporal } from 'temporal-polyfill';
 import { describe, expect, it } from 'vitest';
 import { expandEvents, type EventSeries } from './events';
+import type { MemberRole } from './permissions';
 import type { CalendarRule } from './recurrence';
 import { buildRhythm, formatClock, formatDay, type RhythmMember, type RhythmTask } from './rhythm';
 
@@ -274,6 +275,27 @@ describe('heads-ups', () => {
       ['care_unassigned', 'Nobody is down for June’s pickup at 5:30 PM.'],
     ]);
     expect(view.handoffs[0]?.to).toEqual({ kind: 'nobody' });
+  });
+
+  it('never counts a role it doesn’t know as the adult on a care event', () => {
+    // A role a later release adds, seen after a rollback: not cared for, and not an adult either.
+    const visitor: RhythmMember = {
+      id: 'sam',
+      role: 'guest' as string as MemberRole,
+      displayName: 'Sam',
+    };
+    const withVisitor = { ...pickUp, memberIds: ['sam', 'june'] };
+    const view = buildRhythm({
+      date: DATE,
+      today: DATE,
+      timeZone: LA,
+      members: [...members, visitor],
+      occurrences: expandEvents([withVisitor], { from: DATE, to: DATE, timeZone: LA }, caredFor),
+      tasks: [],
+    });
+    expect(view.headsUps.map((h) => [h.type, h.text])).toEqual([
+      ['care_unassigned', 'Nobody is down for June’s pickup at 5:30 PM.'],
+    ]);
   });
 
   it('flags routine occurrences still open after their day, and only those', () => {

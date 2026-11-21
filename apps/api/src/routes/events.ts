@@ -6,6 +6,7 @@ import {
   addDays,
   describeSchedule,
   expandEvents,
+  isAssignableRole,
   isCaredFor,
   isOccurrenceDate,
   isValidEventRule,
@@ -697,7 +698,7 @@ export function eventRoutes(deps: Deps) {
     await locate(trx, member, eventId, date);
     if (body.memberId) {
       const role = (await memberRoles(trx, member.householdId)).get(body.memberId);
-      if (role === undefined || isCaredFor(role)) throw new ApiError(422, 'invalid_cover');
+      if (role === undefined || !isAssignableRole(role)) throw new ApiError(422, 'invalid_cover');
       if (body.memberId !== member.id) throw new ApiError(422, 'use_request');
     }
     await trx

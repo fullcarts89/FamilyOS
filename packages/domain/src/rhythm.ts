@@ -1,6 +1,6 @@
 import { Temporal } from 'temporal-polyfill';
 import { startOfLocalDay, type CareAction, type EventOccurrence } from './events';
-import { isCaredFor, type MemberRole } from './permissions';
+import { isAssignableRole, isCaredFor, type MemberRole } from './permissions';
 import { localDueDate } from './today';
 import type { WorkItemStatus } from './work-item';
 
@@ -243,7 +243,7 @@ export function buildRhythm<T extends RhythmTask, O extends EventOccurrence = Ev
   const adultsOf = (o: EventOccurrence) =>
     o.memberIds.filter((id) => {
       const m = byId.get(id);
-      return m !== undefined && !isCaredFor(m.role);
+      return m !== undefined && isAssignableRole(m.role);
     });
   const dayStart = startOfLocalDay(date, timeZone).toString();
   const dayEnd = startOfLocalDay(

@@ -57,6 +57,9 @@ const ROLE_LABEL: Record<Member['role'], string> = {
   child: 'Child',
   pet: 'Pet',
 };
+// A role this version doesn't know (one a later release adds, say) reads "Member", never "Adult".
+const roleLabel = (role: string) =>
+  (ROLE_LABEL as Partial<Record<string, string>>)[role] ?? 'Member';
 
 // Household: the people and pets with their colors, inviting a partner, the calendars FamilyOS
 // reads, and your own settings (haptics, sound, notifications and quiet hours).
@@ -146,7 +149,7 @@ export default function HouseholdScreen() {
   const memberRow = (p: Person, i: number, all: Person[]) => {
     const mayEdit = p.caredFor || p.isMe || household.role === 'owner';
     // What the row shows under the name: the role (a pet's species), and their note.
-    const detail = [p.role === 'pet' ? (p.species ?? 'Pet') : ROLE_LABEL[p.role], p.note].filter(
+    const detail = [p.role === 'pet' ? (p.species ?? 'Pet') : roleLabel(p.role), p.note].filter(
       Boolean,
     );
     return (
@@ -184,7 +187,9 @@ export default function HouseholdScreen() {
     );
   };
 
-  const adults = people.all.filter((p) => !p.caredFor);
+  const adults = people.all.filter((p) => p.assignable);
+  // Anyone else (a role this version doesn't know): still listed, never among the adults.
+  const others = people.all.filter((p) => !p.assignable && !p.caredFor);
   const children = people.all.filter((p) => p.role === 'child');
   const pets = people.all.filter((p) => p.role === 'pet');
 
@@ -226,6 +231,12 @@ export default function HouseholdScreen() {
           disabled={!mayAdd}
         />
       )}
+      {others.length ? (
+        <>
+          <GroupLabel label="Others" />
+          {others.map(memberRow)}
+        </>
+      ) : null}
       <Text variant="meta" tone="muted" style={styles.note}>
         Each color marks what’s theirs across the app: lanes, tasks and the week. Tap someone to
         change it.
@@ -291,7 +302,7 @@ export default function HouseholdScreen() {
             {pending.map((i) => (
               <View key={i.id} style={styles.pendingRow}>
                 <Text variant="body" style={styles.pendingText}>
-                  {i.email} · {ROLE_LABEL[i.role]}
+                  {i.email} · {roleLabel(i.role)}
                 </Text>
                 <Button
                   title="Cancel invite"

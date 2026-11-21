@@ -4,6 +4,7 @@ import {
   buildWeekRhythm,
   defaultResetWeek,
   expandEvents,
+  isAssignableRole,
   isCalendarRule,
   isWeekStart,
   localDateOf,
@@ -237,9 +238,11 @@ async function assembleReset(
     { from: lookFrom, to: lookTo, timeZone: timezone },
     caredForIn(roles),
   ).filter((o) => o.careMemberId !== null && !o.skipped);
+  // Someone with an account (owner, adult or caregiver): an allow-list, so a role this code
+  // doesn't know never counts as having it covered.
   const isAdult = (id: string) => {
     const role = roles.get(id);
-    return role !== undefined && role !== 'child' && role !== 'pet';
+    return role !== undefined && isAssignableRole(role);
   };
   const careMembers = [...new Set(careBefore.map((o) => o.careMemberId ?? ''))];
 

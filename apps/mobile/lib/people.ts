@@ -1,3 +1,4 @@
+import { isAssignableRole } from '@familyos/domain';
 import { useMemo } from 'react';
 import { color as tokens, memberPalette, tint } from '../design/tokens';
 import type { Member } from './api';
@@ -41,7 +42,7 @@ export function toPeople(members: Member[], meId: string | null): Person[] {
       tint: tint(c),
       role: m.role,
       isMe: m.id === meId,
-      assignable: m.role !== 'child' && m.role !== 'pet',
+      assignable: isAssignableRole(m.role),
       caredFor: m.role === 'child' || m.role === 'pet',
       species: m.species ?? null,
       note: m.note ?? null,

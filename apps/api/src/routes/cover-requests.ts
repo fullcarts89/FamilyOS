@@ -1,4 +1,4 @@
-import { isCaredFor, isOccurrenceDate, localDateOf } from '@familyos/domain';
+import { isAssignableRole, isOccurrenceDate, localDateOf } from '@familyos/domain';
 import type { CoverRequestStatus, Database } from '@familyos/db';
 import { Hono } from 'hono';
 import type { Transaction } from 'kysely';
@@ -123,7 +123,7 @@ export async function requestCover(
 ): Promise<{ coverRequest: CoverRequestView; created: boolean }> {
   if (input.askedMemberId === member.id) throw new ApiError(422, 'cannot_ask_self');
   const role = (await memberRoles(trx, member.householdId)).get(input.askedMemberId);
-  if (role === undefined || isCaredFor(role)) throw new ApiError(422, 'invalid_cover');
+  if (role === undefined || !isAssignableRole(role)) throw new ApiError(422, 'invalid_cover');
   const exception = await trx
     .selectFrom('app.event_exception')
     .select(['kind', 'cover_member_id'])

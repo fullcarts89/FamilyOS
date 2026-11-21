@@ -11,7 +11,7 @@ import {
   type SourceRef,
 } from '@familyos/calendar';
 import type { Database } from '@familyos/db';
-import { can, isCaredFor } from '@familyos/domain';
+import { can, isAssignableRole } from '@familyos/domain';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import type { Transaction } from 'kysely';
@@ -98,7 +98,7 @@ async function assertOwner(trx: Transaction<Database>, householdId: string, memb
     .where('household_id', '=', householdId)
     .where('status', '=', 'active')
     .executeTakeFirst();
-  if (!member || isCaredFor(member.role)) throw new ApiError(422, 'invalid_member');
+  if (!member || !isAssignableRole(member.role)) throw new ApiError(422, 'invalid_member');
 }
 
 /** Fetches and parses an address, or answers 422 with the fixed reason. Call with no transaction open. */
