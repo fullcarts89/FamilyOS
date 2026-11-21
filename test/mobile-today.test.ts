@@ -219,9 +219,10 @@ describe('readable color', () => {
     expect(readableOn('#2F6FB3')).toBe('#2F6FB3');
   });
 
-  it('muted text on a lane or a tint keeps its coarser shade (5.01:1 on the lane)', () => {
+  it('muted text on a lane or a tint reads at 4.5:1 (muted itself already does on the lane)', () => {
     const onLane = textShade(color.muted, color.lane);
-    expect(contrast(onLane, color.lane)).toBeCloseTo(5.01, 2);
+    expect(onLane).toBe(color.muted);
+    expect(contrast(onLane, color.lane)).toBeGreaterThanOrEqual(4.5);
     for (const hex of choosablePalette) {
       const bg = tint(hex, 0.16);
       expect(contrast(textShade(color.muted, bg), bg), hex).toBeGreaterThanOrEqual(4.5);

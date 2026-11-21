@@ -8,7 +8,7 @@ import { DayTimeline } from '../../components/rhythm/DayTimeline';
 import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet';
 import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
 import { NextUp, dayEntries } from '../../components/rhythm/NextUp';
-import { allDayOn, type LateCounts } from '../../components/rhythm/today-model';
+import { allDayOn, readableOn, type LateCounts } from '../../components/rhythm/today-model';
 import { WhileAway } from '../../components/rhythm/WhileAway';
 import { SinceLastLooked } from '../../components/rhythm/SinceLastLooked';
 import { WeekStrip } from '../../components/rhythm/WeekStrip';
@@ -277,7 +277,10 @@ export default function Today() {
         {head ? (
           <Text style={[styles.headline, phone && styles.headlinePhone]}>
             {head.title.map((p, i) => (
-              <Span key={i} style={p.color ? { color: p.color } : undefined}>
+              <Span
+                key={i}
+                style={p.color ? { color: readableOn(p.color, color.ground) } : undefined}
+              >
                 {p.text}
               </Span>
             ))}

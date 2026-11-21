@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { hitSlopFor, type PressState } from './Button';
+import { solidFill, textOn } from './contrast';
 import { Text } from './Text';
 import { color, radius } from './tokens';
 
@@ -28,7 +29,9 @@ export function Chip({
   accessibilityLabel?: string;
   disabled?: boolean;
 }) {
-  const on = accent ?? color.ink;
+  // A person's color behind white or ink text: deepened just enough to read.
+  const on = accent ? solidFill(accent) : color.ink;
+  const fg = selected ? textOn(on) : color.ink;
   return (
     <Pressable
       accessibilityRole="button"
@@ -50,8 +53,8 @@ export function Chip({
       ]}
     >
       {leading}
-      {Icon ? <Icon size={15} strokeWidth={2.2} color={selected ? color.onInk : color.ink} /> : null}
-      <Text variant="label" style={styles.text} color={selected ? color.onInk : color.ink}>
+      {Icon ? <Icon size={15} strokeWidth={2.2} color={fg} /> : null}
+      <Text variant="label" style={styles.text} color={fg}>
         {label}
       </Text>
     </Pressable>

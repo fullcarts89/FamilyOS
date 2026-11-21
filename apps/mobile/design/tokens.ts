@@ -10,8 +10,10 @@ export const color = {
   lane: '#EFECE5',
   ink: '#17201B',
   inkHover: '#2B3731',
-  muted: '#676E68',
-  faint: '#9BA09A',
+  /** Secondary text. Reads at 4.5:1 or better on the ground, surface and lane fills. */
+  muted: '#5E655F',
+  /** Quiet text (placeholders, timestamps): a step lighter than muted, still 4.5:1 on every fill. */
+  faint: '#646A65',
   hairline: '#E6E2D9',
   line2: '#D6D1C6',
   scrim: 'rgba(23, 32, 27, 0.32)',

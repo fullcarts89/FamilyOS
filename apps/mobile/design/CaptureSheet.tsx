@@ -176,7 +176,7 @@ export function CaptureSheet({
         value={raw}
         onChangeText={setRaw}
         placeholder="Call the plumber tomorrow"
-        placeholderTextColor="#C4C6BF"
+        placeholderTextColor={color.faint}
         accessibilityLabel="What needs doing?"
         accessibilityHint="Type @ and a name, a day like tomorrow, or # and a project"
         maxLength={500}

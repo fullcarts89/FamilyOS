@@ -1,5 +1,6 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import type { Person } from '../lib/people';
+import { solidFill, textOn } from './contrast';
 import { Text } from './Text';
 import { color, font } from './tokens';
 
@@ -17,20 +18,23 @@ export function Avatar({
   style?: StyleProp<ViewStyle>;
 }) {
   if (!person) return <Either size={size} />;
+  // The initial reads on every member color: the color deepened when white or ink wouldn't.
+  const fill = solidFill(person.color);
   return (
     <View
       aria-hidden
       importantForAccessibility="no-hide-descendants"
       style={[
         styles.avatar,
-        { width: size, height: size, backgroundColor: person.color },
+        { width: size, height: size, backgroundColor: fill },
         ring && { borderWidth: 2, borderColor: color.ground },
         style,
       ]}
     >
       <Text
         style={{ fontFamily: font.display, fontSize: size * 0.44, lineHeight: size * 0.6 }}
-        color={color.onInk}
+        color={textOn(fill)}
+        maxFontSizeMultiplier={1}
       >
         {person.initial}
       </Text>
