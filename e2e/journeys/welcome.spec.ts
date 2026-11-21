@@ -1,6 +1,6 @@
 import { BASE_URL } from '../support/env';
 import { expect, greeting, test } from '../support/fixtures';
-import { e2eEmail } from '../support/stack';
+import { createOwnerInvite, e2eEmail } from '../support/stack';
 
 test.describe('An invited adult’s first look', () => {
   test('one welcome screen after joining, shown once', async ({ app, maya }) => {
@@ -37,5 +37,57 @@ test.describe('An invited adult’s first look', () => {
     await robin.goto('/welcome');
     await expect(greeting(robin, 'Robin')).toBeVisible();
     await expect(robin.getByText('Where capture is')).toHaveCount(0);
+  });
+
+  test('a new household’s first owner goes straight to setup, never the partner welcome', async ({
+    app,
+  }) => {
+    const email = e2eEmail('ada');
+    const password = 'tea on the back step 17';
+    const link = await createOwnerInvite({ name: 'The Okoro household', email });
+
+    const ada = await app.open(link);
+    // Watch the whole visit: the partner welcome must never appear, not even for a moment.
+    await ada.evaluate(() => {
+      const w = window as unknown as { __sawWelcome: boolean };
+      w.__sawWelcome = false;
+      const look = () => {
+        if (/Where capture is|What’s shared/.test(document.body.innerText)) w.__sawWelcome = true;
+      };
+      new MutationObserver(look).observe(document.body, { childList: true, subtree: true });
+    });
+    await expect(ada.getByRole('heading', { name: 'You’re invited' })).toBeVisible();
+    await ada.getByLabel('Your name').fill('Ada');
+    await ada.getByLabel('Email').fill(email);
+    await ada.getByLabel('Password', { exact: true }).fill(password);
+    await ada.getByLabel('Password again').fill(password);
+    await ada.getByRole('button', { name: 'Join the household' }).click();
+
+    // The guided setup, as before the welcome existed.
+    await expect(
+      ada.getByRole('heading', { name: 'Hi Ada. Let’s set up your household.' }),
+    ).toBeVisible();
+    await expect(ada).toHaveURL(/\/setup$/);
+    await ada.screenshot({ path: test.info().outputPath('first-owner-setup.png') });
+    await ada.getByRole('button', { name: 'Skip setup' }).click();
+    await expect(greeting(ada, 'Ada')).toBeVisible();
+
+    const saw = () =>
+      ada.evaluate(() => (window as unknown as { __sawWelcome?: boolean }).__sawWelcome);
+    expect(await saw(), 'the partner welcome showed on the way to setup').toBe(false);
+
+    // Opening the welcome's address directly leads to Today for an owner, without a flash of it.
+    await ada.addInitScript(() => {
+      const w = window as unknown as { __sawWelcome: boolean };
+      w.__sawWelcome = false;
+      new MutationObserver(() => {
+        if (/Where capture is|What’s shared/.test(document.body?.innerText ?? ''))
+          w.__sawWelcome = true;
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await ada.goto('/welcome');
+    await expect(greeting(ada, 'Ada')).toBeVisible();
+    expect(await saw(), 'the partner welcome showed at /welcome').toBe(false);
+    await expect(ada.getByText('Where capture is')).toHaveCount(0);
   });
 });

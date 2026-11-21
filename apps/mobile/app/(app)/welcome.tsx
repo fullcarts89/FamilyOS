@@ -13,9 +13,13 @@ import { WELCOME_KEY } from '../../lib/acknowledgments';
 import { useCapture } from '../../lib/capture';
 import { useHousehold } from '../../lib/household';
 import { usePeople } from '../../lib/people';
+import { welcomeApplies } from '../../lib/welcome';
 
-// One screen for an adult who just joined from an invite: what's theirs, what's shared and where
-// capture lives. Shown once (a server-backed acknowledgment), in the setup's visual language.
+// One screen for an adult who just joined a household that already has someone in it: what's
+// theirs, what's shared and where capture lives. Shown once (a server-backed acknowledgment), in
+// the setup's visual language. Anyone else who lands here (the first owner of a new household,
+// right after claiming their one-time link) goes on to Today, which starts the guided setup for
+// an owner who is alone, exactly as before (lib/welcome.ts decides).
 export default function Welcome() {
   const { household } = useHousehold();
   const people = usePeople();
@@ -25,7 +29,7 @@ export default function Welcome() {
   const { seen, acknowledge } = useAcknowledgment(WELCOME_KEY);
 
   if (!household) return null;
-  if (seen === true) return <Redirect href="/" />;
+  if (seen === true || !welcomeApplies(household.role, people.all)) return <Redirect href="/" />;
   const me = people.me;
   const owner = people.all.find((p) => p.role === 'owner' && !p.isMe);
   const partnerColors: [string, string] | undefined =

@@ -68,7 +68,8 @@ function CreateAccount({ token }: { token: string }) {
       router.replace('/sign-in');
       return;
     }
-    // Joined: a one-screen welcome first (what's yours, what's shared, where capture is).
+    // Joined. The welcome screen decides whether it is for this person (an invited adult) or
+    // sends them on to Today (a new household's first owner: Today starts the guided setup).
     router.replace('/welcome');
   };
 

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { connect } from 'node:net';
 import { resolve } from 'node:path';
@@ -169,6 +170,26 @@ export async function createHousehold(opts: {
       throw error;
     }
   });
+}
+
+/**
+ * A new, empty household and the one-time link for its first owner, exactly as the operator's
+ * `household:invite-owner` makes them (app.create_household_with_owner_invite, the token's
+ * SHA-256 stored). Returns the link's path. Removed with `removeE2eAccounts` once claimed.
+ */
+export async function createOwnerInvite(opts: { name: string; email: string }): Promise<string> {
+  const token = randomBytes(32).toString('base64url');
+  const hash = createHash('sha256').update(token).digest();
+  await withDb((db) =>
+    db.query('select app.create_household_with_owner_invite($1, $2, $3, $4, $5)', [
+      opts.name,
+      TIME_ZONE,
+      opts.email.toLowerCase(),
+      hash,
+      new Date(Date.now() + 48 * 3600 * 1000),
+    ]),
+  );
+  return `/invite?token=${encodeURIComponent(token)}`;
 }
 
 /**
