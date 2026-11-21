@@ -133,7 +133,9 @@ async function sendWithStatus<T>(
     clearTimeout(timer);
     writeDone?.();
   }
-  setConnection('online');
+  // An answer means we're online, unless the browser itself says it is offline: a response that
+  // was already on its way when the connection dropped must not hide the offline note.
+  if (typeof navigator === 'undefined' || navigator.onLine !== false) setConnection('online');
   if (!res.ok) {
     if (res.status === 401 && token) unauthorized?.();
     const failure = new ApiRequestError(res.status, payload.error ?? 'request_failed');
