@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { ACTIONS, MEMBER_ROLES, can, isCaredFor } from './permissions';
+import {
+  ACTIONS,
+  ASSIGNABLE_ROLES,
+  MEMBER_ROLES,
+  can,
+  isAssignableRole,
+  isCaredFor,
+} from './permissions';
 
 describe('role permissions', () => {
   it('gives the owner every action', () => {
@@ -56,5 +63,18 @@ describe('role permissions', () => {
 
   it('treats children and pets as cared-for members', () => {
     expect(MEMBER_ROLES.filter(isCaredFor)).toEqual(['child', 'pet']);
+  });
+
+  it('lets only account-holding roles own work or take routine turns', () => {
+    expect(ASSIGNABLE_ROLES).toEqual(['owner', 'adult', 'caregiver']);
+    for (const role of ['owner', 'adult', 'caregiver']) expect(isAssignableRole(role)).toBe(true);
+    // Children and pets have no account; a role this version doesn't know is never an adult.
+    for (const role of ['child', 'pet', 'guest', 'Owner', '']) {
+      expect(isAssignableRole(role)).toBe(false);
+    }
+  });
+
+  it('makes every known role either assignable or cared for, never both', () => {
+    for (const role of MEMBER_ROLES) expect(isAssignableRole(role)).toBe(!isCaredFor(role));
   });
 });

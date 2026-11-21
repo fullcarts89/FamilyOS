@@ -1,4 +1,5 @@
 import {
+  ASSIGNABLE_ROLES,
   IllegalTransitionError,
   MissingEvidenceError,
   WORK_ITEM_STATUSES,
@@ -155,7 +156,7 @@ export async function assertAssignable(
     .where('id', '=', memberId)
     .where('household_id', '=', householdId)
     .where('status', '=', 'active')
-    .where('role', 'not in', ['child', 'pet'])
+    .where('role', 'in', ASSIGNABLE_ROLES)
     .executeTakeFirst();
   if (!owner) throw new ApiError(422, 'invalid_owner');
 }

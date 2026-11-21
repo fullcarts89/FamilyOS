@@ -11,6 +11,21 @@ export const CARED_FOR_ROLES = ['child', 'pet'] as const satisfies readonly Memb
 export const isCaredFor = (role: MemberRole): boolean =>
   (CARED_FOR_ROLES as readonly MemberRole[]).includes(role);
 
+/**
+ * The roles that hold an account, so can own tasks and take routine turns. An allow-list on
+ * purpose: a role this code doesn't know (one a later release adds, say) is never treated as
+ * an adult, here or after a rollback.
+ */
+export const ASSIGNABLE_ROLES = [
+  'owner',
+  'adult',
+  'caregiver',
+] as const satisfies readonly MemberRole[];
+
+/** True only for a role in ASSIGNABLE_ROLES. Takes any string, since the database may know more. */
+export const isAssignableRole = (role: string): boolean =>
+  (ASSIGNABLE_ROLES as readonly string[]).includes(role);
+
 export const ACTIONS = [
   'household.read',
   /** Rename the household (first-time setup and later). */

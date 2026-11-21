@@ -17,7 +17,9 @@ export const HouseholdExportSchema = z.object({
     z.object({
       id: z.uuid(),
       displayName: z.string(),
-      role: z.enum(['owner', 'adult', 'caregiver', 'child', 'pet']),
+      // Today one of MEMBER_ROLES (owner, adult, caregiver, child, pet). A role a later release
+      // adds is exported as stored, so the household still exports after a rollback to this one.
+      role: z.string(),
       status: z.enum(['active', 'removed']),
       color: z.string().regex(/^#[0-9A-F]{6}$/),
       species: z.string().nullable(),
