@@ -49,6 +49,27 @@ test.describe('Tasks: complete, take, hand over', () => {
     await expect(maya.getByRole('checkbox', { name: `Complete ${title}` })).toBeVisible();
   });
 
+  test('every Tasks tab fits a 390px phone, none under 44px', async ({ app, maya }) => {
+    test.skip(!app.phone, 'The tab strip is the phone’s (desktop shows the columns).');
+    await app.nav(maya, 'Tasks');
+    const strip = maya
+      .getByRole('tablist')
+      .filter({ has: maya.getByRole('tab', { name: 'Routines' }) });
+    const tabs = strip.getByRole('tab');
+    await expect(tabs).toHaveCount(5);
+    const width = maya.viewportSize()?.width ?? 0;
+    for (const tab of await tabs.all()) {
+      const box = await tab.boundingBox();
+      expect(box, await tab.innerText()).not.toBeNull();
+      if (!box) continue;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    await strip.getByRole('tab', { name: 'Routines' }).click();
+    await expect(maya.getByRole('heading', { name: 'Routines' })).toBeVisible();
+  });
+
   test('taking a shared item makes it Maya’s ("I’ll take it")', async ({ app, maya, mayaApi }) => {
     const title = 'Find a sitter for Friday';
     expect((await mayaApi.item(title)).ownerMemberId).toBeNull();

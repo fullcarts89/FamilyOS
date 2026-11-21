@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { PersonColumn } from '../../components/tasks/PersonColumn';
 import { Projects } from '../../components/tasks/Projects';
 import { Routines } from '../../components/tasks/Routines';
@@ -11,7 +11,7 @@ import { FadeIn, SkeletonRows, Skeleton, useCelebrate } from '../../design/motio
 import { ErrorNotice } from '../../design/Notice';
 import { Page, PageHeader } from '../../design/Page';
 import { Text } from '../../design/Text';
-import { color, radius, shadow } from '../../design/tokens';
+import { color, radius, shadow, touch } from '../../design/tokens';
 import type { WorkItem } from '../../lib/api';
 import { useCapture } from '../../lib/capture';
 import { useHousehold } from '../../lib/household';
@@ -267,16 +267,15 @@ export default function Tasks() {
         </>
       ) : (
         <>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.tabsScroll}
-            contentContainerStyle={styles.tabs}
-            accessibilityRole="tablist"
-          >
+          {/* Two lines rather than a strip that scrolls: the people, then projects and routines,
+              every tab in view at 390px. */}
+          <View style={styles.tabs} accessibilityRole="tablist">
             {tabs.map((t) => {
               const on = section === t.key;
-              return (
+              return [
+                t.key === 'projects' ? (
+                  <View key="break" style={styles.tabBreak} aria-hidden />
+                ) : null,
                 <Pressable
                   key={t.key}
                   accessibilityRole="tab"
@@ -293,10 +292,10 @@ export default function Tasks() {
                   <Text variant="label" tone={on ? 'ink' : 'muted'}>
                     {t.label}
                   </Text>
-                </Pressable>
-              );
+                </Pressable>,
+              ];
             })}
-          </ScrollView>
+          </View>
           {!ready ? (
             !error ? (
               <TasksSkeleton count={1} />
@@ -346,13 +345,13 @@ const styles = StyleSheet.create({
   },
   col: { paddingTop: 18, paddingHorizontal: 24 },
   colDivider: { borderLeftWidth: 1, borderLeftColor: color.hairline },
-  tabsScroll: { marginTop: 14, marginHorizontal: -16, flexGrow: 0 },
-  tabs: { gap: 6, paddingHorizontal: 16, paddingVertical: 2 },
+  tabs: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 14, paddingVertical: 2 },
+  tabBreak: { flexBasis: '100%', height: 0 },
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    height: 40,
+    minHeight: touch,
     paddingLeft: 10,
     paddingRight: 14,
     borderRadius: radius.pill,
