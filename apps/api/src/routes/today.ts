@@ -1,11 +1,32 @@
+import type { Database } from '@familyos/db';
 import { buildToday } from '@familyos/domain';
 import { Hono } from 'hono';
+import type { InferResult, Transaction } from 'kysely';
 import { authorize } from '../http/authorize';
 import type { AppEnv, Deps } from '../http/env';
 import { ITEM_COLUMNS } from './work-items';
 
 const toIso = (value: Date | string | null) =>
   value === null ? null : new Date(value).toISOString();
+
+/** Open items, plus anything finished since `since`. */
+const todayItems = (trx: Transaction<Database>, householdId: string, since: Date) =>
+  trx
+    .selectFrom('app.work_item')
+    .select(ITEM_COLUMNS)
+    .where('household_id', '=', householdId)
+    .where('type', 'not in', ['project', 'routine'])
+    .where((eb) =>
+      eb.or([
+        eb('status', 'not in', ['new', 'cancelled', 'verified_complete', 'done_unverified']),
+        eb.and([
+          eb('status', 'in', ['verified_complete', 'done_unverified']),
+          eb('updated_at', '>=', since),
+        ]),
+      ]),
+    )
+    .limit(1000);
+type TodayItem = InferResult<ReturnType<typeof todayItems>>[number];
 
 /** Today and Inbox: read-only views over canonical work items, computed in the household's timezone. */
 export function todayRoutes(deps: Deps) {
@@ -22,41 +43,45 @@ export function todayRoutes(deps: Deps) {
       .where('id', '=', member.householdId)
       .executeTakeFirstOrThrow();
 
-    // Open items, plus anything finished in the last 8 days (the view keeps the last 7 local days).
+    // Open items, plus anything finished in the last 8 days (the view keeps the last 7 local days),
+    // and how many wait in the inbox. One statement, so one snapshot: read separately, an item
+    // accepted from the inbox in between was in neither.
     const since = new Date(now.getTime() - 8 * 24 * 3600 * 1000);
     const rows = await trx
-      .selectFrom('app.work_item')
-      .select(ITEM_COLUMNS)
-      .where('household_id', '=', member.householdId)
-      .where('type', 'not in', ['project', 'routine'])
-      .where((eb) =>
-        eb.or([
-          eb('status', 'not in', ['new', 'cancelled', 'verified_complete', 'done_unverified']),
-          eb.and([
-            eb('status', 'in', ['verified_complete', 'done_unverified']),
-            eb('updated_at', '>=', since),
-          ]),
-        ]),
+      .selectFrom(
+        trx
+          .selectFrom('app.work_item')
+          .select((eb) => eb.fn.countAll<string>().as('inboxCount'))
+          .where('household_id', '=', member.householdId)
+          .where('status', '=', 'new')
+          .as('inbox'),
       )
-      .limit(1000)
+      .leftJoinLateral(
+        () => todayItems(trx, member.householdId, since).as('item'),
+        (join) => join.onTrue(),
+      )
+      .selectAll('item')
+      .select('inbox.inboxCount')
       .execute();
-
-    const items = rows.map((r) => ({
-      ...r,
-      dueAt: toIso(r.dueAt),
-      updatedAt: toIso(r.updatedAt) ?? '',
-      createdAt: toIso(r.createdAt) ?? '',
-      completedAt: toIso(r.completedAt),
-    }));
-    const inbox = await trx
-      .selectFrom('app.work_item')
-      .select((eb) => eb.fn.countAll<string>().as('n'))
-      .where('household_id', '=', member.householdId)
-      .where('status', '=', 'new')
-      .executeTakeFirstOrThrow();
-
+    const inboxCount = Number(rows[0]?.inboxCount ?? 0);
+    // The left join is the only thing that makes an item's columns nullable: a row with an id is
+    // a whole item.
+    const items = rows
+      .flatMap((row) => {
+        if (row.id === null) return [];
+        const { inboxCount: count, ...item } = row;
+        void count;
+        return [item as TodayItem];
+      })
+      .map((r) => ({
+        ...r,
+        dueAt: toIso(r.dueAt),
+        updatedAt: toIso(r.updatedAt) ?? '',
+        createdAt: toIso(r.createdAt) ?? '',
+        completedAt: toIso(r.completedAt),
+      }));
     const view = buildToday({ items, memberId: member.id, now, timeZone: timezone });
-    return c.json({ ...view, timezone, inboxCount: Number(inbox.n) });
+    return c.json({ ...view, timezone, inboxCount });
   });
 
   app.get('/inbox', async (c) => {

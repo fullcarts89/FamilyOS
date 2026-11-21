@@ -6,7 +6,15 @@ import {
   seedRoutine,
   type SeededHousehold,
 } from '@familyos/db/testing';
-import type { Kysely } from 'kysely';
+import type {
+  Kysely,
+  KyselyPlugin,
+  PluginTransformQueryArgs,
+  PluginTransformResultArgs,
+  QueryResult,
+  RootOperationNode,
+  UnknownRow,
+} from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp } from './testing/harness';
 
@@ -31,6 +39,36 @@ interface Item {
   ownerMemberId: string | null;
   dueOn: string | null;
   parentId: string | null;
+}
+
+/**
+ * Runs `between` once, on another connection, right after the next statement that reads
+ * app.work_item returns: what another adult's request committing at that moment looks like.
+ */
+class AfterNextItemRead implements KyselyPlugin {
+  between: (() => Promise<void>) | null = null;
+  // Every select on work_item, subqueries included (they're transformed too, never executed).
+  private readonly reads = new WeakSet<object>();
+  transformQuery({ node, queryId }: PluginTransformQueryArgs): RootOperationNode {
+    if (
+      node.kind === 'SelectQueryNode' &&
+      JSON.stringify(node.from ?? {}).includes('"work_item"')
+    ) {
+      this.reads.add(queryId);
+    }
+    return node;
+  }
+  async transformResult({
+    queryId,
+    result,
+  }: PluginTransformResultArgs): Promise<QueryResult<UnknownRow>> {
+    if (this.between && this.reads.has(queryId)) {
+      const run = this.between;
+      this.between = null;
+      await run();
+    }
+    return result;
+  }
 }
 
 describe.skipIf(!db)('work items, inbox and Today (G2)', () => {
@@ -87,6 +125,80 @@ describe.skipIf(!db)('work items, inbox and Today (G2)', () => {
   });
 
   describe('the list', () => {
+    it('reads open and finished items at one moment, so a change in between loses nothing', async () => {
+      const hook = new AfterNextItemRead();
+      const watched = createTestApp({ db: requireDb().withPlugin(hook), now: () => NOW });
+      const token = await watched.tokenFor({
+        userId: h.owner.userId ?? '',
+        email: `${h.owner.id}@example.test`,
+      });
+      // Finished a minute ago; the other adult undoes it while the list is being read.
+      const { id } = await requireDb()
+        .insertInto('app.work_item')
+        .values({
+          household_id: h.id,
+          title: 'Return library books',
+          status: 'done_unverified',
+          completed_at: new Date(NOW.getTime() - 60_000),
+          completed_by_member_id: h.adult.id,
+          created_by_member_id: h.owner.id,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      hook.between = async () => {
+        await requireDb()
+          .updateTable('app.work_item')
+          .set({ status: 'ready', completed_at: null, completed_by_member_id: null })
+          .where('id', '=', id)
+          .execute();
+      };
+      const list = await json<{ items: Item[] }>(
+        await watched.request(`/households/${h.id}/work-items`, { token }),
+      );
+      expect(hook.between).toBeNull();
+      expect(list.items.filter((i) => i.id === id).map((i) => i.status)).toEqual([
+        'done_unverified',
+      ]);
+      // And the next read sees it open, once.
+      const next = await json<{ items: Item[] }>(
+        await watched.request(`/households/${h.id}/work-items`, { token }),
+      );
+      expect(next.items.filter((i) => i.id === id).map((i) => i.status)).toEqual(['ready']);
+    });
+
+    it('counts the inbox in the same read as Today’s items', async () => {
+      const hook = new AfterNextItemRead();
+      const watched = createTestApp({ db: requireDb().withPlugin(hook), now: () => NOW });
+      const token = await watched.tokenFor({
+        userId: h.owner.userId ?? '',
+        email: `${h.owner.id}@example.test`,
+      });
+      const today = async () =>
+        json<{ inboxCount: number }>(await watched.request(`/households/${h.id}/today`, { token }));
+      const before = (await today()).inboxCount;
+      const { id } = await requireDb()
+        .insertInto('app.work_item')
+        .values({
+          household_id: h.id,
+          title: 'Look into the leak',
+          status: 'new',
+          created_by_member_id: h.adult.id,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      // The other adult accepts it from the inbox while Today is being read.
+      hook.between = async () => {
+        await requireDb()
+          .updateTable('app.work_item')
+          .set({ status: 'ready' })
+          .where('id', '=', id)
+          .execute();
+      };
+      expect((await today()).inboxCount).toBe(before + 1);
+      expect(hook.between).toBeNull();
+      expect((await today()).inboxCount).toBe(before);
+    });
+
     it('returns every open item however old, and only recent finished ones', async () => {
       const busy = await seedHousehold(requireDb(), 'Busy');
       try {

@@ -8,7 +8,7 @@ import {
 } from '@familyos/domain';
 import { materializeRoutine, type Database } from '@familyos/db';
 import { Hono } from 'hono';
-import { sql, type Transaction } from 'kysely';
+import { sql, type ExpressionBuilder, type Transaction } from 'kysely';
 import { z } from 'zod';
 import { recordAudit } from '../audit';
 import { authorize } from '../http/authorize';
@@ -481,7 +481,9 @@ export function workItemRoutes(deps: Deps) {
 
   // Every open item, however old, plus what was finished in the last FINISHED_DAYS (Today and
   // Tasks show recent completions), newest first. Only the finished part is capped: a busy
-  // household's routine turns must never push an open item out of the list.
+  // household's routine turns must never push an open item out of the list. One statement, so
+  // one snapshot: an item completed or reopened meanwhile (often by the other adult) is listed
+  // as it was, never missing and never twice.
   app.get('/', async (c) => {
     authorize(c, 'work_item.read');
     const trx = c.get('trx');
@@ -489,29 +491,42 @@ export function workItemRoutes(deps: Deps) {
     const parentId = c.req.query('parentId');
     const subjectId = c.req.query('subjectMemberId');
     const contactId = c.req.query('contactId');
-    const base = () => {
-      let query = trx
-        .selectFrom('app.work_item')
-        .select(ITEM_COLUMNS)
-        .where('household_id', '=', householdId)
-        .where('type', '!=', 'routine');
-      if (parentId) query = query.where('parent_id', '=', uuidParam(parentId));
-      if (subjectId) query = query.where('subject_member_id', '=', uuidParam(subjectId));
-      if (contactId) query = query.where('contact_id', '=', uuidParam(contactId));
-      return query;
+    const filters = {
+      parent_id: parentId ? uuidParam(parentId) : null,
+      subject_member_id: subjectId ? uuidParam(subjectId) : null,
+      contact_id: contactId ? uuidParam(contactId) : null,
     };
-    const open = await base()
-      .where('status', 'not in', ['new', ...CLOSED_STATUSES])
-      .orderBy('created_at', 'desc')
-      .execute();
+    const scoped = (eb: ExpressionBuilder<Database, 'app.work_item'>) =>
+      eb.and([
+        eb('household_id', '=', householdId),
+        eb('type', '!=', 'routine'),
+        ...Object.entries(filters).flatMap(([column, value]) =>
+          value === null
+            ? []
+            : [eb(column as 'parent_id' | 'subject_member_id' | 'contact_id', '=', value)],
+        ),
+      ]);
     const since = new Date(now().getTime() - FINISHED_DAYS * 24 * 3600 * 1000);
-    const finished = await base()
+    const recentlyFinished = trx
+      .selectFrom('app.work_item')
+      .select('id')
+      .where(scoped)
       .where('status', 'in', DONE_STATUSES)
       .where((eb) => eb(eb.fn.coalesce('completed_at', 'updated_at'), '>=', since))
       .orderBy(sql`coalesce(completed_at, updated_at)`, 'desc')
-      .limit(FINISHED_CAP)
+      .limit(FINISHED_CAP);
+    const rows = await trx
+      .selectFrom('app.work_item')
+      .select(ITEM_COLUMNS)
+      .where(scoped)
+      .where((eb) =>
+        eb.or([
+          eb('status', 'not in', ['new', ...CLOSED_STATUSES]),
+          eb('id', 'in', recentlyFinished),
+        ]),
+      )
       .execute();
-    const items = [...open, ...finished].sort(
+    const items = rows.sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() ||
         a.id.localeCompare(b.id),
