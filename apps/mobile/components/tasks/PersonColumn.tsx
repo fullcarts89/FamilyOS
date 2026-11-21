@@ -123,7 +123,6 @@ export function PersonColumn({
                         ? 'Running late'
                         : WHEN_LABEL[when]
                   }
-                  count={rows.length + lead.length}
                   late={when === 'late'}
                 />
                 {lead.map((m, i) =>

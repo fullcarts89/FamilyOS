@@ -33,33 +33,25 @@ export function SectionHeader({
   );
 }
 
-/** A small uppercase group label with a count: "LATE 2". Late groups carry the hatch mark. */
+/**
+ * A small uppercase group label: "RUNNING LATE". Late groups carry the hatch mark. No counts: side
+ * by side, one adult's "3" against the other's "1" reads as a score.
+ */
 export function GroupLabel({
   label,
-  count,
   late,
   style,
 }: {
   label: string;
-  count?: number;
   late?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <View
-      style={[styles.group, style]}
-      accessibilityRole="header"
-      accessibilityLabel={count !== undefined ? `${label}, ${count}` : label}
-    >
+    <View style={[styles.group, style]} accessibilityRole="header" accessibilityLabel={label}>
       {late ? <Hatch width={15} height={9} radius={3} /> : null}
       <Text variant="kicker" tone={late ? 'ink' : 'muted'}>
         {label}
       </Text>
-      {count !== undefined ? (
-        <Text variant="kicker" tone="faint">
-          {count}
-        </Text>
-      ) : null}
     </View>
   );
 }
