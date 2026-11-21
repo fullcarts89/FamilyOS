@@ -107,7 +107,7 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
       ).toBeVisible();
       // The board updated with it: Saturday's swim lesson is Theo's.
       await expect(
-        maya.getByRole('button', { name: /^Saturday Swim lesson at 9:30am: Theo/ }),
+        maya.getByRole('button', { name: /^Swim lesson 9:30am, Saturday, Theo/ }),
       ).toBeVisible();
       await next('Dinners');
 

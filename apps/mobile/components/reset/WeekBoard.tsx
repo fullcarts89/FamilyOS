@@ -145,7 +145,8 @@ export function WeekBoard({
       <FadeIn key={`${o.key}:${who?.id ?? 'none'}:${problem}:${asked?.id ?? ''}`}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${weekdayName(o.date)} ${o.careAction === 'drop_off' ? 'drop-off' : o.careAction === 'pick_up' ? 'pickup' : o.title} at ${timeOf(o.startsAt, timeZone)}: ${who ? (who.isMe ? 'you' : who.name) : 'nobody yet'}${problem ? ', needs sorting' : ''}${askedName ? `, asked ${askedName}, waiting` : ''}. ${committed ? '' : 'Choose who.'}`}
+          // The name starts with what the chip shows ("Pick 5:30pm"), then the day and who.
+          accessibilityLabel={`${what} ${timeOf(o.startsAt, timeZone)}, ${weekdayName(o.date)}${o.careAction ? ` ${o.careAction === 'drop_off' ? 'drop-off' : 'pickup'}` : ''}, ${who ? (who.isMe ? 'you' : who.name) : 'nobody yet'}${problem ? ', needs sorting' : ''}${askedName ? `, asked ${askedName}, waiting` : ''}.${committed ? '' : ' Choose who.'}`}
           {...tipProps(
             `${whatInFull} · ${timeOf(o.startsAt, timeZone)} · ${whoText}${problem ? ' · needs sorting' : ''}${askedName ? ` · ${waitingWords(askedName)}` : ''}`,
           )}
@@ -236,7 +237,12 @@ export function WeekBoard({
       <FadeIn key={`${date}:${meal?.title ?? ''}:${meal?.cookMemberId ?? ''}`}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${weekdayName(date)} dinner: ${meal ? `${meal.title}${cook ? `, ${cook.isMe ? 'you cook' : `${cook.name} cooks`}` : ''}` : 'not planned yet'}`}
+          // The name starts with what the cell shows: the dinner and its cook, or "Add dinner".
+          accessibilityLabel={
+            meal
+              ? `${meal.title}, ${cook ? (cook.isMe ? 'you cook' : `${cook.name} cooks`) : 'no cook set'}, ${weekdayName(date)} dinner`
+              : `${committed ? 'Open' : 'Add dinner'}, ${weekdayName(date)}${committed ? ' dinner, not planned yet' : ''}`
+          }
           {...(meal &&
             tipProps(
               `${weekdayName(date)}: ${meal.title}${cook ? ` · ${cook.isMe ? 'You cook' : `${cook.name} cooks`}` : ''}`,
@@ -557,7 +563,6 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.75,
   },
   turn: {
     flexDirection: 'row',

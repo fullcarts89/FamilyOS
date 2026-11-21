@@ -11,13 +11,6 @@ import { expect, greeting, test } from '../support/fixtures';
  */
 const KNOWN: { screen: string; id: string; node: RegExp; reason: string }[] = [
   {
-    screen: 'Weekly Reset',
-    id: 'label-content-name-mismatch',
-    node: /aria-label="\w+day (drop-off|pickup|dinner|Swim)/,
-    reason:
-      'the week board’s cells show short words (“Pick 5:30pm”, “Add dinner”) under longer names (components/reset/WeekBoard.tsx, Reset worker)',
-  },
-  {
     screen: 'Household',
     id: 'label-content-name-mismatch',
     node: /aria-label="[^"]+, (Owner|Adult|Child|Pet|Caregiver), edit"/,
