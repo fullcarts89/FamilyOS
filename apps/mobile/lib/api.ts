@@ -6,6 +6,7 @@ import type {
   HeadsUp,
   RecurrenceRule,
   RhythmSummary,
+  TimeBlock,
   WorkItemStatus,
 } from '@familyos/domain';
 import { config } from './config';
@@ -226,6 +227,8 @@ export interface WorkItem {
   parentId: string | null;
   dueOn: string | null;
   dueAt: string | null;
+  /** With dueAt: how long it takes, in minutes (a time block: "5:30–6pm"). */
+  durationMinutes?: number | null;
   /** 1 is the most important. */
   priority?: number | null;
   visibility: 'household' | 'private';
@@ -295,6 +298,8 @@ export interface Routine {
   rule: RecurrenceRule;
   startOn: string;
   time: string | null;
+  /** With a time: each turn's length in minutes. */
+  durationMinutes?: number | null;
   summary: string;
   version: number;
 }
@@ -382,6 +387,8 @@ export interface EventDetail {
 
 export interface RhythmTaskView extends WorkItem {
   subjectMemberId: string | null;
+  /** Timed tasks with a length: start to end, worked out by the API (lanes' `timed` only). */
+  block?: TimeBlock | null;
 }
 
 export interface RhythmLaneView {
@@ -762,6 +769,10 @@ export function errorMessage(error: unknown): string {
       return 'Choose the budget file to upload.';
     case 'invalid_body':
       return 'Some of that couldn’t be saved. Check the details and try again.';
+    case 'invalid_duration':
+      return 'A length is 5 minutes to 12 hours, in 5-minute steps.';
+    case 'duration_needs_time':
+      return 'Set a time first, then how long it takes.';
     case 'calendars_unavailable':
       return 'Calendar connections aren’t switched on for this household yet.';
     case 'insecure_url':

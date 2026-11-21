@@ -30,7 +30,7 @@ import { Toggle } from '../../design/Toggle';
 import { useToast } from '../../design/Toast';
 import { color, font, radius } from '../../design/tokens';
 import { api, errorMessage, type EventDetail, type Occurrence } from '../../lib/api';
-import { addDays, clock, dayOfWeek, longDate, relativeDay } from '../../lib/dates';
+import { addDays, clock, dayOfWeek, longDate, parseTime, relativeDay } from '../../lib/dates';
 import {
   eventBody,
   loadEvent,
@@ -60,24 +60,8 @@ const WEEKDAYS: { day: Weekday; label: string }[] = [
   { day: 7, label: 'Sun' },
 ];
 
-/** "8:15", "8:15am", "5pm", "17:30" → "HH:MM", or null. */
-export function parseTime(input: string): string | null {
-  const m = input
-    .trim()
-    .toLowerCase()
-    .match(/^(\d{1,2})(?::?(\d{2}))?\s*(am|pm|a|p)?$/);
-  if (!m) return null;
-  let h = Number(m[1]);
-  const min = Number(m[2] ?? '0');
-  const suffix = m[3];
-  if (min > 59 || h > 23) return null;
-  if (suffix) {
-    if (h < 1 || h > 12) return null;
-    if (suffix.startsWith('p') && h < 12) h += 12;
-    if (suffix.startsWith('a') && h === 12) h = 0;
-  }
-  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-}
+// The one time reader, kept with the date helpers (pure, so capture's parser can use it too).
+export { parseTime } from '../../lib/dates';
 
 const shift = (hhmm: string, minutes: number) => {
   const [h = 0, m = 0] = hhmm.split(':').map(Number);

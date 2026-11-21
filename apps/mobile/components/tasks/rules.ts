@@ -1,6 +1,13 @@
-import { localDueDate, workItemMachine, type WorkItemStatus } from '@familyos/domain';
+import {
+  dueThrough,
+  localDueDate,
+  timeBlock,
+  workItemMachine,
+  type WorkItemStatus,
+} from '@familyos/domain';
 import type { WorkItem } from '../../lib/api';
 import { clock, daysBetween, relativeDay } from '../../lib/dates';
+import { rangeOf, timeOf } from '../../lib/rhythm';
 
 /**
  * The rules for tasks that need no React: when something is due, whether it's open, the words for
@@ -36,19 +43,37 @@ export function whenOf(item: WorkItem, today: string, timeZone: string): When {
   if (WAITING.includes(item.status)) return 'waiting';
   const due = dueDate(item, timeZone);
   if (!due) return 'later';
+  // Late once the last day it's due on is over: for a time block, the day the block ends on, so
+  // one that runs past midnight is today's while it's under way (domain dueThrough).
+  const through = dueThrough(item, timeZone)?.toString() ?? due;
+  if (daysBetween(today, through) < 0) return 'late';
   const diff = daysBetween(today, due);
-  if (diff < 0) return 'late';
-  if (diff === 0) return 'today';
+  if (diff <= 0) return 'today';
   if (diff <= 6) return 'week';
   return 'later';
 }
 
-/** "3 days late", "Today 7pm", "Tomorrow", "Thursday", "Nov 30". */
+/**
+ * A timed task's time in the app's format: "5:30pm", or with a length its block, "5:30–6pm".
+ * Null without a time.
+ */
+export function timeText(
+  item: Pick<WorkItem, 'dueAt' | 'durationMinutes'>,
+  timeZone: string,
+): string | null {
+  if (!item.dueAt) return null;
+  const block = timeBlock(item);
+  return block ? rangeOf(block.startsAt, block.endsAt, timeZone) : timeOf(item.dueAt, timeZone);
+}
+
+/** "3 days late", "Today 7pm", "Today 5:30–6pm" (a time block), "Tomorrow", "Nov 30". */
 export function dueText(item: WorkItem, today: string, timeZone: string): string | null {
   const due = dueDate(item, timeZone);
   if (!due) return null;
   const day = relativeDay(due, today);
   if (!item.dueAt) return day;
+  const block = timeBlock(item);
+  if (block) return `${day} ${rangeOf(block.startsAt, block.endsAt, timeZone)}`;
   try {
     const time = new Intl.DateTimeFormat('en-GB', {
       hour: '2-digit',
