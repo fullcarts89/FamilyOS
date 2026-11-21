@@ -3,13 +3,25 @@ import {
   activityLink,
   activityWords,
   coverRefusal,
+  createFreshness,
   declineIn,
+  initialNotes,
+  keepMine,
+  notesConflict,
+  notesFromServer,
+  notesSaved,
+  notesTyped,
   requestView,
+  restoreOccurrence,
   STALE_CODES,
+  takeTheirs,
   waitingWords,
+  withRequest,
   type ActivityEntry,
   type CoverRequest,
+  type PlanWithNotes,
 } from '../apps/mobile/components/reset/coordination';
+import type { Occurrence, ResetResponse } from '../apps/mobile/lib/api';
 
 // Synthetic household: Maya and Theo (adults), June (toddler).
 const MAYA = '00000000-0000-4000-8000-000000000001';
@@ -37,6 +49,61 @@ const request = (over: Partial<CoverRequest> = {}): CoverRequest => ({
   ...over,
 });
 
+const pickup = (over: Partial<Occurrence> = {}): Occurrence =>
+  ({
+    key: `${EVENT}:2026-11-26`,
+    eventId: EVENT,
+    date: '2026-11-26',
+    startsAt: '2026-11-27T01:30:00.000Z',
+    endsAt: '2026-11-27T01:50:00.000Z',
+    allDay: false,
+    title: 'Daycare pickup',
+    memberIds: [MAYA, JUNE],
+    careMemberId: JUNE,
+    careAction: 'pick_up',
+    carePlace: 'Little Oaks',
+    recurring: true,
+    skipped: false,
+    cover: null,
+    location: null,
+    notes: null,
+    timezone: 'America/Los_Angeles',
+    version: 1,
+    readOnly: false,
+    source: null,
+    ...over,
+  }) as Occurrence;
+
+const resetWith = (o: Occurrence, extra: Partial<ResetResponse['events']> = {}): ResetResponse =>
+  ({
+    today: '2026-11-21',
+    week: { start: '2026-11-23', end: '2026-11-29', timezone: 'America/Los_Angeles' },
+    plan: null,
+    events: {
+      weekStart: '2026-11-23',
+      days: [{ date: '2026-11-26', occurrences: [o], handoffs: [] }],
+      needsOwner: [],
+      conflicts: [
+        {
+          id: `handoff_conflict:${o.key}`,
+          type: 'handoff_conflict',
+          memberId: MAYA,
+          occurrenceKey: o.key,
+          eventId: EVENT,
+          conflictingOccurrenceKey: 'meeting:2026-11-26',
+          conflictingEventId: 'meeting',
+          time: o.startsAt,
+          text: 'Clash',
+        },
+      ],
+      ...extra,
+    },
+    unresolved: [
+      { type: 'handoff_conflict', occurrenceKey: o.key, memberId: MAYA, time: o.startsAt },
+    ],
+    decisions: [],
+  }) as unknown as ResetResponse;
+
 describe('cover requests (only the asked adult’s yes hands a handoff over)', () => {
   it('tells the asker, the asked and anyone else apart', () => {
     const o = { coverRequest: request() };
@@ -50,6 +117,42 @@ describe('cover requests (only the asked adult’s yes hands a handoff over)', (
       kind: 'none',
     });
     expect(waitingWords('Theo')).toBe('Asked Theo · waiting');
+  });
+
+  it('marks an occurrence as asked without changing who has it, and puts it back exactly', () => {
+    const o = pickup();
+    const before = resetWith(o);
+    const asked = withRequest(before, o.key, request());
+    const after = asked.events.days[0]?.occurrences[0] as Occurrence & {
+      coverRequest?: CoverRequest;
+    };
+    expect(after.coverRequest?.askedMemberId).toBe(THEO);
+    expect(after.memberIds).toEqual([MAYA, JUNE]);
+    expect(asked.events.conflicts).toHaveLength(1);
+
+    // An optimistic cover that the server refused: the occurrence, its clash and its
+    // unresolved entry come back; other changes made meanwhile stay.
+    const optimistic: ResetResponse = {
+      ...asked,
+      meals: [{ id: 'm1' } as ResetResponse['meals'][number]],
+      events: {
+        ...asked.events,
+        days: [
+          {
+            date: '2026-11-26',
+            occurrences: [pickup({ memberIds: [THEO, JUNE] })],
+            handoffs: [],
+          },
+        ],
+        conflicts: [],
+      },
+      unresolved: [],
+    };
+    const restored = restoreOccurrence(optimistic, before, o.key);
+    expect(restored.events.days[0]?.occurrences[0]?.memberIds).toEqual([MAYA, JUNE]);
+    expect(restored.events.conflicts.map((c) => c.occurrenceKey)).toEqual([o.key]);
+    expect(restored.unresolved).toHaveLength(1);
+    expect(restored.meals).toHaveLength(1);
   });
 
   it('says what changed in plain words, and never offers a retry that cannot work', () => {
@@ -137,5 +240,117 @@ describe('what the other adult did, in words', () => {
 
   it('leaves out what it can’t say, instead of breaking the list', () => {
     expect(activityWords(entry({ action: 'something.new' }), as(THEO))).toBeNull();
+  });
+});
+
+describe('refreshes never land on top of a newer change', () => {
+  it('drops a refresh that started before a write, even if it answers after the write', () => {
+    const f = createFreshness();
+    const stale = f.beginRead();
+    f.beginWrite();
+    f.endWrite();
+    expect(f.accept(stale)).toBe(false);
+    const after = f.beginRead();
+    expect(f.accept(after)).toBe(true);
+  });
+
+  it('drops a refresh that answers while a write is still on its way', () => {
+    const f = createFreshness();
+    f.beginWrite();
+    const during = f.beginRead();
+    expect(f.writing).toBe(true);
+    expect(f.accept(during)).toBe(false);
+    f.endWrite();
+    expect(f.writing).toBe(false);
+    expect(f.accept(during)).toBe(false);
+  });
+
+  it('drops an older refresh that answers after a newer one', () => {
+    const f = createFreshness();
+    const first = f.beginRead();
+    const second = f.beginRead();
+    expect(f.accept(second)).toBe(true);
+    expect(f.accept(first)).toBe(false);
+  });
+});
+
+describe('the Weekly Reset’s notes', () => {
+  const plan = (notes: string | null, notesVersion: number): PlanWithNotes =>
+    ({
+      id: 'p1',
+      weekStart: '2026-11-23',
+      notes,
+      notesVersion,
+      committedAt: null,
+      committedByMemberId: null,
+      version: 1,
+    }) as PlanWithNotes;
+
+  it('starts from a kept draft (it survives leaving), else from the plan', () => {
+    expect(initialNotes(plan('Swap Wednesday', 2), null)).toEqual({
+      text: 'Swap Wednesday',
+      base: 2,
+      dirty: false,
+      conflict: null,
+    });
+    expect(initialNotes(null, { text: 'Half typed', base: 0 })).toMatchObject({
+      text: 'Half typed',
+      base: 0,
+      dirty: true,
+    });
+    // A kept draft that was saved meanwhile is just the plan's notes.
+    expect(initialNotes(plan('Done', 1), { text: 'Done', base: 0 })).toMatchObject({
+      dirty: false,
+      base: 1,
+    });
+  });
+
+  it('follows the other adult’s save, but never while typing here', () => {
+    const s = initialNotes(plan('A', 1), null);
+    expect(notesFromServer(s, plan('B', 2))).toMatchObject({ text: 'B', base: 2 });
+    const typing = notesTyped(s, 'A and more');
+    expect(notesFromServer(typing, plan('B', 2))).toBe(typing);
+    // The same version is what this phone saved: the field keeps its text as typed.
+    const trailing = { ...s, text: 'A ' };
+    expect(notesFromServer(trailing, plan('A', 1))).toBe(trailing);
+  });
+
+  it('saves with the version the edit started from; typing since stays a draft', () => {
+    const s = notesTyped(initialNotes(plan(null, 0), null), 'Theo has Wednesday');
+    const saved = notesSaved(s, plan('Theo has Wednesday', 1), 'Theo has Wednesday');
+    expect(saved).toMatchObject({ base: 1, dirty: false });
+    const more = notesTyped(s, 'Theo has Wednesday, Maya Friday');
+    expect(notesSaved(more, plan('Theo has Wednesday', 1), 'Theo has Wednesday')).toMatchObject({
+      base: 1,
+      dirty: true,
+    });
+  });
+
+  it('shows both versions on a conflict: keep mine saves over theirs; use theirs drops mine', () => {
+    const mine = notesTyped(initialNotes(plan(null, 0), null), 'Maya: dentist Tuesday');
+    const conflict = notesConflict(mine, plan('Theo: swim Saturday', 1), 'Theo');
+    expect(conflict.conflict).toEqual({
+      theirs: 'Theo: swim Saturday',
+      theirsVersion: 1,
+      by: 'Theo',
+    });
+    expect(keepMine(conflict)).toMatchObject({
+      text: 'Maya: dentist Tuesday',
+      base: 1,
+      dirty: true,
+      conflict: null,
+    });
+    expect(takeTheirs(conflict)).toEqual({
+      text: 'Theo: swim Saturday',
+      base: 1,
+      dirty: false,
+      conflict: null,
+    });
+    // The same words on both phones: nothing to choose.
+    expect(notesConflict(mine, plan('Maya: dentist Tuesday ', 3), 'Theo')).toMatchObject({
+      conflict: null,
+      base: 3,
+      dirty: false,
+    });
   });
 });

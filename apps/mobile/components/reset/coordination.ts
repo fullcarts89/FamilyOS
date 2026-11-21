@@ -1,8 +1,8 @@
-import type { Activity, Occurrence } from '../../lib/api';
+import type { Activity, Occurrence, ResetResponse, WeeklyPlan } from '../../lib/api';
 
-// Two adults, two phones: the pure rules behind asking the other adult to cover a handoff, and
-// saying what the other adult did. No React Native here, so the rules are unit-tested directly
-// (test/mobile-coordination.test.ts).
+// Two adults, two phones: the pure rules behind asking the other adult to cover a handoff, the
+// Weekly Reset's shared notes, and keeping a refresh from undoing a newer change. No React
+// Native here, so the rules are unit-tested directly (test/mobile-coordination.test.ts).
 
 // -----------------------------------------------------------------------------------------------
 // Cover requests (owner decision 2026-11-21: only the asked adult's "yes" hands a handoff over)
@@ -56,6 +56,64 @@ export function requestView(
 
 /** "Asked Theo · waiting": wherever an occurrence would say it needs someone. */
 export const waitingWords = (name: string) => `Asked ${name} · waiting`;
+
+/** Puts (or clears) the pending request on one occurrence of the Reset's week. */
+export function withRequest(
+  r: ResetResponse,
+  key: string,
+  request: CoverRequest | null,
+): ResetResponse {
+  return {
+    ...r,
+    events: {
+      ...r.events,
+      days: r.events.days.map((d) => ({
+        ...d,
+        occurrences: d.occurrences.map((o) =>
+          o.key === key ? ({ ...o, coverRequest: request } as WithRequest) : o,
+        ),
+      })),
+    },
+  };
+}
+
+/**
+ * Puts one occurrence back the way it was before an optimistic change (its people, cover and
+ * request, and whether it needed someone or clashed), leaving everything else as it is now.
+ */
+export function restoreOccurrence(
+  now: ResetResponse,
+  before: ResetResponse,
+  key: string,
+): ResetResponse {
+  const was = new Map(
+    before.events.days.flatMap((d) =>
+      d.occurrences.filter((o) => o.key === key).map((o) => [`${d.date}|${o.key}`, o] as const),
+    ),
+  );
+  const keyed = <T extends { occurrenceKey: string }>(list: T[]) =>
+    list.filter((h) => h.occurrenceKey === key);
+  const unkeyed = <T extends { occurrenceKey: string }>(list: T[]) =>
+    list.filter((h) => h.occurrenceKey !== key);
+  const touches = (u: ResetResponse['unresolved'][number]) =>
+    'occurrenceKey' in u && u.occurrenceKey === key;
+  return {
+    ...now,
+    events: {
+      ...now.events,
+      days: now.events.days.map((d) => ({
+        ...d,
+        occurrences: d.occurrences.map((o) => was.get(`${d.date}|${o.key}`) ?? o),
+      })),
+      needsOwner: [...unkeyed(now.events.needsOwner), ...keyed(before.events.needsOwner)],
+      conflicts: [...unkeyed(now.events.conflicts), ...keyed(before.events.conflicts)],
+    },
+    unresolved: [
+      ...now.unresolved.filter((u) => !touches(u)),
+      ...before.unresolved.filter(touches),
+    ],
+  };
+}
 
 /**
  * A refused ask or answer in plain words (409s and 422s mean the occurrence changed under you:
@@ -196,4 +254,129 @@ export function declineIn(activity: ActivityEntry[], request: CoverRequest): Act
         a.at >= request.createdAt,
     ) ?? null
   );
+}
+
+// -----------------------------------------------------------------------------------------------
+// Refreshes and writes: a refresh that started before a change never lands on top of it
+
+export interface ReadTicket {
+  read: number;
+  writes: number;
+}
+
+/**
+ * Orders refreshes against writes, by when they started. A refresh is applied only if no write
+ * began or ended since it started, none is still on its way, and no newer refresh was applied
+ * already (an old one that answers late is dropped).
+ */
+export function createFreshness() {
+  let reads = 0;
+  let writes = 0;
+  let inFlight = 0;
+  let applied = 0;
+  return {
+    beginRead(): ReadTicket {
+      reads += 1;
+      return { read: reads, writes };
+    },
+    beginWrite() {
+      writes += 1;
+      inFlight += 1;
+    },
+    endWrite() {
+      writes += 1;
+      inFlight = Math.max(0, inFlight - 1);
+    },
+    /** True if this refresh's answer may replace what's shown (and records it as the latest). */
+    accept(t: ReadTicket): boolean {
+      if (inFlight > 0 || t.writes !== writes || t.read < applied) return false;
+      applied = t.read;
+      return true;
+    },
+    get writing() {
+      return inFlight > 0;
+    },
+  };
+}
+
+// -----------------------------------------------------------------------------------------------
+// The Weekly Reset's notes: autosaved with the version the edit started from
+
+/** The plan as the API sends it now (lib/api.ts predates the notes version). */
+export type PlanWithNotes = WeeklyPlan & { notesVersion?: number };
+
+export interface NotesState {
+  /** What's in the field. */
+  text: string;
+  /** The plan's notesVersion this edit started from (0 before any notes). */
+  base: number;
+  /** Typed here and not saved yet. */
+  dirty: boolean;
+  /** The other adult saved different notes first: both versions, until one is chosen. */
+  conflict: { theirs: string; theirsVersion: number; by: string | null } | null;
+}
+
+export const notesOf = (plan: PlanWithNotes | null | undefined) => ({
+  text: plan?.notes ?? '',
+  version: plan?.notesVersion ?? 0,
+});
+
+/** Starting state: a draft kept from before (it wins until saved), else the plan's notes. */
+export function initialNotes(
+  plan: PlanWithNotes | null | undefined,
+  kept: { text: string; base: number } | null,
+): NotesState {
+  const saved = notesOf(plan);
+  if (kept && kept.text !== saved.text) {
+    return { text: kept.text, base: kept.base, dirty: true, conflict: null };
+  }
+  return { text: saved.text, base: saved.version, dirty: false, conflict: null };
+}
+
+/**
+ * A refresh brought the plan: follow the other adult's newer save, unless there's typing (or a
+ * choice) waiting here. The same version is what this phone saved: the field keeps its text as
+ * typed (the server trims it), so a refresh never moves the cursor.
+ */
+export function notesFromServer(s: NotesState, plan: PlanWithNotes | null | undefined): NotesState {
+  if (s.dirty || s.conflict) return s;
+  const saved = notesOf(plan);
+  if (saved.version === s.base) return s;
+  return { ...s, text: saved.text, base: saved.version };
+}
+
+export function notesTyped(s: NotesState, text: string): NotesState {
+  return { ...s, text, dirty: true };
+}
+
+/** The save of `sent` succeeded: the plan now has it. Typing since then stays a draft. */
+export function notesSaved(s: NotesState, plan: PlanWithNotes | null, sent: string): NotesState {
+  const saved = notesOf(plan);
+  return { ...s, base: saved.version, dirty: s.text !== sent };
+}
+
+/** The save was refused: the other adult's version is newer. Show both. */
+export function notesConflict(
+  s: NotesState,
+  plan: PlanWithNotes | null | undefined,
+  by: string | null,
+): NotesState {
+  const theirs = notesOf(plan);
+  if (theirs.text.trim() === s.text.trim()) {
+    // Same words: nothing to choose between.
+    return { ...s, base: theirs.version, dirty: false, conflict: null };
+  }
+  return { ...s, conflict: { theirs: theirs.text, theirsVersion: theirs.version, by } };
+}
+
+/** "Keep mine": save my text over theirs (knowingly: from their version). */
+export function keepMine(s: NotesState): NotesState {
+  if (!s.conflict) return s;
+  return { ...s, base: s.conflict.theirsVersion, dirty: true, conflict: null };
+}
+
+/** "Use theirs": drop my text for theirs. */
+export function takeTheirs(s: NotesState): NotesState {
+  if (!s.conflict) return s;
+  return { text: s.conflict.theirs, base: s.conflict.theirsVersion, dirty: false, conflict: null };
 }

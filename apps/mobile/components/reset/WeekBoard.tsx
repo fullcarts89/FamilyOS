@@ -14,6 +14,7 @@ import { useHousehold } from '../../lib/household';
 import { usePeople, type Person } from '../../lib/people';
 import { timeOf } from '../../lib/rhythm';
 import { dueDate, isOpen } from '../../lib/tasks';
+import { pendingRequest, waitingWords, type WithRequest } from './coordination';
 
 export type RowKind = 'adults' | 'care' | 'together' | 'dinners' | 'chores';
 
@@ -136,13 +137,17 @@ export function WeekBoard({
     const whatInFull =
       o.careAction === 'drop_off' ? 'Drop-off' : o.careAction === 'pick_up' ? 'Pickup' : o.title;
     const whoText = who ? (who.isMe ? 'You' : who.name) : 'Nobody yet';
+    // Asked, not answered: it still needs someone, and says who it's waiting for.
+    const request = pendingRequest(o as WithRequest);
+    const asked = request ? people.byId(request.askedMemberId) : null;
+    const askedName = asked ? (asked.isMe ? 'you' : asked.name) : null;
     return (
-      <FadeIn key={`${o.key}:${who?.id ?? 'none'}:${problem}`}>
+      <FadeIn key={`${o.key}:${who?.id ?? 'none'}:${problem}:${asked?.id ?? ''}`}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${weekdayName(o.date)} ${o.careAction === 'drop_off' ? 'drop-off' : o.careAction === 'pick_up' ? 'pickup' : o.title} at ${timeOf(o.startsAt, timeZone)}: ${who ? (who.isMe ? 'you' : who.name) : 'nobody yet'}${problem ? ', needs sorting' : ''}. ${committed ? '' : 'Choose who.'}`}
+          accessibilityLabel={`${weekdayName(o.date)} ${o.careAction === 'drop_off' ? 'drop-off' : o.careAction === 'pick_up' ? 'pickup' : o.title} at ${timeOf(o.startsAt, timeZone)}: ${who ? (who.isMe ? 'you' : who.name) : 'nobody yet'}${problem ? ', needs sorting' : ''}${askedName ? `, asked ${askedName}, waiting` : ''}. ${committed ? '' : 'Choose who.'}`}
           {...tipProps(
-            `${whatInFull} · ${timeOf(o.startsAt, timeZone)} · ${whoText}${problem ? ' · needs sorting' : ''}`,
+            `${whatInFull} · ${timeOf(o.startsAt, timeZone)} · ${whoText}${problem ? ' · needs sorting' : ''}${askedName ? ` · ${waitingWords(askedName)}` : ''}`,
           )}
           onPress={(e) => (onHandoff ? onHandoff(o) : showTip(`${whatInFull} · ${whoText}`, e))}
           style={(s: PressState) => [
@@ -165,6 +170,10 @@ export function WeekBoard({
           </Text>
           {who && !problem ? (
             <Avatar person={who} size={20} />
+          ) : asked ? (
+            <View style={[styles.waiting, { borderColor: asked.color }]}>
+              <Avatar person={asked} size={16} />
+            </View>
           ) : (
             <View style={styles.unknown}>
               <Text variant="small" style={styles.unknownText}>
@@ -540,6 +549,16 @@ const styles = StyleSheet.create({
     backgroundColor: color.surface,
   },
   unknownText: { fontFamily: font.uiBold, color: color.ink, fontSize: 11, lineHeight: 13 },
+  waiting: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.75,
+  },
   turn: {
     flexDirection: 'row',
     alignItems: 'flex-start',

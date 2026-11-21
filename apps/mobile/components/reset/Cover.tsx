@@ -1,8 +1,8 @@
-import { Check } from 'lucide-react-native';
+import { Check, Hourglass } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Avatar } from '../../design/Avatar';
-import type { PressState } from '../../design/Button';
+import { Button, type PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
 import { FadeIn } from '../../design/motion';
 import { Text } from '../../design/Text';
@@ -13,6 +13,9 @@ import { useHousehold } from '../../lib/household';
 import { usePeople, type Person } from '../../lib/people';
 import { currentAdult } from '../../lib/reset';
 import { CARE_VERB, timeOf } from '../../lib/rhythm';
+import { pendingRequest, requestView, type CoverRequest, type WithRequest } from './coordination';
+
+export type Answer = 'accept' | 'decline' | 'cancel';
 
 /** Every care event in the week (drop-offs, pickups, a swim lesson), in time order. */
 export function careOccurrences(data: ResetResponse): Occurrence[] {
@@ -34,14 +37,22 @@ export function careWhat(o: Occurrence, child: Person | null, midSentence = fals
 
 /**
  * Chapter 4, cover the week's care: what clashes or has nobody first (hatched), each with the
- * adults to choose from; then every other drop-off and pickup, one tap to swap who has it.
+ * adults to choose from; then every other drop-off and pickup. Choosing yourself takes it at
+ * once; choosing the other adult asks them, and it stays as it is ("Waiting for Theo", still
+ * counted as needing someone) until they accept on their own phone. What you were asked to
+ * cover has Accept and Decline here too.
  */
 export function Cover({
   data,
   onSet,
+  onAnswer,
+  together,
 }: {
   data: ResetResponse;
   onSet: (o: Occurrence, memberId: string) => Promise<boolean>;
+  onAnswer: (o: Occurrence, request: CoverRequest, answer: Answer) => Promise<boolean>;
+  /** One screen for both: the asked adult still says yes on their own phone. */
+  together: boolean;
 }) {
   const people = usePeople();
   const { timeZone } = useHousehold();
@@ -89,6 +100,7 @@ export function Cover({
                     onSet={onSet}
                     avoid={clash?.memberId}
                   />
+                  <RequestLine o={o} onAnswer={onAnswer} together={together} />
                 </View>
               </FadeIn>
             );
@@ -133,11 +145,87 @@ export function Cover({
                     {!o.careAction && child ? ` · ${child.name}` : ''}
                     {o.cover ? ' · covered this once' : ''}
                   </Text>
+                  <RequestLine o={o} onAnswer={onAnswer} together={together} compact />
                 </View>
                 <WhoPicker o={o} adults={adults} caredFor={caredFor} onSet={onSet} compact />
               </View>
             );
           })}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * A request on this occurrence: "Waiting for Theo" (with Cancel request, if you asked), or
+ * "Maya asked you to cover this" with Accept and Decline.
+ */
+function RequestLine({
+  o,
+  onAnswer,
+  together,
+  compact,
+}: {
+  o: Occurrence;
+  onAnswer: (o: Occurrence, request: CoverRequest, answer: Answer) => Promise<boolean>;
+  together: boolean;
+  compact?: boolean;
+}) {
+  const people = usePeople();
+  const [busy, setBusy] = useState<Answer | null>(null);
+  const view = requestView(o as WithRequest, people.me?.id);
+  if (view.kind === 'none') return null;
+  const asked = people.byId(view.request.askedMemberId);
+  const asker = people.byId(view.request.askedByMemberId);
+  const answer = async (a: Answer) => {
+    setBusy(a);
+    await onAnswer(o, view.request, a);
+    setBusy(null);
+  };
+  return (
+    <View style={[styles.request, compact && styles.requestCompact]}>
+      <View style={styles.requestText}>
+        <Hourglass size={14} color={(view.kind === 'forMe' ? asker : asked)?.color ?? color.ink} />
+        <Text variant={compact ? 'small' : 'meta'} style={styles.flex}>
+          {view.kind === 'forMe'
+            ? `${asker?.name ?? 'Someone'} asked you to cover this`
+            : `Waiting for ${asked?.name ?? 'them'}`}
+          {view.kind === 'mine' && together && !compact ? (
+            <Text variant="meta" tone="muted">
+              {' '}
+              · {asked?.name ?? 'They'} says yes on their own phone
+            </Text>
+          ) : null}
+        </Text>
+      </View>
+      {view.kind === 'forMe' ? (
+        <View style={styles.requestActions}>
+          <Button
+            title="Accept"
+            size="sm"
+            busy={busy === 'accept'}
+            disabled={busy !== null}
+            onPress={() => void answer('accept')}
+          />
+          <Button
+            title="Decline"
+            size="sm"
+            variant="secondary"
+            busy={busy === 'decline'}
+            disabled={busy !== null}
+            onPress={() => void answer('decline')}
+          />
+        </View>
+      ) : view.kind === 'mine' ? (
+        <View style={styles.requestActions}>
+          <Button
+            title="Cancel request"
+            size="sm"
+            variant="quiet"
+            busy={busy === 'cancel'}
+            onPress={() => void answer('cancel')}
+          />
         </View>
       ) : null}
     </View>
@@ -162,10 +250,12 @@ export function WhoPicker({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const current = currentAdult(o, caredFor);
+  const waitingOn = pendingRequest(o as WithRequest)?.askedMemberId ?? null;
   return (
     <View style={styles.picker} accessibilityRole="radiogroup" aria-label="Who has it">
       {adults.map((p) => {
         const on = current === p.id && p.id !== avoid;
+        const waiting = waitingOn === p.id && current !== p.id;
         return (
           <Pressable
             key={p.id}
@@ -173,7 +263,7 @@ export function WhoPicker({
             accessibilityState={{ checked: current === p.id, busy: busy === p.id }}
             aria-checked={current === p.id}
             aria-busy={busy === p.id}
-            accessibilityLabel={p.isMe ? 'You' : p.name}
+            accessibilityLabel={`${p.isMe ? 'You' : p.name}${waiting ? ', asked, waiting' : ''}`}
             onPress={async () => {
               if (current === p.id) return;
               setBusy(p.id);
@@ -184,6 +274,7 @@ export function WhoPicker({
               styles.who,
               compact && styles.whoCompact,
               on && { backgroundColor: tint(p.color, 0.22), borderColor: p.color },
+              waiting && { borderColor: p.color, borderStyle: 'dashed' },
               current === p.id && p.id === avoid && styles.whoClash,
               !on && s.hovered && { borderColor: color.ink },
               s.pressed && styles.pressed,
@@ -194,7 +285,7 @@ export function WhoPicker({
             ) : (
               <Avatar person={p} size={compact ? 20 : 22} />
             )}
-            {!compact || on ? (
+            {!compact || on || waiting ? (
               <Text variant="small" style={styles.whoText}>
                 {p.isMe ? 'You' : p.name}
               </Text>
@@ -265,4 +356,8 @@ const styles = StyleSheet.create({
   whoClash: { borderColor: color.ink, borderStyle: 'dashed' },
   whoText: { color: color.ink },
   pressed: { transform: [{ scale: 0.96 }] },
+  request: { gap: 8, marginTop: 6 },
+  requestCompact: { gap: 4, marginTop: 2 },
+  requestText: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  requestActions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
 });

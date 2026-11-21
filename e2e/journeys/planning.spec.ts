@@ -77,17 +77,29 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
       await expect(maya.getByRole('heading', { name: 'What needs both of you?' })).toBeVisible();
       await next('Cover June');
 
-      // Cover June: each hatched problem goes to Theo; the last one is a milestone.
+      // Cover June: each hatched problem is asked of Theo. On one screen it still takes his yes
+      // on his own phone: until then it says so, and still counts as needing someone.
       await expect(maya.getByRole('heading', { name: 'Who has June, and when?' })).toBeVisible();
       for (let i = 0; i < problems; i++) {
         await maya
           .getByRole('radiogroup', { name: 'Who has it' })
-          .first()
+          .nth(i)
           .getByRole('radio', { name: 'Theo' })
           .click();
-        await expect(maya.getByText(/^(Nobody is down for|You have “)/)).toHaveCount(
-          problems - i - 1,
-        );
+        await expect(maya.getByText(/^Waiting for Theo/)).toHaveCount(i + 1);
+      }
+      await expect(maya.getByText(/^(Nobody is down for|You have “)/)).toHaveCount(problems);
+      const waiting = await mayaApi.get<ResetRead>(`/reset?week=${week}`);
+      expect(waiting.events.needsOwner.length + waiting.events.conflicts.length).toBe(problems);
+
+      // Theo, on his own phone, says yes to each; Maya's screen follows within seconds, and
+      // the last one is the milestone.
+      const theo = await app.as(THEO.email);
+      await theo.goto(`/reset?chapter=3&week=${week}`);
+      await expect(theo.getByText('Maya asked you to cover this')).toHaveCount(problems);
+      for (let i = 0; i < problems; i++) {
+        await theo.getByRole('button', { name: 'Accept', exact: true }).first().click();
+        await expect(theo.getByText('Maya asked you to cover this')).toHaveCount(problems - i - 1);
       }
       await expect(toast(maya, 'June’s week is covered')).toBeVisible();
       await expect(

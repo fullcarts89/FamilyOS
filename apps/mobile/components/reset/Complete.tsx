@@ -18,6 +18,7 @@ import { currentAdult } from '../../lib/reset';
 import { completionLine, shortWeekday, weekRange } from '../../lib/reset-words';
 import { localParts, timeOf } from '../../lib/rhythm';
 import { dueDate, isOpen } from '../../lib/tasks';
+import { pendingRequest, type WithRequest } from './coordination';
 import { careOccurrences, careWhat } from './Cover';
 import { PlanMoment } from './PlanMoment';
 import { WeekBoard } from './WeekBoard';
@@ -292,9 +293,12 @@ function StillOpen({
     const child = people.byId(o?.careMemberId);
     const what = o ? careWhat(o, child) : 'A drop-off or pickup';
     const at = `${o ? weekdayName(o.date) : ''} ${timeOf(u.time, timeZone)}`.trim();
+    // Asked and not answered yet: still open, and it says who it's waiting for.
+    const asked = o ? pendingRequest(o as WithRequest) : null;
     return {
-      text:
-        u.type === 'handoff_conflict'
+      text: asked
+        ? `${what}, ${at}: waiting for ${people.byId(asked.askedMemberId)?.name ?? 'an answer'}`
+        : u.type === 'handoff_conflict'
           ? `${what}, ${at}: clashes with ${people.byId(u.memberId)?.name ?? 'someone'}’s plans`
           : `${what}, ${at}: nobody is down for it`,
       chapter: 'cover',

@@ -1,6 +1,6 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, ArrowRight, Check, Plus, Utensils } from 'lucide-react-native';
-import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
+import { ArrowLeft, ArrowRight, Check, Hourglass, Plus, Utensils } from 'lucide-react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, StyleSheet, View, type ScrollView } from 'react-native';
 import { DecisionCard } from '../../components/decisions/DecisionCard';
 import { NewDecision } from '../../components/decisions/NewDecision';
@@ -17,7 +17,21 @@ import {
   type StepState,
 } from '../../components/reset/chapters';
 import { Complete } from '../../components/reset/Complete';
-import { Cover, WhoPicker, careOccurrences, careWhat } from '../../components/reset/Cover';
+import {
+  pendingRequest,
+  requestView,
+  restoreOccurrence,
+  withRequest,
+  type CoverRequest,
+  type WithRequest,
+} from '../../components/reset/coordination';
+import {
+  Cover,
+  WhoPicker,
+  careOccurrences,
+  careWhat,
+  type Answer,
+} from '../../components/reset/Cover';
 import { LookBack } from '../../components/reset/LookBack';
 import { LooseEnds, type LooseChoice, type SortAction } from '../../components/reset/LooseEnds';
 import { WeekBoard } from '../../components/reset/WeekBoard';
@@ -48,10 +62,11 @@ import { addDays, greetingFor, weekdayName } from '../../lib/dates';
 import { useDecisionActions, useSettledWatcher } from '../../lib/decisions';
 import { useGroceries } from '../../lib/groceries';
 import { useCapture } from '../../lib/capture';
+import { trackRequests, useOccurrenceActions, usePressTick } from '../../lib/events';
 import { useHousehold } from '../../lib/household';
 import { useMealActions } from '../../lib/meals';
 import { usePeople } from '../../lib/people';
-import { currentAdult, defaultAdult, useReset } from '../../lib/reset';
+import { currentAdult, defaultAdult, useReset, useResetNotes } from '../../lib/reset';
 import { listWords, stillOpen, weekRange } from '../../lib/reset-words';
 import { localParts, timeOf } from '../../lib/rhythm';
 
@@ -77,9 +92,11 @@ export default function Reset() {
   const { phone, desktop } = useLayout();
   const toast = useToast();
   const haptics = useHaptics();
+  const tick = usePressTick();
   const { celebrate } = useCelebrate();
   const [mode, setMode] = useState<Mode>(params.mode === 'apart' ? 'apart' : 'together');
-  const reset = useReset({ live: mode === 'apart', week: params.week });
+  // Together or apart, the Reset refreshes every few seconds: the other phone's changes show.
+  const reset = useReset({ week: params.week });
   const { data, writing, patch, load } = reset;
   const initial = Number(params.chapter);
   const [step, setStep] = useState(
@@ -90,12 +107,13 @@ export default function Reset() {
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const [chooser, setChooser] = useState<Occurrence | null>(null);
   const [eventSheet, setEventSheet] = useState<EventTarget | null>(null);
-  const [notes, setNotes] = useState<string | null>(null);
   const [committing, setCommitting] = useState(false);
   const [addingDecision, setAddingDecision] = useState(false);
   const [dinnerFocus, setDinnerFocus] = useState(false);
   const groceries = useGroceries();
   const adults = people.adults.filter((p) => p.role === 'owner' || p.role === 'adult');
+  const partner = adults.find((p) => !p.isMe);
+  const notes = useResetNotes({ reset, partnerName: partner?.name ?? null });
   const caredFor = useCallback((id: string) => !!people.byId(id)?.caredFor, [people]);
   const careNames = [
     ...new Set(
@@ -209,6 +227,18 @@ export default function Reset() {
     return item.title;
   };
 
+  /** One item's owner and due date in one write (a hand-off, and its undo). */
+  const patchItem = useCallback(
+    async (id: string, body: Record<string, unknown>) =>
+      (
+        await api<{ item: WorkItem }>(`/households/${household?.id}/work-items/${id}`, {
+          method: 'PATCH',
+          body,
+        })
+      ).item,
+    [household],
+  );
+
   const sortLoose = async (item: WorkItem, action: SortAction) => {
     const label = choiceLabel(item, action);
     setChoices((c) => ({ ...c, [item.id]: { action, label, before: item } }));
@@ -216,7 +246,7 @@ export default function Reset() {
     try {
       await writing(async () => {
         const v = item.version;
-        let saved =
+        const saved =
           action.kind === 'keep'
             ? await bulk([{ id: item.id, expectedVersion: v, action: 'due', value: keepOn }])
             : action.kind === 'move'
@@ -227,14 +257,14 @@ export default function Reset() {
                 ? await bulk([{ id: item.id, expectedVersion: v, action: 'clear_due' }])
                 : action.kind === 'drop'
                   ? await bulk([{ id: item.id, expectedVersion: v, action: 'cancel' }])
-                  : await bulk([
-                      { id: item.id, expectedVersion: v, action: 'assign', value: action.to },
-                    ]);
-        if (action.kind === 'hand' && saved[0]) {
-          saved = await bulk([
-            { id: item.id, expectedVersion: saved[0].version, action: 'due', value: keepOn },
-          ]);
-        }
+                  : // Handed over and kept for this week together: never one without the other.
+                    [
+                      await patchItem(item.id, {
+                        expectedVersion: v,
+                        ownerMemberId: action.to,
+                        dueOn: keepOn,
+                      }),
+                    ];
         for (const s of saved) cache.current.set(s.id, s);
         reset.putItems(saved);
       });
@@ -272,23 +302,22 @@ export default function Reset() {
       await writing(async () => {
         let saved: WorkItem[];
         if (choice.action.kind === 'drop') {
-          const res = await api<{ item: WorkItem }>(
-            `/households/${household?.id}/work-items/${item.id}`,
-            { method: 'PATCH', body: { expectedVersion: now.version, status: before.status } },
-          );
-          saved = [res.item];
+          saved = [
+            await patchItem(item.id, { expectedVersion: now.version, status: before.status }),
+          ];
         } else if (choice.action.kind === 'hand') {
-          const first = await bulk([
-            {
-              id: item.id,
+          // Back to who had it, with the date it had: one write.
+          saved = [
+            await patchItem(item.id, {
               expectedVersion: now.version,
-              action: 'assign',
-              value: before.ownerMemberId,
-            },
-          ]);
-          saved = await bulk([
-            { id: item.id, expectedVersion: first[0]?.version ?? now.version + 1, ...dueBack },
-          ]);
+              ownerMemberId: before.ownerMemberId,
+              ...(before.dueAt
+                ? { dueAt: before.dueAt }
+                : before.dueOn
+                  ? { dueOn: before.dueOn }
+                  : { dueOn: null, dueAt: null }),
+            }),
+          ];
         } else {
           saved = await bulk([{ id: item.id, expectedVersion: now.version, ...dueBack }]);
         }
@@ -345,16 +374,56 @@ export default function Reset() {
       ...r.events.conflicts.map((h) => h.occurrenceKey),
     ]);
 
+  const occurrenceActions = useOccurrenceActions(() => void load());
+  const careList = useMemo(() => (data ? careOccurrences(data) : []), [data]);
+  useEffect(() => {
+    trackRequests(household?.id, people.me?.id, careList);
+  }, [careList, household, people.me]);
+
+  /**
+   * Who has one handoff. Yourself: at once (shown straight away, put back if the server says
+   * no). The other adult: they're asked, and nothing changes until they accept on their own
+   * phone; meanwhile it reads "Waiting for Theo" and still counts as needing someone.
+   */
   const setHandoff = useCallback(
     async (o: Occurrence, memberId: string): Promise<boolean> => {
       if (!household || !data) return false;
+      const me = people.me;
       const def = defaultAdult(o, caredFor);
       const cur = currentAdult(o, caredFor);
       if (cur === memberId) return true;
-      const problems = problemKeys(data);
-      const wasProblem = problems.has(o.key);
-      const wasConflict = data.events.conflicts.some((c) => c.occurrenceKey === o.key);
-      const left = problems.size - (wasProblem ? 1 : 0);
+      const before = data;
+      const who = people.byId(memberId);
+      const child = people.byId(o.careMemberId);
+      const at = `${weekdayName(o.date)} at ${timeOf(o.startsAt, timeZone)}`;
+
+      if (memberId !== me?.id) {
+        const waiting = pendingRequest(o as WithRequest);
+        if (waiting?.askedMemberId === memberId) return true;
+        if (o.cover) {
+          // Undoing a cover would hand it back without a yes: only they can take it back.
+          toast.show(`Only ${who?.name ?? 'they'} can take this back`, {
+            detail: `You’re covering ${careWhat(o, child, true)} ${at}. They can take it back from their own phone.`,
+          });
+          return false;
+        }
+        const placeholder: CoverRequest = {
+          id: 'pending',
+          eventId: o.eventId,
+          date: o.date,
+          askedMemberId: memberId,
+          askedByMemberId: me?.id ?? '',
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          respondedAt: null,
+          version: 1,
+        };
+        patch((r) => withRequest(r, o.key, placeholder));
+        const ok = await writing(() => occurrenceActions.ask(o, memberId, { today }));
+        if (!ok) patch((r) => restoreOccurrence(r, before, o.key));
+        return ok;
+      }
+
       const next: Occurrence = {
         ...o,
         memberIds: [memberId, ...o.memberIds.filter(caredFor)],
@@ -366,7 +435,9 @@ export default function Reset() {
           ...r.events,
           days: r.events.days.map((d) => ({
             ...d,
-            occurrences: d.occurrences.map((x) => (x.key === o.key ? next : x)),
+            occurrences: d.occurrences.map((x) =>
+              x.key === o.key ? ({ ...next, coverRequest: null } as WithRequest) : x,
+            ),
           })),
           needsOwner: r.events.needsOwner.filter((h) => h.occurrenceKey !== o.key),
           conflicts: r.events.conflicts.filter((h) => h.occurrenceKey !== o.key),
@@ -375,6 +446,7 @@ export default function Reset() {
           (u) => !('occurrenceKey' in u) || u.occurrenceKey !== o.key,
         ),
       }));
+      tick();
       try {
         await writing(() =>
           memberId === def && o.cover
@@ -387,45 +459,20 @@ export default function Reset() {
               }),
         );
       } catch (caught) {
-        void load();
+        // Put this handoff back exactly as it was (the refresh after the write confirms it).
+        patch((r) => restoreOccurrence(r, before, o.key));
         toast.show(`Couldn’t change who has “${o.title}”.`, {
           error: true,
           detail: errorMessage(caught),
         });
         return false;
       }
-      const who = people.byId(memberId);
-      const child = people.byId(o.careMemberId);
-      const at = `${weekdayName(o.date)} at ${timeOf(o.startsAt, timeZone)}`;
-      const whoHas = who?.isMe ? 'You have' : `${who?.name ?? 'They'} have`;
-      if (wasProblem) {
-        if (left === 0) {
-          celebrate({
-            key: `week-covered:${week}`,
-            title:
-              child?.role === 'child' ? `${child.name}’s week is covered` : 'The week is covered',
-            line: 'Every drop-off and pickup has someone, and nothing clashes.',
-            colors: [who?.color, child?.color].filter((c): c is string => !!c),
-          });
-        } else {
-          celebrate({
-            key: `cover:${o.eventId}:${o.date}`,
-            title: wasConflict ? 'Clash sorted' : 'Covered',
-            line: `${whoHas.replace(/ have$/, who?.isMe ? ' have' : ' has')} ${careWhat(o, child, true)} ${at}.`,
-            colors: [who?.color, child?.color].filter((c): c is string => !!c),
-          });
-        }
-        haptics.medium();
-      } else {
-        haptics.light();
-        toast.show(
-          `${who?.isMe ? 'You have' : `${who?.name ?? 'They'} has`} ${careWhat(o, child, true)}`,
-          {
-            detail: `${at}. It’s on the board.`,
-            undo: () => void setHandoff(next, cur ?? def ?? memberId),
-          },
-        );
-      }
+      // A confirmation, not a milestone; the week covered is one (from the server's answer).
+      haptics.light();
+      toast.show(`You have ${careWhat(o, child, true)}`, {
+        detail: `${at}. It’s on the board.`,
+        undo: () => void setHandoff(next, cur ?? def ?? memberId),
+      });
       return true;
     },
     [
@@ -434,15 +481,47 @@ export default function Reset() {
       caredFor,
       patch,
       writing,
-      load,
       toast,
       people,
       timeZone,
-      celebrate,
       haptics,
-      week,
+      tick,
+      occurrenceActions,
+      today,
     ],
   );
+
+  const answer = useCallback(
+    (o: Occurrence, request: CoverRequest, a: Answer) =>
+      writing(() =>
+        a === 'accept'
+          ? occurrenceActions.accept(request, o, { today })
+          : a === 'decline'
+            ? occurrenceActions.decline(request, o, { today })
+            : occurrenceActions.cancelRequest(request, o),
+      ),
+    [writing, occurrenceActions, today],
+  );
+
+  // "June's week is covered": once every handoff has someone, by the server's account (your own
+  // change, or the other adult accepting what you asked), never on an optimistic guess.
+  const serverProblems = useRef<number | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const n = problemKeys(data).size;
+    const was = serverProblems.current;
+    serverProblems.current = n;
+    if (was === null || was === 0 || n > 0) return;
+    const child = people.caredFor.find((p) => p.role === 'child');
+    celebrate({
+      key: `week-covered:${data.week.start}`,
+      title:
+        careNames.length === 1 && child ? `${child.name}’s week is covered` : 'The week is covered',
+      line: 'Every drop-off and pickup has someone, and nothing clashes.',
+      colors: [...adults.map((p) => p.color), child?.color].filter((c): c is string => !!c),
+    });
+    // Only server answers count: `loads` changes with each one (not with optimistic patches).
+  }, [reset.loads]);
 
   // ---------------------------------------------------------------------------------------------
   // Dinners
@@ -461,11 +540,25 @@ export default function Reset() {
   const commit = async () => {
     if (!household || !data) return;
     setCommitting(true);
+    // The notes are saved as they're typed; anything still waiting goes first.
+    if (!(await notes.flush())) {
+      setCommitting(false);
+      toast.show(
+        notes.state?.conflict ? 'Choose which notes to keep first' : 'Couldn’t save the notes.',
+        {
+          error: !notes.state?.conflict,
+          detail: notes.state?.conflict
+            ? `${partner?.name ?? 'The other adult'} changed them too.`
+            : 'Check your connection and try again.',
+        },
+      );
+      return;
+    }
     try {
       await writing(() =>
         api(`/households/${household.id}/reset/commit`, {
           method: 'POST',
-          body: { week: data.week.start, ...(notes?.trim() ? { notes: notes.trim() } : {}) },
+          body: { week: data.week.start },
         }),
       );
       const first = await acknowledgeOnce(`reset:${data.week.start}`);
@@ -494,7 +587,8 @@ export default function Reset() {
     go(DONE);
   };
 
-  // A plan committed elsewhere (the other phone) moves this one to the finish too.
+  // A plan committed elsewhere (the other phone) shows here within a refresh: each on your own
+  // phone, this one moves to the finish too; on one screen, it says so with a way there.
   const committedAt = data?.plan?.committedAt ?? null;
   const sawCommit = useRef<string | null | undefined>(undefined);
   useEffect(() => {
@@ -503,9 +597,17 @@ export default function Reset() {
       sawCommit.current = committedAt;
       return;
     }
-    if (!sawCommit.current && committedAt && step !== DONE && mode === 'apart') {
+    if (!sawCommit.current && committedAt) {
       sawCommit.current = committedAt;
-      void seePlan();
+      const by = people.byId(data.plan?.committedByMemberId);
+      if (step === DONE || by?.isMe) return;
+      if (mode === 'apart') void seePlan();
+      else {
+        toast.show(`${by?.name ?? 'Someone'} made it your plan`, {
+          detail: 'The week’s plan is saved for both of you.',
+          action: { label: 'See the plan', run: () => void seePlan() },
+        });
+      }
     }
   }, [committedAt, data]);
 
@@ -616,7 +718,6 @@ export default function Reset() {
 
   const hour = Math.floor(localParts(new Date(), timeZone).minutes / 60);
   const me = people.me;
-  const partner = adults.find((p) => !p.isMe);
   const greetingNames =
     mode === 'together' && partner && me ? `${me.name} and ${partner.name}` : (me?.name ?? '');
 
@@ -838,7 +939,12 @@ export default function Reset() {
                   : 'Everything has someone. Tap any handoff here or on the board to swap.'
               }
             />
-            <Cover data={data} onSet={setHandoff} />
+            <Cover
+              data={data}
+              onSet={setHandoff}
+              onAnswer={answer}
+              together={mode === 'together'}
+            />
           </>
         );
       case 'dinners':
@@ -884,6 +990,14 @@ export default function Reset() {
         );
       case 'plan': {
         const open = stillOpen(data.unresolved);
+        const problemSet = problemKeys(data);
+        const waitingFor = careList
+          .filter((o) => problemSet.has(o.key))
+          .map((o) => pendingRequest(o as WithRequest))
+          .filter((r): r is CoverRequest => !!r);
+        const waitingNames = [
+          ...new Set(waitingFor.map((r) => people.byId(r.askedMemberId)?.name ?? 'them')),
+        ];
         const rows: { ok: boolean; neutral?: boolean; text: string; chapter: ChapterKey }[] = [
           {
             ok: unsorted.length === 0,
@@ -906,7 +1020,7 @@ export default function Reset() {
             text:
               problems === 0
                 ? 'Every drop-off and pickup has someone'
-                : `${problems} drop-off${problems === 1 ? '' : 's'} or pickup${problems === 1 ? '' : 's'} need someone`,
+                : `${problems} drop-off${problems === 1 ? '' : 's'} or pickup${problems === 1 ? '' : 's'} need someone${waitingFor.length ? ` · ${waitingFor.length} waiting for ${listWords(waitingNames)}` : ''}`,
             chapter: 'cover',
           },
           {
@@ -953,14 +1067,56 @@ export default function Reset() {
                 </Pressable>
               ))}
             </View>
-            <Field
-              label="Anything to remember this week? (optional)"
-              value={notes ?? data.plan?.notes ?? ''}
-              onChangeText={setNotes}
-              placeholder="A swap you agreed, something to decide by midweek…"
-              multiline
-              maxLength={2000}
-            />
+            <View style={styles.notes}>
+              <Field
+                label="Anything to remember this week? (optional)"
+                value={notes.state?.text ?? data.plan?.notes ?? ''}
+                onChangeText={notes.setText}
+                placeholder="A swap you agreed, something to decide by midweek…"
+                multiline
+                maxLength={2000}
+              />
+              <Text variant="small" tone="muted" accessibilityLiveRegion="polite">
+                {notes.status === 'saving'
+                  ? 'Saving…'
+                  : notes.status === 'error'
+                    ? 'Not saved yet: it’s kept here and saved when you’re back online.'
+                    : notes.status === 'saved' && !notes.state?.dirty
+                      ? 'Saved for both of you'
+                      : notes.state?.dirty
+                        ? 'Kept here until it’s saved'
+                        : 'Saved as you type, for both of you'}
+              </Text>
+              {notes.state?.conflict ? (
+                <View style={styles.conflict} accessibilityLabel="Two versions of the notes">
+                  <Text variant="title">
+                    {notes.state.conflict.by ?? 'The other adult'} changed the notes too. Which
+                    should stay?
+                  </Text>
+                  <View style={styles.version}>
+                    <Text variant="kicker" tone="muted">
+                      Yours
+                    </Text>
+                    <Text variant="body">{notes.state.text.trim() || 'No notes'}</Text>
+                  </View>
+                  <View style={styles.version}>
+                    <Text variant="kicker" tone="muted">
+                      {notes.state.conflict.by ? `${notes.state.conflict.by}’s` : 'Theirs'}
+                    </Text>
+                    <Text variant="body">{notes.state.conflict.theirs.trim() || 'No notes'}</Text>
+                  </View>
+                  <View style={styles.conflictActions}>
+                    <Button title="Keep mine" size="sm" onPress={notes.chooseMine} />
+                    <Button
+                      title="Use theirs"
+                      size="sm"
+                      variant="secondary"
+                      onPress={notes.chooseTheirs}
+                    />
+                  </View>
+                </View>
+              ) : null}
+            </View>
             {open ? (
               <View style={styles.openNote}>
                 <Hatch width={18} height={12} radius={3} />
@@ -1123,6 +1279,48 @@ export default function Reset() {
                 return ok;
               }}
             />
+            {(() => {
+              const view = requestView(chooser as WithRequest, people.me?.id);
+              if (view.kind === 'none') return null;
+              const asked = people.byId(view.request.askedMemberId);
+              const asker = people.byId(view.request.askedByMemberId);
+              const run = async (a: Answer) => {
+                const ok = await answer(chooser, view.request, a);
+                if (ok) setChooser(null);
+              };
+              return (
+                <View style={styles.chooserRequest}>
+                  <View style={styles.chooserRequestText}>
+                    <Hourglass size={15} color={asked?.color ?? color.ink} />
+                    <Text variant="meta" style={styles.flex}>
+                      {view.kind === 'forMe'
+                        ? `${asker?.name ?? 'Someone'} asked you to cover this`
+                        : `Waiting for ${asked?.name ?? 'them'}`}
+                    </Text>
+                  </View>
+                  <View style={styles.conflictActions}>
+                    {view.kind === 'forMe' ? (
+                      <>
+                        <Button title="Accept" size="sm" onPress={() => void run('accept')} />
+                        <Button
+                          title="Decline"
+                          size="sm"
+                          variant="secondary"
+                          onPress={() => void run('decline')}
+                        />
+                      </>
+                    ) : view.kind === 'mine' ? (
+                      <Button
+                        title="Cancel request"
+                        size="sm"
+                        variant="secondary"
+                        onPress={() => void run('cancel')}
+                      />
+                    ) : null}
+                  </View>
+                </View>
+              );
+            })()}
             <Button
               title="Open the event"
               variant="quiet"
@@ -1261,4 +1459,17 @@ const styles = StyleSheet.create({
     borderColor: color.ink,
   },
   chooser: { gap: 14, paddingBottom: 8 },
+  chooserRequest: { gap: 10 },
+  chooserRequestText: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  notes: { gap: 6 },
+  conflict: {
+    gap: 10,
+    padding: 14,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: color.ink,
+    backgroundColor: color.surface,
+  },
+  version: { gap: 2 },
+  conflictActions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
 });
