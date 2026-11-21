@@ -381,7 +381,17 @@ describe.skipIf(!db)('planning: decisions, meals, groceries, contacts', () => {
         .where('entity_type', 'in', ['contact', 'decision', 'meal', 'grocery_item'])
         .execute();
       expect(audit.length).toBeGreaterThan(10);
-      const text = JSON.stringify(audit);
+      // Every text value in the rows, IDs aside: a random UUID can contain "555".
+      const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const strings = (value: unknown): string[] =>
+        typeof value === 'string'
+          ? [value]
+          : value !== null && typeof value === 'object'
+            ? Object.values(value).flatMap(strings)
+            : [];
+      const texts = audit
+        .flatMap((a) => [a.action, ...strings(a.payload)])
+        .filter((t) => !UUID.test(t));
       for (const secret of [
         'Riverside',
         '555',
@@ -391,7 +401,10 @@ describe.skipIf(!db)('planning: decisions, meals, groceries, contacts', () => {
         'preschool',
         'Little Oaks',
       ]) {
-        expect(text).not.toContain(secret);
+        expect({ secret, found: texts.filter((t) => t.includes(secret)) }).toEqual({
+          secret,
+          found: [],
+        });
       }
     });
   });
