@@ -8,6 +8,8 @@ import { api, apiWithStatus } from './api';
 
 /** First-time household setup, finished or skipped. */
 export const SETUP_KEY = 'setup-done';
+/** The one-screen welcome for an adult who joined from an invite, seen. */
+export const WELCOME_KEY = 'welcome-invited';
 
 const KEY = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,119}$/;
 

@@ -7,7 +7,8 @@ import { Button } from '../design/Button';
 import { Field } from '../design/Field';
 import { ErrorNotice } from '../design/Notice';
 import { Loading } from '../design/Page';
-import { ApiRequestError, api, claimInvite } from '../lib/api';
+import { ApiRequestError, api, claimInvite, errorMessage, failureKind } from '../lib/api';
+import { useHousehold } from '../lib/household';
 import { useSession } from '../lib/session';
 import { signInWithPassword } from '../lib/supabase';
 
@@ -54,7 +55,9 @@ function CreateAccount({ token }: { token: string }) {
           ? 'This invite isn’t valid for that email. It may have expired or already been used. Ask for a new link.'
           : code === 'weak_password'
             ? 'That password is known from a data breach or too easy to guess. Choose another.'
-            : 'Couldn’t create your account. Check your connection and try again.',
+            : failureKind(caught) === 'request'
+              ? 'Couldn’t create your account. Try again in a moment.'
+              : `Couldn’t create your account. ${errorMessage(caught)}`,
       );
       return;
     }
@@ -65,7 +68,8 @@ function CreateAccount({ token }: { token: string }) {
       router.replace('/sign-in');
       return;
     }
-    router.replace('/');
+    // Joined: a one-screen welcome first (what's yours, what's shared, where capture is).
+    router.replace('/welcome');
   };
 
   if (hasAccount) {
@@ -148,6 +152,7 @@ function CreateAccount({ token }: { token: string }) {
 
 /** Already signed in (for example, a member of another household): join with this account. */
 function JoinAsSignedIn({ token }: { token: string }) {
+  const { reload } = useHousehold();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,7 +162,8 @@ function JoinAsSignedIn({ token }: { token: string }) {
     setError(null);
     try {
       await api('/invites/accept', { method: 'POST', body: { token, displayName: name } });
-      router.replace('/');
+      await reload();
+      router.replace('/welcome');
     } catch (caught) {
       const code = errorCode(caught);
       setError(
