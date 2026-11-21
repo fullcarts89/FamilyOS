@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@familyos/calendar": "workspace:*",
     "@familyos/db": "workspace:*",
     "@familyos/domain": "workspace:*",
     "graphile-worker": "0.18.0",

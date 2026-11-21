@@ -18,3 +18,10 @@ apps/mobile/expo-env.d.ts
 
 # Local preview launcher (machine-specific paths)
 .claude/launch.json
+
+# Builder worktrees created by Claude Code agents
+.claude/worktrees/
+
+# End-to-end runs: the web export, videos, test output and recorded GIFs.
+e2e/.cache/
+e2e/artifacts/

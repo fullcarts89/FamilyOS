@@ -9,13 +9,15 @@
     "typecheck": "tsc -p tsconfig.json",
     "household:bootstrap": "tsx src/cli/bootstrap-household.ts",
     "household:set-password": "tsx src/cli/set-password.ts",
-    "household:invite-owner": "tsx src/cli/invite-owner.ts"
+    "household:invite-owner": "tsx src/cli/invite-owner.ts",
+    "demo:seed": "tsx src/cli/seed-demo.ts"
   },
   "dependencies": {
+    "@familyos/calendar": "workspace:*",
     "@familyos/db": "workspace:*",
     "@familyos/domain": "workspace:*",
-    "@hono/node-server": "2.1.5",
-    "hono": "4.13.13",
+    "@hono/node-server": "2.1.6",
+    "hono": "4.13.16",
     "zod": "4.6.7",
     "jose": "6.2.13",
     "kysely": "0.29.7"

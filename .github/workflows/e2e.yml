@@ -1,0 +1,65 @@
+name: E2E
+
+# The Family Rhythm journeys (e2e/) against a real local stack: Postgres, Auth, the API serving
+# the web export under /api, Chromium at desktop and phone sizes.
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      record:
+        description: Record the acceptance interactions as GIFs
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  journeys:
+    name: Journeys (desktop and phone)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - uses: supabase/setup-cli@v3.0.1
+        with:
+          version: 2.119.0
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @familyos/e2e exec playwright install --with-deps chromium
+      - if: ${{ inputs.record }}
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      # Postgres, Auth, Kong and Mailpit only; applies supabase/migrations.
+      - run: >
+          supabase start -x studio,imgproxy,storage-api,edge-runtime,logflare,vector,postgres-meta,realtime,supavisor,postgrest
+      - name: Export local stack settings
+        run: |
+          supabase status -o json > "$RUNNER_TEMP/supabase.json"
+          {
+            echo "SUPABASE_SECRET_KEY=$(jq -r .SECRET_KEY "$RUNNER_TEMP/supabase.json")"
+            echo "SUPABASE_PUBLISHABLE_KEY=$(jq -r .PUBLISHABLE_KEY "$RUNNER_TEMP/supabase.json")"
+          } >> "$GITHUB_ENV"
+      - run: pnpm e2e
+        env:
+          E2E_RECORD: ${{ inputs.record && '1' || '' }}
+      - if: ${{ failure() }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: e2e-results
+          path: |
+            e2e/.cache/test-results
+            e2e/.cache/api.log
+          retention-days: 7
+      - if: ${{ inputs.record }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: e2e-gifs
+          path: e2e/artifacts
+          retention-days: 14

@@ -62,6 +62,70 @@ jobs:
       - name: Restore drill
         run: scripts/ops/restore-drill.sh --yes
 
+  # N-1: production runs main until this branch is deployed, and migrations are applied before
+  # the new code (migrate.yml). So main must keep working on this branch's schema. This job
+  # applies this branch's migrations, adds a household with a pet (pets are new here), and runs
+  # main's own database tests and a check that main's API refuses a pet as a task's owner.
+  # It stays red until the main hotfix (pets excluded from owners and assignees) is merged:
+  # catching that is the point of the job.
+  previous-release:
+    name: Previous release on this schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - uses: supabase/setup-cli@v3.0.1
+        with:
+          version: 2.119.0
+      - run: corepack enable pnpm
+      # As the database job: Postgres, Auth, Kong and Mailpit; applies this branch's migrations.
+      - run: >
+          supabase start -x studio,imgproxy,storage-api,edge-runtime,logflare,vector,postgres-meta,realtime,supavisor,postgrest
+      - name: Export local stack settings
+        run: |
+          supabase status -o json > "$RUNNER_TEMP/supabase.json"
+          {
+            echo "SUPABASE_URL=$(jq -r .API_URL "$RUNNER_TEMP/supabase.json")"
+            echo "SUPABASE_SECRET_KEY=$(jq -r .SECRET_KEY "$RUNNER_TEMP/supabase.json")"
+            echo "SUPABASE_PUBLISHABLE_KEY=$(jq -r .PUBLISHABLE_KEY "$RUNNER_TEMP/supabase.json")"
+          } >> "$GITHUB_ENV"
+      - name: A household with a pet
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55322/postgres
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          insert into app.household (id, name, timezone)
+            values ('00000000-0000-4000-8000-0000000a0001', 'Previous release', 'America/Los_Angeles');
+          insert into app.member (id, household_id, user_id, display_name, role) values
+            ('00000000-0000-4000-8000-0000000a0002', '00000000-0000-4000-8000-0000000a0001',
+             '00000000-0000-4000-8000-0000000a0003', 'Owner', 'owner'),
+            ('00000000-0000-4000-8000-0000000a0004', '00000000-0000-4000-8000-0000000a0001',
+             null, 'Biscuit', 'pet');
+          SQL
+      - name: Check out main beside this branch
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/main" origin/main
+          cd "$RUNNER_TEMP/main" && pnpm install --frozen-lockfile
+      - name: main's database tests on this schema
+        working-directory: ${{ runner.temp }}/main
+        run: pnpm test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55322/postgres
+      - name: main's API refuses a pet as owner
+        run: >
+          "$RUNNER_TEMP/main/node_modules/.bin/tsx" scripts/ci/previous-release-pet-owner.mjs
+        env:
+          MAIN_DIR: ${{ runner.temp }}/main
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:55322/postgres
+          HOUSEHOLD_ID: 00000000-0000-4000-8000-0000000a0001
+          OWNER_USER_ID: 00000000-0000-4000-8000-0000000a0003
+          PET_ID: 00000000-0000-4000-8000-0000000a0004
+
   secrets:
     name: Secret scan
     runs-on: ubuntu-latest

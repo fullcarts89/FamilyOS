@@ -1,6 +1,8 @@
 packages:
   - apps/*
   - packages/*
+  # End-to-end journeys (Playwright) against a local stack: see e2e/README.md.
+  - e2e
 
 # Expo and Metro resolve dependencies most reliably from a hoisted node_modules.
 nodeLinker: hoisted
@@ -13,3 +15,11 @@ allowBuilds:
 overrides:
   '@expo/router-server': 58.0.17
   '@react-native/metro-config': 0.88.0
+  # @bacons/apple-targets 5.0.0 asks for the SDK 55 prebuild config; use SDK 58's (same API).
+  '@bacons/apple-targets>@expo/prebuild-config': 58.0.19
+  # Security fixes (P1-14). @bacons/apple-targets uses @bacons/xcode, whose @expo/plist 0.0.18
+  # pins @xmldom/xmldom ~0.7 (GHSA-wh4c-j3r5-mjhp and others; fixed in 0.8.15, same API as
+  # the 0.8 line Expo's own @expo/plist already uses). @bacons/xcode declares uuid 8 but never
+  # loads it (GHSA-w5hq-g745-h8pq; fixed in 11.1.1).
+  '@expo/plist@0.0.18>@xmldom/xmldom': 0.8.15
+  '@bacons/xcode>uuid': 11.1.1

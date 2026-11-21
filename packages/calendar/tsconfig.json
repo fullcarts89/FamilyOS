@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The parse worker imports parse-core.ts by file name: Node strips its types to run it.
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src"]
+}

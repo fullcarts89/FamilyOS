@@ -12,6 +12,12 @@ export default tseslint.config(
       'research_notes/**',
       'reports/**',
       'apps/mobile/expo-env.d.ts',
+      // Throwaway design prototypes: their own tooling, not part of the app.
+      'design/**',
+      '.claude/**',
+      // E2E output: the web export it builds, videos and GIFs.
+      'e2e/.cache/**',
+      'e2e/artifacts/**',
     ],
   },
   js.configs.recommended,
@@ -24,7 +30,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.mjs'],
+    // Playwright fixtures take their dependencies by destructuring, `{}` when there are none.
+    files: ['e2e/**/*.ts'],
+    rules: { 'no-empty-pattern': 'off' },
+  },
+  {
+    files: ['scripts/**/*.mjs', 'deploy/**/*.mjs'],
     languageOptions: { globals: { process: 'readonly', console: 'readonly', URL: 'readonly' } },
     rules: { 'no-console': 'off' },
   },

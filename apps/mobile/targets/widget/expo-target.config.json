@@ -1,0 +1,11 @@
+{
+  "type": "widget",
+  "name": "FamilyOSWidget",
+  "displayName": "FamilyOS",
+  "bundleIdentifier": ".widget",
+  "deploymentTarget": "17.0",
+  "frameworks": ["SwiftUI", "WidgetKit", "AppIntents"],
+  "entitlements": {
+    "com.apple.security.application-groups": ["group.app.familyos.household"]
+  }
+}

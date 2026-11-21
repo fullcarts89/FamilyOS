@@ -1,0 +1,171 @@
+import { Plus } from 'lucide-react-native';
+import { StyleSheet, View } from 'react-native';
+import { Avatar, Either } from '../../design/Avatar';
+import { Button } from '../../design/Button';
+import { GroupLabel } from '../../design/Section';
+import { Text } from '../../design/Text';
+import type { WorkItem } from '../../lib/api';
+import type { Person } from '../../lib/people';
+import { WHEN_LABEL, WHEN_ORDER, type When } from '../../lib/tasks';
+import type { SettlePhase } from '../../lib/use-settle';
+import type { MissedTurns } from './lists';
+import { MissedRow } from './MissedRow';
+import { TaskRow } from './TaskRow';
+
+/**
+ * One person's list (or the shared one): what they have, grouped by when. No scores or
+ * comparisons: the same number of things is never the same amount of work. On Today, a routine's
+ * missed turns lead the late group as one row, and open things with no date come last, under a
+ * quiet "Anytime".
+ */
+export function PersonColumn({
+  person,
+  title,
+  sub,
+  groups,
+  today,
+  onComplete,
+  onReopen,
+  onAssign,
+  onReschedule,
+  onAdd,
+  sharedColors,
+  showHeader = true,
+  contextOf,
+  settling,
+  missed = [],
+  onCatchUp,
+  anytime = [],
+}: {
+  /** null for the shared list. */
+  person: Person | null;
+  title: string;
+  sub: string;
+  groups: Record<When, WorkItem[]>;
+  today: string;
+  onComplete: (item: WorkItem) => void;
+  /** Ticking a just-finished row again (while it's still showing) reopens it. */
+  onReopen?: (item: WorkItem) => void;
+  onAssign: (item: WorkItem, owner: string | null) => void;
+  onReschedule: (item: WorkItem, dueOn: string, label: string) => void;
+  onAdd: () => void;
+  sharedColors?: [string, string];
+  showHeader?: boolean;
+  /** Extra meta for a row: a project step shows its project's name. */
+  contextOf?: (item: WorkItem) => string | undefined;
+  /** Just-finished rows still showing, and whether each is fading out. */
+  settling?: ReadonlyMap<string, SettlePhase>;
+  /** Routines with missed turns, one row each (with `onCatchUp`). */
+  missed?: MissedTurns[];
+  onCatchUp?: (missed: MissedTurns, how: 'done' | 'skip') => Promise<unknown>;
+  /** Open things with no date. */
+  anytime?: WorkItem[];
+}) {
+  const shownMissed = onCatchUp ? missed : [];
+  const empty =
+    WHEN_ORDER.every((w) => groups[w].length === 0) &&
+    shownMissed.length === 0 &&
+    anytime.length === 0;
+  const row = (item: WorkItem, last: boolean) => (
+    <TaskRow
+      key={item.id}
+      item={item}
+      today={today}
+      onComplete={onComplete}
+      onReopen={onReopen}
+      onAssign={onAssign}
+      onReschedule={onReschedule}
+      context={contextOf?.(item)}
+      last={last}
+      settling={settling?.get(item.id)}
+    />
+  );
+  return (
+    <View style={styles.column}>
+      {showHeader ? (
+        <View style={styles.head}>
+          {person ? (
+            <Avatar person={person} size={36} />
+          ) : (
+            <Either size={36} colors={sharedColors} />
+          )}
+          <View style={styles.headText}>
+            <Text variant="h3" style={styles.name}>
+              {title}
+            </Text>
+            <Text variant="meta" tone="muted">
+              {sub}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+      {empty ? (
+        <Text variant="body" tone="muted" style={styles.empty}>
+          {person?.isMe
+            ? 'Nothing on your list. Enjoy it.'
+            : person
+              ? `Nothing on ${person.name}’s list right now.`
+              : 'Nothing shared right now.'}
+        </Text>
+      ) : (
+        <>
+          {WHEN_ORDER.map((when) => {
+            const rows = groups[when];
+            const lead = when === 'late' ? shownMissed : [];
+            if (rows.length === 0 && lead.length === 0) return null;
+            return (
+              <View key={when}>
+                <GroupLabel
+                  label={
+                    when === 'waiting'
+                      ? 'Waiting on someone else'
+                      : when === 'late'
+                        ? 'Running late'
+                        : WHEN_LABEL[when]
+                  }
+                  late={when === 'late'}
+                />
+                {lead.map((m, i) =>
+                  onCatchUp ? (
+                    <MissedRow
+                      key={m.key}
+                      missed={m}
+                      today={today}
+                      onCatchUp={onCatchUp}
+                      last={i === lead.length - 1 && rows.length === 0}
+                    />
+                  ) : null,
+                )}
+                {rows.map((item, i) => row(item, i === rows.length - 1))}
+              </View>
+            );
+          })}
+          {anytime.length > 0 ? (
+            <View>
+              <GroupLabel label="Anytime" />
+              {anytime.map((item, i) => row(item, i === anytime.length - 1))}
+            </View>
+          ) : null}
+        </>
+      )}
+      <Button
+        title="Add"
+        variant="quiet"
+        size="sm"
+        icon={Plus}
+        onPress={onAdd}
+        accessibilityLabel={`Add something to ${person ? (person.isMe ? 'your list' : `${person.name}’s list`) : 'the shared list'}`}
+        style={styles.add}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  column: { minWidth: 0 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 6 },
+  headText: { flex: 1, minWidth: 0 },
+  name: { fontSize: 22, lineHeight: 26 },
+  empty: { paddingVertical: 18 },
+  add: { marginTop: 8 },
+});

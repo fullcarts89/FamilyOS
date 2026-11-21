@@ -7,6 +7,7 @@ import {
   MissingEvidenceError,
   WORK_ITEM_STATUSES,
   assertWorkItemTransition,
+  undoCompletionTarget,
   workItemMachine,
 } from './work-item';
 
@@ -74,5 +75,25 @@ describe('work item status', () => {
         },
       ),
     );
+  });
+});
+
+describe('undoing a completion', () => {
+  it('restores the status the item had before it was finished', () => {
+    expect(undoCompletionTarget('done_unverified', 'needs_you')).toBe('needs_you');
+    expect(undoCompletionTarget('verified_complete', 'awaiting_completion')).toBe(
+      'awaiting_completion',
+    );
+    expect(undoCompletionTarget('done_unverified', 'ready')).toBe('ready');
+  });
+
+  it('falls back to ready for items finished before the prior status was kept', () => {
+    expect(undoCompletionTarget('done_unverified', null)).toBe('ready');
+    expect(undoCompletionTarget('verified_complete', 'cancelled')).toBe('ready');
+  });
+
+  it('refuses items that are not done', () => {
+    expect(undoCompletionTarget('ready', null)).toBeNull();
+    expect(undoCompletionTarget('cancelled', 'ready')).toBeNull();
   });
 });

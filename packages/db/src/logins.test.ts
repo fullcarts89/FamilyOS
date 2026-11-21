@@ -1,4 +1,5 @@
 import { sql, type Kysely } from 'kysely';
+import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDb } from './client';
 import { withRequestContext, withSchedulerContext } from './context';
@@ -58,11 +59,22 @@ describe.skipIf(!url)('service logins', () => {
   };
 
   it('starts disabled: neither login can connect until the operator sets a password', async () => {
-    const { rows } = await sql<{ rolname: string; rolcanlogin: boolean; rolbypassrls: boolean }>`
-      select rolname, rolcanlogin, rolbypassrls from pg_roles
-      where rolname in ('familyos_api_login', 'familyos_worker_login', 'familyos_scheduler')
-      order by rolname
-    `.execute(admin);
+    // Other test files enable these logins for a moment; hold the same locks they take.
+    const client = new pg.Client({ connectionString: url });
+    await client.connect();
+    let rows: { rolname: string; rolcanlogin: boolean; rolbypassrls: boolean }[];
+    try {
+      await client.query(
+        "select pg_advisory_lock(hashtext('familyos_api_login')), pg_advisory_lock(hashtext('familyos_worker_login'))",
+      );
+      ({ rows } = await client.query(`
+        select rolname, rolcanlogin, rolbypassrls from pg_roles
+        where rolname in ('familyos_api_login', 'familyos_worker_login', 'familyos_scheduler')
+        order by rolname
+      `));
+    } finally {
+      await client.end();
+    }
     expect(rows).toEqual([
       { rolname: 'familyos_api_login', rolcanlogin: false, rolbypassrls: false },
       { rolname: 'familyos_scheduler', rolcanlogin: false, rolbypassrls: false },

@@ -1,6 +1,20 @@
+import { randomUUID } from 'node:crypto';
 import { createDb, type Database } from '@familyos/db';
-import { purgeHouseholds, seedHousehold, type SeededHousehold } from '@familyos/db/testing';
-import type { Kysely } from 'kysely';
+import {
+  purgeHouseholds,
+  seedHousehold,
+  seedRoutine,
+  type SeededHousehold,
+} from '@familyos/db/testing';
+import type {
+  Kysely,
+  KyselyPlugin,
+  PluginTransformQueryArgs,
+  PluginTransformResultArgs,
+  QueryResult,
+  RootOperationNode,
+  UnknownRow,
+} from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp } from './testing/harness';
 
@@ -25,6 +39,36 @@ interface Item {
   ownerMemberId: string | null;
   dueOn: string | null;
   parentId: string | null;
+}
+
+/**
+ * Runs `between` once, on another connection, right after the next statement that reads
+ * app.work_item returns: what another adult's request committing at that moment looks like.
+ */
+class AfterNextItemRead implements KyselyPlugin {
+  between: (() => Promise<void>) | null = null;
+  // Every select on work_item, subqueries included (they're transformed too, never executed).
+  private readonly reads = new WeakSet<object>();
+  transformQuery({ node, queryId }: PluginTransformQueryArgs): RootOperationNode {
+    if (
+      node.kind === 'SelectQueryNode' &&
+      JSON.stringify(node.from ?? {}).includes('"work_item"')
+    ) {
+      this.reads.add(queryId);
+    }
+    return node;
+  }
+  async transformResult({
+    queryId,
+    result,
+  }: PluginTransformResultArgs): Promise<QueryResult<UnknownRow>> {
+    if (this.between && this.reads.has(queryId)) {
+      const run = this.between;
+      this.between = null;
+      await run();
+    }
+    return result;
+  }
 }
 
 describe.skipIf(!db)('work items, inbox and Today (G2)', () => {
@@ -78,6 +122,229 @@ describe.skipIf(!db)('work items, inbox and Today (G2)', () => {
   afterAll(async () => {
     await purgeHouseholds(requireDb(), [h.id]);
     await db?.destroy();
+  });
+
+  describe('the list', () => {
+    it('reads open and finished items at one moment, so a change in between loses nothing', async () => {
+      const hook = new AfterNextItemRead();
+      const watched = createTestApp({ db: requireDb().withPlugin(hook), now: () => NOW });
+      const token = await watched.tokenFor({
+        userId: h.owner.userId ?? '',
+        email: `${h.owner.id}@example.test`,
+      });
+      // Finished a minute ago; the other adult undoes it while the list is being read.
+      const { id } = await requireDb()
+        .insertInto('app.work_item')
+        .values({
+          household_id: h.id,
+          title: 'Return library books',
+          status: 'done_unverified',
+          completed_at: new Date(NOW.getTime() - 60_000),
+          completed_by_member_id: h.adult.id,
+          created_by_member_id: h.owner.id,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      hook.between = async () => {
+        await requireDb()
+          .updateTable('app.work_item')
+          .set({ status: 'ready', completed_at: null, completed_by_member_id: null })
+          .where('id', '=', id)
+          .execute();
+      };
+      const list = await json<{ items: Item[] }>(
+        await watched.request(`/households/${h.id}/work-items`, { token }),
+      );
+      expect(hook.between).toBeNull();
+      expect(list.items.filter((i) => i.id === id).map((i) => i.status)).toEqual([
+        'done_unverified',
+      ]);
+      // And the next read sees it open, once.
+      const next = await json<{ items: Item[] }>(
+        await watched.request(`/households/${h.id}/work-items`, { token }),
+      );
+      expect(next.items.filter((i) => i.id === id).map((i) => i.status)).toEqual(['ready']);
+    });
+
+    it('counts the inbox in the same read as Today’s items', async () => {
+      const hook = new AfterNextItemRead();
+      const watched = createTestApp({ db: requireDb().withPlugin(hook), now: () => NOW });
+      const token = await watched.tokenFor({
+        userId: h.owner.userId ?? '',
+        email: `${h.owner.id}@example.test`,
+      });
+      const today = async () =>
+        json<{ inboxCount: number }>(await watched.request(`/households/${h.id}/today`, { token }));
+      const before = (await today()).inboxCount;
+      const { id } = await requireDb()
+        .insertInto('app.work_item')
+        .values({
+          household_id: h.id,
+          title: 'Look into the leak',
+          status: 'new',
+          created_by_member_id: h.adult.id,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      // The other adult accepts it from the inbox while Today is being read.
+      hook.between = async () => {
+        await requireDb()
+          .updateTable('app.work_item')
+          .set({ status: 'ready' })
+          .where('id', '=', id)
+          .execute();
+      };
+      expect((await today()).inboxCount).toBe(before + 1);
+      expect(hook.between).toBeNull();
+      expect((await today()).inboxCount).toBe(before);
+    });
+
+    it('returns every open item however old, and only recent finished ones', async () => {
+      const busy = await seedHousehold(requireDb(), 'Busy');
+      try {
+        const { ruleId } = await seedRoutine(requireDb(), busy, {
+          title: 'Feed the cat',
+          rule: { freq: 'daily', interval: 1 },
+          startOn: '2025-01-01',
+        });
+        // 600 finished turns this week, all created after the old open task.
+        await requireDb()
+          .insertInto('app.work_item')
+          .values(
+            Array.from({ length: 600 }, (_, i) => ({
+              household_id: busy.id,
+              title: 'Feed the cat',
+              status: 'done_unverified' as const,
+              created_by_member_id: busy.owner.id,
+              recurrence_rule_id: ruleId,
+              occurrence_index: i,
+              occurrence_on: '2026-11-07',
+              completed_at: new Date(NOW.getTime() - (i + 1) * 60_000),
+              completed_by_member_id: busy.owner.id,
+              created_at: new Date(NOW.getTime() - (i + 1) * 60_000),
+            })),
+          )
+          .execute();
+        const insert = (values: Record<string, unknown>) =>
+          requireDb()
+            .insertInto('app.work_item')
+            .values({
+              household_id: busy.id,
+              created_by_member_id: busy.owner.id,
+              title: 't',
+              ...values,
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+        const oldOpen = await insert({
+          title: 'Renew passports',
+          status: 'ready',
+          created_at: new Date('2025-03-01T12:00:00Z'),
+        });
+        const longDone = await insert({
+          title: 'Fixed the gate',
+          status: 'verified_complete',
+          completed_at: new Date(NOW.getTime() - 20 * 24 * 3600 * 1000),
+          completed_by_member_id: busy.owner.id,
+          created_at: new Date(NOW.getTime() - 30 * 24 * 3600 * 1000),
+        });
+        const token = await tokenOf(busy.owner);
+        const list = await json<{ items: Item[] }>(
+          await request(`/households/${busy.id}/work-items`, { token }),
+        );
+        const ids = list.items.map((i) => i.id);
+        expect(ids).toContain(oldOpen.id);
+        expect(ids).not.toContain(longDone.id);
+        expect(list.items.filter((i) => i.status === 'done_unverified')).toHaveLength(600);
+        // Newest first, as before.
+        expect(ids.at(-1)).toBe(oldOpen.id);
+      } finally {
+        await purgeHouseholds(requireDb(), [busy.id]);
+      }
+    });
+  });
+
+  describe('capturing the same thing twice', () => {
+    it('keeps one item per clientId, per household', async () => {
+      const clientId = randomUUID();
+      const post = (household: string, token: string, title: string, extra = {}) =>
+        request(`/households/${household}/work-items`, {
+          method: 'POST',
+          token,
+          body: { title, clientId, ...extra },
+        });
+      const count = (household: string) =>
+        requireDb()
+          .selectFrom('app.work_item')
+          .select('id')
+          .where('household_id', '=', household)
+          .where('client_id', '=', clientId)
+          .execute();
+
+      const first = await post(h.id, ownerToken, 'Buy stamps');
+      expect(first.status).toBe(201);
+      const made = (await json<{ item: Item }>(first)).item;
+      const before = await auditCount();
+      // A retry, even from the other adult and with edited text, returns what the first made.
+      const again = await post(h.id, adultToken, 'Buy stamps!');
+      expect(again.status).toBe(200);
+      expect((await json<{ item: Item }>(again)).item.id).toBe(made.id);
+      expect(await count(h.id)).toHaveLength(1);
+      expect(await auditCount()).toBe(before);
+
+      // Two at once: one item.
+      const fresh = randomUUID();
+      const both = await Promise.all(
+        [ownerToken, ownerToken].map((token) =>
+          request(`${base()}/work-items`, {
+            method: 'POST',
+            token,
+            body: { title: 'Call the vet', clientId: fresh },
+          }),
+        ),
+      );
+      expect(both.map((r) => r.status).sort()).toEqual([200, 201]);
+      const ids = await Promise.all(both.map(async (r) => (await json<{ item: Item }>(r)).item.id));
+      expect(new Set(ids).size).toBe(1);
+
+      // Another household with the same clientId gets its own item; neither sees the other's.
+      const other = await seedHousehold(requireDb(), 'Elsewhere');
+      try {
+        const otherToken = await tokenOf(other.owner);
+        const theirs = await post(other.id, otherToken, 'Buy stamps');
+        expect(theirs.status).toBe(201);
+        expect((await json<{ item: Item }>(theirs)).item.id).not.toBe(made.id);
+        expect(await count(other.id)).toHaveLength(1);
+        expect(await count(h.id)).toHaveLength(1);
+      } finally {
+        await purgeHouseholds(requireDb(), [other.id]);
+      }
+
+      // A private item's clientId is never revealed to someone who can't see it.
+      const hiddenClientId = randomUUID();
+      const hidden = await request(`${base()}/work-items`, {
+        method: 'POST',
+        token: ownerToken,
+        body: { title: 'Surprise party', clientId: hiddenClientId, visibility: 'private' },
+      });
+      expect(hidden.status).toBe(201);
+      const probe = await request(`${base()}/work-items`, {
+        method: 'POST',
+        token: adultToken,
+        body: { title: 'x', clientId: hiddenClientId },
+      });
+      expect(probe.status).toBe(409);
+      expect(await json(probe)).toEqual({ error: 'client_id_in_use' });
+      expect(
+        (
+          await request(`${base()}/work-items`, {
+            method: 'POST',
+            token: ownerToken,
+            body: { title: 'x', clientId: 'nope' },
+          })
+        ).status,
+      ).toBe(422);
+    });
   });
 
   describe('inbox', () => {

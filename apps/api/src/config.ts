@@ -1,3 +1,4 @@
+import { CalendarKeyError, parseCalendarKey } from '@familyos/calendar';
 import { databaseUrl } from '@familyos/db';
 import { z } from 'zod';
 
@@ -24,6 +25,23 @@ const ConfigSchema = z
     WEB_SUPABASE_URL: z.string().url().optional(),
     /** Commit being run, set by the host (Railway) and shown by the health checks. */
     RAILWAY_GIT_COMMIT_SHA: z.string().optional(),
+    /**
+     * 32 random bytes, base64: encrypts calendar subscription addresses at rest. Without it the
+     * calendar endpoints answer 503 and nothing is imported.
+     */
+    CALENDAR_ENCRYPTION_KEY: z
+      .string()
+      .optional()
+      .transform((v, ctx) => {
+        if (v === undefined || v === '') return undefined;
+        try {
+          return parseCalendarKey(v);
+        } catch (error) {
+          if (!(error instanceof CalendarKeyError)) throw error;
+          ctx.addIssue({ code: 'custom', message: 'must be 32 bytes, base64' });
+          return z.NEVER;
+        }
+      }),
     /** Comma-separated browser origins allowed to call the API (the web app). Native apps need none. */
     CORS_ORIGINS: z
       .string()

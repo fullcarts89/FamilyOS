@@ -1,0 +1,43 @@
+name: Uptime
+
+# Every 30 minutes (and on demand): the app answers readiness with "status":"ok", meaning the
+# database answered through the API's own login and the worker reported in within 30 minutes.
+# A failed run is the alert (GitHub emails the repository's watchers). Skipped until the
+# repository variable APP_URL is set; a run started by hand can check another address.
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      url:
+        description: The app's address (defaults to the APP_URL variable)
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  ready:
+    name: Readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check /api/health/ready
+        env:
+          APP_URL: ${{ inputs.url || vars.APP_URL }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "::notice::APP_URL is not set; nothing to check"
+            exit 0
+          fi
+          body=$(curl --fail --silent --show-error --max-time 20 --retry 3 --retry-delay 10 \
+            --retry-all-errors "${APP_URL%/}/api/health/ready") || {
+            echo "::error::${APP_URL%/}/api/health/ready did not answer"
+            exit 1
+          }
+          echo "$body"
+          if ! grep -q '"status":"ok"' <<<"$body"; then
+            echo "::error::readiness is not ok"
+            exit 1
+          fi
