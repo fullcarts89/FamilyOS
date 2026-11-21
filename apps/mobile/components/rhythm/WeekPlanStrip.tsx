@@ -132,7 +132,11 @@ export function WeekPlanStrip({ today, version }: { today: string; version: numb
 
   return (
     <FadeIn>
-      <View style={[styles.strip, phone && styles.stripPhone]}>
+      <View
+        style={[styles.strip, phone && styles.stripPhone]}
+        role="group"
+        aria-label="The week’s plan"
+      >
         <View style={[styles.pieces, phone && styles.piecesPhone]}>
           {pieces.map((p) =>
             p.go ? (
@@ -165,7 +169,12 @@ export function WeekPlanStrip({ today, version }: { today: string; version: numb
               accessibilityLabel={`${facts.notesFor === 'next' ? 'Notes for next week' : 'This week’s notes'}: ${facts.notes}`}
               accessibilityHint={notesOpen ? 'Shows one line' : 'Shows all of the notes'}
               onPress={() => setNotesOpen((v) => !v)}
-              style={(s: PressState) => [styles.piece, styles.notes, s.hovered && styles.linkHover]}
+              style={(s: PressState) => [
+                styles.piece,
+                styles.notes,
+                phone && styles.notesPhone,
+                s.hovered && styles.linkHover,
+              ]}
             >
               <NotebookPen size={16} color={color.ink} strokeWidth={2.2} />
               <Text variant="label" numberOfLines={notesOpen ? undefined : 1} style={styles.flex}>
@@ -215,11 +224,14 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: color.hairline,
   },
+  // One column on phones, and it must not wrap: a wrapping column sizes each line to its widest
+  // content, so a long line (the notes) ran off the card instead of ending in an ellipsis.
   stripPhone: {
     paddingLeft: space[4],
     paddingVertical: space[3],
     alignItems: 'flex-start',
     flexDirection: 'column',
+    flexWrap: 'nowrap',
     gap: space[3],
   },
   pieces: {
@@ -230,11 +242,21 @@ const styles = StyleSheet.create({
     rowGap: space[2],
     minWidth: 0,
   },
-  piecesPhone: { flexDirection: 'column' },
+  // Phones: one piece per line, as wide as the card (a column that wraps pushed a long piece,
+  // the notes, into a second column off the card).
+  piecesPhone: {
+    flexDirection: 'column',
+    flexWrap: 'nowrap',
+    flexGrow: 0,
+    flexBasis: 'auto',
+    alignSelf: 'stretch',
+  },
   piece: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   pieceLink: { minHeight: touch, cursor: 'pointer' },
   underline: { textDecorationLine: 'underline', textDecorationColor: color.line2 },
+  // Wide screens: the notes take a line of their own under the other pieces.
   notes: { minHeight: touch, flexBasis: '100%', minWidth: 0, cursor: 'pointer' },
+  notesPhone: { flexBasis: 'auto', alignSelf: 'stretch' },
   flex: { flex: 1, minWidth: 0 },
   tick: {
     width: 18,

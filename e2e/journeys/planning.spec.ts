@@ -220,8 +220,40 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
     const line = maya.getByRole('button', { name: `This week’s notes: ${notes}` });
     await expect(line).toBeVisible();
     await expect(line).toHaveAttribute('aria-expanded', 'false');
+    // Measured, not just named: the notes and their words lie inside the plan's card and the
+    // screen, with real width (a name passes even when the notes are laid out off the card).
+    const card = maya.getByRole('group', { name: 'The week’s plan' });
+    const words = line.getByText(/Theo has Wednesday pickup/);
+    const screen = maya.viewportSize() ?? { width: 0, height: 0 };
+    const placed = async () => {
+      const [c, b, w] = await Promise.all([
+        card.boundingBox(),
+        line.boundingBox(),
+        words.boundingBox(),
+      ]);
+      if (!c || !b || !w) throw new Error('the plan card, its notes or their words have no box');
+      for (const box of [b, w]) {
+        expect(box.x).toBeGreaterThanOrEqual(c.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(c.x + c.width + 0.5);
+        expect(box.y).toBeGreaterThanOrEqual(c.y);
+        expect(box.y + box.height).toBeLessThanOrEqual(c.y + c.height + 0.5);
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(screen.width);
+        expect(box.y).toBeGreaterThanOrEqual(0);
+        expect(box.y + box.height).toBeLessThanOrEqual(screen.height);
+      }
+      expect(w.width).toBeGreaterThan(0);
+      return w;
+    };
+    await line.scrollIntoViewIfNeeded();
+    const oneLine = await placed();
+    // One line until tapped (the label type's line is 18px).
+    expect(oneLine.height).toBeLessThan(30);
     await line.click();
     await expect(line).toHaveAttribute('aria-expanded', 'true');
+    const all = await placed();
+    // On a phone these notes take more than a line once open.
+    if (app.phone) expect(all.height).toBeGreaterThan(oneLine.height);
     await maya.getByRole('link', { name: `${open} decisions open` }).click();
     await expect(maya).toHaveURL(/\/decisions$/);
     await expect(maya.getByRole('heading', { name: 'Decisions', level: 1 })).toBeVisible();
