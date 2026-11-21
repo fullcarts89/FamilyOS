@@ -9,17 +9,85 @@ import type {
   WorkItemStatus,
 } from '@familyos/domain';
 import { config } from './config';
+import { createWriteTracker } from './refresh';
 import { supabase } from './supabase';
+
+/** What kind of failure a request had, for plain, distinct wording and for what to do next. */
+export type FailureKind = 'offline' | 'timeout' | 'server' | 'auth' | 'conflict' | 'request';
 
 export class ApiRequestError extends Error {
   constructor(
+    /** HTTP status; 0 when no answer came back (offline or timed out). */
     readonly status: number,
     readonly code: string,
   ) {
     super(code);
     this.name = 'ApiRequestError';
   }
+
+  get kind(): FailureKind {
+    if (this.status === 0) return this.code === TIMEOUT_CODE ? 'timeout' : 'offline';
+    if (this.status === 401) return 'auth';
+    if (this.code === 'version_conflict') return 'conflict';
+    if (this.status >= 500) return 'server';
+    return 'request';
+  }
 }
+
+/** The kind of any thrown value (a non-API error counts as a request problem). */
+export const failureKind = (error: unknown): FailureKind =>
+  error instanceof ApiRequestError ? error.kind : 'request';
+
+/** A request with no answer after this long is given up on (the server's own limit is shorter). */
+export const REQUEST_TIMEOUT_MS = 10_000;
+const TIMEOUT_CODE = 'request_timeout';
+const OFFLINE_CODE = 'offline';
+
+// ---------------------------------------------------------------------------------------------
+// Connection state, learned from requests (and the browser's online/offline events on the web):
+// screens keep what they last loaded while offline, show a quiet notice, and reload on recovery.
+
+type Connection = 'online' | 'offline';
+let connection: Connection =
+  typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'online';
+const connectionListeners = new Set<(state: Connection) => void>();
+
+function setConnection(next: Connection): void {
+  if (next === connection) return;
+  connection = next;
+  connectionListeners.forEach((l) => l(next));
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('online', () => setConnection('online'));
+  window.addEventListener('offline', () => setConnection('offline'));
+}
+
+export const currentConnection = (): Connection => connection;
+
+/** The most recent failed request's kind (for wording a screen that only knows it failed). */
+let lastFailure: FailureKind | null = null;
+export const lastFailureKind = (): FailureKind | null => lastFailure;
+
+/** Called with 'online' or 'offline' whenever that changes. */
+export function onConnectionChange(listener: (state: Connection) => void): () => void {
+  connectionListeners.add(listener);
+  return () => void connectionListeners.delete(listener);
+}
+
+/** The session is no longer accepted (expired, revoked or corrupted): sign out locally. */
+let unauthorized: (() => void) | null = null;
+export function onUnauthorized(handler: (() => void) | null): void {
+  unauthorized = handler;
+}
+
+/**
+ * Writes in flight (anything but a GET, except this person's own bookkeeping under /me): screens
+ * check it so a reload never overwrites a change that is still being saved.
+ */
+export const writes = createWriteTracker();
+const isWrite = (method: string | undefined, path: string) =>
+  !!method && method !== 'GET' && !/\/me(\/|$)/.test(path.split('?')[0] ?? '');
 
 async function send<T>(
   path: string,
@@ -34,17 +102,52 @@ async function sendWithStatus<T>(
   init: { method?: string; body?: unknown },
   token: string | null,
 ): Promise<{ status: number; body: T }> {
-  const res = await fetch(`${config.apiUrl}${path}`, {
-    method: init.method ?? 'GET',
-    headers: {
-      ...(token && { authorization: `Bearer ${token}` }),
-      ...(init.body !== undefined && { 'content-type': 'application/json' }),
-    },
-    ...(init.body !== undefined && { body: JSON.stringify(init.body) }),
-  });
-  const payload = (await res.json().catch(() => ({}))) as { error?: string };
-  if (!res.ok) throw new ApiRequestError(res.status, payload.error ?? 'request_failed');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const writeDone = isWrite(init.method, path) ? writes.start() : null;
+  let res: Response;
+  let payload: { error?: string };
+  try {
+    res = await fetch(`${config.apiUrl}${path}`, {
+      method: init.method ?? 'GET',
+      headers: {
+        ...(token && { authorization: `Bearer ${token}` }),
+        ...(init.body !== undefined && { 'content-type': 'application/json' }),
+      },
+      ...(init.body !== undefined && { body: JSON.stringify(init.body) }),
+      signal: controller.signal,
+    });
+    payload = (await res.json().catch(() => ({}))) as { error?: string };
+  } catch {
+    // No answer: the request timed out, or there is no connection.
+    const timedOut = controller.signal.aborted;
+    if (!timedOut) setConnection('offline');
+    const failure = new ApiRequestError(0, timedOut ? TIMEOUT_CODE : OFFLINE_CODE);
+    lastFailure = failure.kind;
+    throw failure;
+  } finally {
+    clearTimeout(timer);
+    writeDone?.();
+  }
+  setConnection('online');
+  if (!res.ok) {
+    if (res.status === 401 && token) unauthorized?.();
+    const failure = new ApiRequestError(res.status, payload.error ?? 'request_failed');
+    lastFailure = failure.kind;
+    throw failure;
+  }
   return { status: res.status, body: payload as T };
+}
+
+/** The session's access token; a session that can't be read counts as signed out. */
+async function accessToken(): Promise<string> {
+  const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+  const token = data.session?.access_token;
+  if (!token) {
+    unauthorized?.();
+    throw new ApiRequestError(401, 'unauthenticated');
+  }
+  return token;
 }
 
 /** Calls the FamilyOS API with the current session token. The app never queries the database directly. */
@@ -52,10 +155,7 @@ export async function api<T>(
   path: string,
   init: { method?: string; body?: unknown } = {},
 ): Promise<T> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) throw new ApiRequestError(401, 'unauthenticated');
-  return send<T>(path, init, token);
+  return send<T>(path, init, await accessToken());
 }
 
 /** Like `api`, with the response status (e.g. 201 for "created just now" vs 200 "already there"). */
@@ -63,10 +163,7 @@ export async function apiWithStatus<T>(
   path: string,
   init: { method?: string; body?: unknown } = {},
 ): Promise<{ status: number; body: T }> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) throw new ApiRequestError(401, 'unauthenticated');
-  return sendWithStatus<T>(path, init, token);
+  return sendWithStatus<T>(path, init, await accessToken());
 }
 
 /** The one call made before sign-in: creates the invitee's account from the link and joins. */
@@ -574,15 +671,24 @@ export interface ResetResponse {
   allClear: boolean;
 }
 
+/** Plain, distinct words for a failure that has nothing to do with what was asked. */
+export const FAILURE_WORDS: Record<Exclude<FailureKind, 'request'>, string> = {
+  offline: 'You’re offline. Check your Wi‑Fi or mobile data, then try again.',
+  timeout: 'FamilyOS is taking too long to answer. Try again in a moment.',
+  server: 'Something went wrong on our side, not your connection. Try again in a moment.',
+  auth: 'Please sign in again.',
+  conflict: 'Someone else just changed this. Here’s their version.',
+};
+
 /** User-facing message for an API error code. */
 export function errorMessage(error: unknown): string {
+  const kind = failureKind(error);
+  if (kind !== 'request') return FAILURE_WORDS[kind];
   const code = error instanceof ApiRequestError ? error.code : '';
   if (code.startsWith('http_')) {
     return 'The calendar refused the request. Copy the address again: it may have been reset.';
   }
   switch (code) {
-    case 'version_conflict':
-      return 'Someone else just changed this. Reload to see their update.';
     case 'illegal_transition':
       return 'That status change isn’t possible from here.';
     case 'evidence_required':

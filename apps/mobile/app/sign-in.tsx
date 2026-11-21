@@ -4,11 +4,13 @@ import type { TextInput } from 'react-native';
 import { AuthLayout } from '../components/AuthLayout';
 import { Button } from '../design/Button';
 import { Field } from '../design/Field';
-import { ErrorNotice } from '../design/Notice';
+import { ErrorNotice, Notice } from '../design/Notice';
 import { Text } from '../design/Text';
+import { useSession } from '../lib/session';
 import { signInWithPassword } from '../lib/supabase';
 
 export default function SignIn() {
+  const { expired } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -29,7 +31,11 @@ export default function SignIn() {
           ? 'That email and password don’t match. Check both and try again.'
           : signInError.status === 429
             ? 'Too many tries. Wait a few minutes, then try again.'
-            : 'Couldn’t sign in. Check your connection and try again.',
+            : signInError.status === undefined || signInError.status === 0
+              ? 'You’re offline. Check your Wi‑Fi or mobile data, then try again.'
+              : signInError.status >= 500
+                ? 'Signing in isn’t working on our side right now, not your connection. Try again in a moment.'
+                : 'Couldn’t sign in. Try again in a moment.',
       );
       return;
     }
@@ -41,6 +47,9 @@ export default function SignIn() {
       title="Welcome home"
       lead="Sign in to your household. New here? Open the invite link you were sent."
     >
+      {expired && !error ? (
+        <Notice message="Please sign in again. For your security, this device was signed out." />
+      ) : null}
       <Field
         label="Email"
         value={email}

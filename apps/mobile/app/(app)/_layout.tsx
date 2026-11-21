@@ -6,8 +6,8 @@ import { Button } from '../../design/Button';
 import { EmptyState, LanesArt } from '../../design/EmptyState';
 import { useLayout } from '../../design/layout';
 import { Mark } from '../../design/Mark';
-import { ErrorNotice } from '../../design/Notice';
-import { Loading } from '../../design/Page';
+import { Skeleton, SkeletonBlock, SkeletonRows } from '../../design/motion';
+import { ErrorNotice, OfflineNote } from '../../design/Notice';
 import { TopBar } from '../../design/TopBar';
 import { color } from '../../design/tokens';
 import { useServerAcknowledgments } from '../../lib/acknowledgments';
@@ -16,6 +16,7 @@ import { MemberStateProvider } from '../../lib/member-state';
 import { WidgetSync } from '../../native/WidgetSync';
 import { useHousehold } from '../../lib/household';
 import { useSession } from '../../lib/session';
+import { useConnection } from '../../lib/use-connection';
 import { signOut } from '../../lib/sign-out';
 
 /** Everything after sign-in: the app shell around each screen, and capture from anywhere. */
@@ -24,26 +25,15 @@ export default function AppLayout() {
   const { household, loading, error, reload } = useHousehold();
   useServerAcknowledgments(household?.id ?? null, household?.memberId ?? null);
 
-  if (sessionLoading)
-    return (
-      <Centered>
-        <Loading />
-      </Centered>
-    );
+  if (sessionLoading) return <ShellSkeleton />;
   if (!session) return <Redirect href="/sign-in" />;
-  if (loading && !household)
+  // The page's shape at once while the household loads (never a blank screen on a slow network).
+  if (loading && !household) return <ShellSkeleton />;
+  // Once loaded, the shell stays: a failed reload never replaces it.
+  if (error && !household) {
     return (
       <Centered>
-        <Loading label="Loading your household" />
-      </Centered>
-    );
-  if (error) {
-    return (
-      <Centered>
-        <ErrorNotice
-          message="Couldn’t load your household. Check your connection."
-          onRetry={reload}
-        />
+        <ErrorNotice message="Couldn’t load your household." error={error} onRetry={reload} />
       </Centered>
     );
   }
@@ -74,11 +64,14 @@ export default function AppLayout() {
 function Shell() {
   const { phone } = useLayout();
   const { open, fabHidden } = useCapture();
-  // First-time setup is a focused, full-screen flow: no navigation around it.
-  const focused = usePathname() === '/setup';
+  const offline = useConnection() === 'offline';
+  // First-time setup and the invited adult's welcome are focused, full-screen: no navigation.
+  const pathname = usePathname();
+  const focused = pathname === '/setup' || pathname === '/welcome';
   return (
     <View style={styles.shell}>
       {focused ? null : phone ? <PhoneHeader /> : <TopBar onCapture={() => open()} />}
+      {offline && !focused ? <OfflineNote /> : null}
       {focused ? null : <PushPrompt />}
       <View style={styles.main}>
         <Stack
@@ -97,6 +90,31 @@ function Shell() {
           {fabHidden ? null : <CaptureFab onPress={() => open()} />}
         </>
       ) : null}
+    </View>
+  );
+}
+
+/** The app's frame with placeholder content, while the session and household load. */
+function ShellSkeleton() {
+  const { phone } = useLayout();
+  return (
+    <View style={styles.shell}>
+      <View style={[styles.skeletonBar, phone && styles.skeletonBarPhone]}>
+        <SkeletonBlock width={phone ? 150 : 200} height={20} round />
+      </View>
+      <View style={[styles.skeletonPage, phone && styles.skeletonPagePhone]}>
+        <Skeleton label="Loading your household">
+          <View style={styles.skeletonHead}>
+            <SkeletonBlock width={120} height={11} />
+            <SkeletonBlock width={phone ? '80%' : 420} height={phone ? 30 : 42} />
+            <SkeletonBlock width={phone ? '90%' : 520} height={18} />
+          </View>
+          <SkeletonBlock height={phone ? 200 : 260} />
+          <View style={styles.skeletonRows}>
+            <SkeletonRows count={3} />
+          </View>
+        </Skeleton>
+      </View>
     </View>
   );
 }
@@ -121,4 +139,16 @@ const styles = StyleSheet.create({
   },
   centeredInner: { width: '100%', maxWidth: 520, gap: 16 },
   art: { marginBottom: 12 },
+  skeletonBar: {
+    height: 68,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: color.hairline,
+  },
+  skeletonBarPhone: { height: 56, paddingHorizontal: 16 },
+  skeletonPage: { paddingHorizontal: 40, paddingTop: 36, gap: 24, maxWidth: 1360 },
+  skeletonPagePhone: { paddingHorizontal: 16, paddingTop: 18 },
+  skeletonHead: { gap: 12, marginBottom: 24 },
+  skeletonRows: { marginTop: 24 },
 });

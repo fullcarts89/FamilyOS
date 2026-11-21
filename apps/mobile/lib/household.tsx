@@ -8,7 +8,8 @@ interface HouseholdState {
   /** IANA timezone of the household; dates and times show in it, not the phone's. */
   timeZone: string;
   loading: boolean;
-  error: boolean;
+  /** The last load's failure (null when it worked); a household already loaded stays. */
+  error: unknown;
   reload: () => Promise<void>;
   /** Swap in a member the API just returned (or add one), without a round trip. */
   putMember: (member: Member) => void;
@@ -24,7 +25,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
   const [members, setMembers] = useState<Member[]>([]);
   const [timeZone, setTimeZone] = useState('UTC');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<unknown>(null);
 
   const load = useCallback(async () => {
     if (!session) {
@@ -34,7 +35,7 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
       return;
     }
     setLoading(true);
-    setError(false);
+    setError(null);
     try {
       const me = await api<{ households: MyHousehold[] }>('/me');
       const first = me.households[0] ?? null;
@@ -45,8 +46,8 @@ export function HouseholdProvider({ children }: { children: ReactNode }) {
         setTimeZone(detail.household.timezone);
       }
       setHousehold(first);
-    } catch {
-      setError(true);
+    } catch (caught) {
+      setError(caught);
     } finally {
       setLoading(false);
     }
