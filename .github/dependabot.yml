@@ -1,0 +1,24 @@
+# Weekly dependency updates (P1-14): one grouped pull request per ecosystem, so updates arrive
+# together and CI (typecheck, tests, licences, secret scan) checks them as one change. Security
+# updates are raised as soon as an advisory appears, whatever this schedule says.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+      npm-major:
+        update-types: [major]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns: ['*']
