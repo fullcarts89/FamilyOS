@@ -8,12 +8,19 @@ import { color, font, radius } from '../../design/tokens';
 import type { ResetResponse } from '../../lib/api';
 import { weekdayName } from '../../lib/dates';
 import { usePeople } from '../../lib/people';
-import { appreciation, entryDetail, listWords, weekRange } from '../../lib/reset-words';
+import {
+  appreciation,
+  entryDetail,
+  listWords,
+  thankYouGroups,
+  weekRange,
+} from '../../lib/reset-words';
 import { ChapterHead } from './ChapterHead';
 
 /**
  * Chapter 1, looking back (A's pacing and warmth): what the household got done together, then
- * each adult's part in words, as thanks. Items, never counts; nothing set side by side as a score.
+ * each adult's part in words, as thanks; both partners always appear. Items, never counts;
+ * nothing set side by side as a score.
  */
 export function LookBack({ data }: { data: ResetResponse }) {
   const people = usePeople();
@@ -59,8 +66,12 @@ export function LookBack({ data }: { data: ResetResponse }) {
     together.push({ key: 'covers', text: `${listWords(coverWords)}.` });
   }
 
-  const groups = lb.byMember.filter((g) => g.memberId && people.byId(g.memberId));
-  const quiet = together.length === 0 && groups.length === 0;
+  // Both partners always get a card, even in a week with nothing on the list for one of them.
+  const partnerIds = people.adults
+    .filter((p) => p.role === 'owner' || p.role === 'adult')
+    .map((p) => p.id);
+  const groups = thankYouGroups(partnerIds, lb.byMember, (id) => !!people.byId(id));
+  const quiet = together.length === 0 && groups.every((g) => g.entries.length === 0);
 
   return (
     <View style={styles.wrap}>

@@ -44,6 +44,27 @@ export function entryDetail(
 }
 
 /**
+ * Look back's thank-you cards: both partners always, in household order (a quiet week on the
+ * list is never a missing card), then anyone else who finished something that mattered.
+ */
+export function thankYouGroups(
+  partnerIds: readonly string[],
+  byMember: readonly { memberId: string | null; entries: LookBackEntry[] }[],
+  known: (id: string) => boolean,
+): { memberId: string; entries: LookBackEntry[] }[] {
+  const entriesOf = new Map(byMember.map((g) => [g.memberId, g.entries]));
+  const partners = partnerIds
+    .filter(known)
+    .map((id) => ({ memberId: id, entries: entriesOf.get(id) ?? [] }));
+  const others = byMember.flatMap((g) =>
+    g.memberId && known(g.memberId) && !partnerIds.includes(g.memberId) && g.entries.length > 0
+      ? [{ memberId: g.memberId, entries: g.entries }]
+      : [],
+  );
+  return [...partners, ...others];
+}
+
+/**
  * One sentence of thanks for what someone carried, in words: "Maya looked after June, saw
  * “Switch June to a toddler bed” through and moved the bathroom renovation forward."
  */

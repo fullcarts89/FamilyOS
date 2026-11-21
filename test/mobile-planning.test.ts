@@ -3,6 +3,7 @@ import type { LookBackEntry, Unresolved } from '../apps/mobile/lib/api';
 import { guessAisle, splitDetail } from '../apps/mobile/lib/grocery-words';
 import {
   appreciation,
+  thankYouGroups,
   completionLine,
   entryDetail,
   listWords,
@@ -90,6 +91,30 @@ describe('Weekly Reset words', () => {
     );
     expect(line).not.toMatch(/\d/);
     expect(appreciation('Theo', [], nameOf)).toBe('Theo kept things moving.');
+  });
+
+  it('always thanks both partners, then anyone else who finished something', () => {
+    const known = (id: string) => ['maya', 'theo', 'nana'].includes(id);
+    const groups = thankYouGroups(
+      ['maya', 'theo'],
+      [
+        { memberId: 'maya', entries: [routine] },
+        { memberId: 'nana', entries: [project] },
+        { memberId: 'gone', entries: [step] },
+        { memberId: null, entries: [step] },
+      ],
+      known,
+    );
+    expect(groups).toEqual([
+      { memberId: 'maya', entries: [routine] },
+      { memberId: 'theo', entries: [] },
+      { memberId: 'nana', entries: [project] },
+    ]);
+    // A quiet week: both partners still appear, with nothing listed.
+    expect(thankYouGroups(['maya', 'theo'], [], known)).toEqual([
+      { memberId: 'maya', entries: [] },
+      { memberId: 'theo', entries: [] },
+    ]);
   });
 
   it('never claims the week is handled while something important is open', () => {
