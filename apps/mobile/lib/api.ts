@@ -117,7 +117,11 @@ async function sendWithStatus<T>(
       ...(init.body !== undefined && { body: JSON.stringify(init.body) }),
       signal: controller.signal,
     });
-    payload = (await res.json().catch(() => ({}))) as { error?: string };
+    payload = (await res.json().catch((caught: unknown) => {
+      // A body cut off by the timeout is a timeout, never an empty success.
+      if (controller.signal.aborted) throw caught;
+      return {};
+    })) as { error?: string };
   } catch {
     // No answer: the request timed out, or there is no connection.
     const timedOut = controller.signal.aborted;

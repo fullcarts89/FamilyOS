@@ -26,15 +26,19 @@ if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.matc
 let primed: Promise<void> | null = Platform.OS === 'web' ? Promise.resolve() : null;
 let isPrimed = Platform.OS === 'web';
 
-/** Native: ask the system once, at app start, and follow its changes. Safe to call again. */
+/**
+ * Native: ask the system once, at app start, and follow its changes. Safe to call again. The app
+ * never waits more than half a second for the answer (it then follows the change event).
+ */
 export function primeReducedMotion(): Promise<void> {
-  primed ??= AccessibilityInfo.isReduceMotionEnabled()
-    .then(set, () => undefined)
-    .finally(() => {
-      isPrimed = true;
-      AccessibilityInfo.addEventListener('reduceMotionChanged', set);
-      listeners.forEach((l) => l());
-    });
+  primed ??= Promise.race([
+    AccessibilityInfo.isReduceMotionEnabled().then(set, () => undefined),
+    new Promise<void>((done) => setTimeout(done, 500)),
+  ]).finally(() => {
+    isPrimed = true;
+    AccessibilityInfo.addEventListener('reduceMotionChanged', set);
+    listeners.forEach((l) => l());
+  });
   return primed;
 }
 
