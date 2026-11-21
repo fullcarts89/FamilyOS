@@ -19,17 +19,19 @@ import { usePeople, type Person } from '../../lib/people';
 import {
   WHEN_ORDER,
   byDue,
+  clearsToday,
   currentTurns,
   isDone,
   isOpen,
+  todayClearMilestone,
   useTaskActions,
   whenOf,
   type When,
 } from '../../lib/tasks';
 import { useTasksData } from '../../lib/use-household-data';
+import { useSettle } from '../../lib/use-settle';
 
 type Section = string; // a member id, 'shared', 'projects' or 'routines'
-const SETTLE_MS = 1600;
 
 // Tasks: "Who's carrying what". Each person's list (and the shared one), grouped by when; projects
 // as tracks to their dates; routines as rotation rings. What each person has, never a score.
@@ -43,33 +45,22 @@ export default function Tasks() {
   const data = useTasksData();
   const { items, today, routines, error, load, refresh, refreshing, replace } = data;
 
-  // Just-finished items stay in place, done, for a moment, then leave the list.
-  const [settling, setSettling] = useState<Set<string>>(new Set());
-  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  // Just-finished items stay in place, done, for a moment, then fade and leave the list.
+  const settle = useSettle();
+  const settling = settle.phases;
   const itemsRef = useRef<WorkItem[] | null>(items);
   itemsRef.current = items;
 
+  const { observe } = settle;
   const track = useCallback(
     (item: WorkItem) => {
-      const before = itemsRef.current?.find((i) => i.id === item.id);
-      if (isDone(item) && before && !isDone(before)) {
-        setSettling((s) => new Set(s).add(item.id));
-        clearTimeout(timers.current.get(item.id));
-        timers.current.set(
-          item.id,
-          setTimeout(() => {
-            setSettling((s) => {
-              const n = new Set(s);
-              n.delete(item.id);
-              return n;
-            });
-          }, SETTLE_MS),
-        );
-      }
+      observe(
+        itemsRef.current?.find((i) => i.id === item.id),
+        item,
+      );
       replace(item);
     },
-    [replace],
+    [observe, replace],
   );
 
   // Milestones, only after the server confirms: today's list cleared; a project's steps all done.
@@ -112,27 +103,8 @@ export default function Tasks() {
         });
         return;
       }
-      const wasUrgent = (i: WorkItem) => {
-        const w = whenOf(i, today, timeZone);
-        return w === 'late' || w === 'today';
-      };
-      if (!me || after.ownerMemberId !== me.id || !wasUrgent({ ...after, status: 'ready' })) return;
-      const left = all.filter(
-        (i) =>
-          i.ownerMemberId === me.id &&
-          !i.parentId &&
-          i.type !== 'project' &&
-          isOpen(i) &&
-          i.id !== after.id &&
-          wasUrgent(i),
-      );
-      if (left.length === 0) {
-        celebrate({
-          key: `today-clear:${today}:${me.id}`,
-          title: 'That’s everything for today',
-          line: 'Your list for today is clear. The rest can wait.',
-          colors: me ? [me.color] : undefined,
-        });
+      if (me && clearsToday({ after, items: all, memberId: me.id, today, timeZone })) {
+        celebrate(todayClearMilestone(today, me));
       }
     },
     [today, timeZone, people, celebrate],
@@ -205,11 +177,13 @@ export default function Tasks() {
       contextOf={projectOf}
       today={today ?? ''}
       onComplete={actions.complete}
+      onReopen={actions.reopen}
       onAssign={actions.assign}
       onReschedule={actions.reschedule}
       onAdd={() => open(c.person?.id ?? null)}
       sharedColors={partnerColors}
       showHeader={showHeader}
+      settling={settling}
     />
   );
 

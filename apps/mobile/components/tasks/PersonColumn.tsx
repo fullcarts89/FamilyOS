@@ -7,6 +7,7 @@ import { Text } from '../../design/Text';
 import type { WorkItem } from '../../lib/api';
 import type { Person } from '../../lib/people';
 import { WHEN_LABEL, WHEN_ORDER, type When } from '../../lib/tasks';
+import type { SettlePhase } from '../../lib/use-settle';
 import { TaskRow } from './TaskRow';
 
 /**
@@ -20,12 +21,14 @@ export function PersonColumn({
   groups,
   today,
   onComplete,
+  onReopen,
   onAssign,
   onReschedule,
   onAdd,
   sharedColors,
   showHeader = true,
   contextOf,
+  settling,
 }: {
   /** null for the shared list. */
   person: Person | null;
@@ -34,6 +37,8 @@ export function PersonColumn({
   groups: Record<When, WorkItem[]>;
   today: string;
   onComplete: (item: WorkItem) => void;
+  /** Ticking a just-finished row again (while it's still showing) reopens it. */
+  onReopen?: (item: WorkItem) => void;
   onAssign: (item: WorkItem, owner: string | null) => void;
   onReschedule: (item: WorkItem, dueOn: string, label: string) => void;
   onAdd: () => void;
@@ -41,6 +46,8 @@ export function PersonColumn({
   showHeader?: boolean;
   /** Extra meta for a row: a project step shows its project's name. */
   contextOf?: (item: WorkItem) => string | undefined;
+  /** Just-finished rows still showing, and whether each is fading out. */
+  settling?: ReadonlyMap<string, SettlePhase>;
 }) {
   const empty = WHEN_ORDER.every((w) => groups[w].length === 0);
   return (
@@ -93,10 +100,12 @@ export function PersonColumn({
                   item={item}
                   today={today}
                   onComplete={onComplete}
+                  onReopen={onReopen}
                   onAssign={onAssign}
                   onReschedule={onReschedule}
                   context={contextOf?.(item)}
                   last={i === rows.length - 1}
+                  settling={settling?.get(item.id)}
                 />
               ))}
             </View>

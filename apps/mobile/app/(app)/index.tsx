@@ -20,6 +20,7 @@ import {
   SkeletonBlock,
   SkeletonRows,
   useAcknowledgment,
+  useCelebrate,
 } from '../../design/motion';
 import { ErrorNotice } from '../../design/Notice';
 import { Page } from '../../design/Page';
@@ -38,13 +39,16 @@ import { headsUpsForDays, localParts, timeOf } from '../../lib/rhythm';
 import {
   WHEN_ORDER,
   byDue,
+  clearsToday,
   currentTurns,
   isOpen,
+  todayClearMilestone,
   useTaskActions,
   whenOf,
   type When,
 } from '../../lib/tasks';
 import { addDays } from '../../lib/dates';
+import { useSettle } from '../../lib/use-settle';
 import { useTodayData } from '../../lib/use-today';
 
 const NEAR: When[] = ['late', 'today', 'week'];
@@ -90,16 +94,39 @@ export default function Today() {
     [hiddenKey],
   );
 
+  // Just-finished rows stay in place, checked, for a moment, then fade and leave (lib/use-settle).
+  const settle = useSettle();
+  const settling = settle.phases;
+  const itemsRef = useRef<WorkItem[] | null>(items);
+  itemsRef.current = items;
   const reloadSoon = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { observe } = settle;
   const onChange = useCallback(
     (item: WorkItem) => {
+      observe(
+        itemsRef.current?.find((i) => i.id === item.id),
+        item,
+      );
       replace(item);
       if (reloadSoon.current) clearTimeout(reloadSoon.current);
       reloadSoon.current = setTimeout(() => void load(), 1600);
     },
-    [replace, load],
+    [observe, replace, load],
   );
-  const actions = useTaskActions(onChange);
+  // The daily milestone, only after the server confirms (shown once, server-backed).
+  const { celebrate } = useCelebrate();
+  const onConfirmed = useCallback(
+    ({ kind, after }: { kind: string; after: WorkItem }) => {
+      const me = people.me;
+      const day = rhythm?.today;
+      if (kind !== 'completed' || !me || !day) return;
+      const all = itemsRef.current ?? [];
+      if (clearsToday({ after, items: all, memberId: me.id, today: day, timeZone }))
+        celebrate(todayClearMilestone(day, me));
+    },
+    [people.me, rhythm?.today, timeZone, celebrate],
+  );
+  const actions = useTaskActions(onChange, onConfirmed);
   const occurrenceActions = useOccurrenceActions(() => void load());
 
   const today = rhythm?.today ?? '';
@@ -155,7 +182,7 @@ export default function Today() {
     if (!items || !today) return out;
     const sort = byDue(timeZone);
     for (const item of currentTurns(items)) {
-      if (item.type === 'project' || !isOpen(item)) continue;
+      if (item.type === 'project' || (!isOpen(item) && !settling.has(item.id))) continue;
       // A project's step shows on its owner's list too; unowned steps stay with the project.
       if (item.parentId && !item.ownerMemberId) continue;
       const when = whenOf(item, today, timeZone);
@@ -171,7 +198,7 @@ export default function Today() {
     }
     for (const g of out.values()) for (const w of WHEN_ORDER) g[w].sort(sort);
     return out;
-  }, [items, today, timeZone]);
+  }, [items, today, timeZone, settling]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -424,6 +451,7 @@ export default function Today() {
                 groups={groupsFor(c.key)}
                 today={today}
                 onComplete={actions.complete}
+                onReopen={actions.reopen}
                 onAssign={actions.assign}
                 onReschedule={actions.reschedule}
                 onAdd={() => open(c.key)}
@@ -432,6 +460,7 @@ export default function Today() {
                 }
                 sharedColors={partnerColors}
                 showHeader={!phone}
+                settling={settling}
               />
               {hidden(c.key) > 0 ? (
                 <Pressable

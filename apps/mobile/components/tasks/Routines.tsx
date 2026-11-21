@@ -185,11 +185,13 @@ function RoutineRing({
     key: string,
     work: () => Promise<unknown>,
     success: string,
-    options: { detail?: string; undo?: () => Promise<unknown> } = {},
+    options: { detail?: string; undo?: () => Promise<unknown>; haptic?: boolean } = {},
   ) => {
     setBusy(key);
     try {
       await work();
+      // Success feedback only once the server has it.
+      if (options.haptic) haptics.light();
       requestWidgetRefresh();
       toast.show(success, {
         detail: options.detail,
@@ -222,7 +224,6 @@ function RoutineRing({
   const done = () => {
     if (!nextItem || !household) return;
     setDoneNow(true);
-    haptics.light();
     const path = `/households/${household.id}/work-items/${nextItem.id}`;
     void run(
       'done',
@@ -234,6 +235,7 @@ function RoutineRing({
       `Done: ${entry.title}`,
       {
         detail: after ? `Next turn: ${after.isMe ? 'you' : after.name}` : undefined,
+        haptic: true,
         undo: async () => {
           const { item } = await api<{ item: WorkItem }>(path);
           await api(path, {

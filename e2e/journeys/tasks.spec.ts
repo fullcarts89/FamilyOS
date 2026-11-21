@@ -35,6 +35,20 @@ test.describe('Tasks: complete, take, hand over', () => {
     await expect(maya.getByRole('button', { name: `Hand to Theo: ${title}` })).toBeVisible();
   });
 
+  test('ticking a just-finished row again reopens it', async ({ app, maya, mayaApi }) => {
+    const title = 'Pay Little Oaks invoice for next month';
+    await app.nav(maya, 'Tasks');
+    await maya.getByRole('checkbox', { name: `Complete ${title}` }).click();
+    await expect(toast(maya, `Done: ${title}`)).toBeVisible();
+    // The finished row stays a moment, checked; ticking it then reopens it.
+    await maya.getByRole('checkbox', { name: `Reopen ${title}` }).click();
+    await expect(toast(maya, `Reopened: ${title}`)).toBeVisible();
+    await expect.poll(async () => (await mayaApi.item(title)).status).toBe('in_progress');
+    await expect(maya.getByRole('checkbox', { name: `Complete ${title}` })).toBeVisible();
+    await maya.reload();
+    await expect(maya.getByRole('checkbox', { name: `Complete ${title}` })).toBeVisible();
+  });
+
   test('taking a shared item makes it Maya’s ("I’ll take it")', async ({ app, maya, mayaApi }) => {
     const title = 'Find a sitter for Friday';
     expect((await mayaApi.item(title)).ownerMemberId).toBeNull();
