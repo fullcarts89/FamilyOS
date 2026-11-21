@@ -275,6 +275,29 @@ describe.skipIf(!db)('Weekly Reset', () => {
     expect(JSON.stringify(audit)).not.toContain('covers');
   });
 
+  it('lets both adults commit the same week at once: both succeed, one commit is recorded', async () => {
+    const week = '2026-11-30';
+    const [a, b] = await Promise.all([
+      call('/reset/commit', { method: 'POST', body: { week } }),
+      call('/reset/commit', { method: 'POST', token: adult, body: { week } }),
+    ]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    const plans = await requireDb()
+      .selectFrom('app.weekly_plan')
+      .select('id')
+      .where('household_id', '=', h.id)
+      .where('week_start', '=', week)
+      .execute();
+    expect(plans).toHaveLength(1);
+    const audit = await requireDb()
+      .selectFrom('app.audit_event')
+      .select('action')
+      .where('household_id', '=', h.id)
+      .where('entity_id', '=', plans[0]?.id ?? '')
+      .execute();
+    expect(audit.map((r) => r.action)).toEqual(['weekly_plan.committed']);
+  });
+
   describe('carry-forward', () => {
     it('moves, clears, assigns and cancels in one all-or-nothing request', async () => {
       const items = await json<{ items: Item[] }>(await call('/work-items'));

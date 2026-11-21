@@ -19,7 +19,7 @@ import { z } from 'zod';
 import { recordAudit } from '../audit';
 import { authorize } from '../http/authorize';
 import type { AppEnv, CurrentMember, Deps } from '../http/env';
-import { ApiError } from '../http/errors';
+import { ApiError, conflict } from '../http/errors';
 import { parseBody } from '../http/validation';
 import { loadDecisions } from './decisions';
 import { caredForIn, loadSeries, memberRoles, occurrenceView } from './events';
@@ -462,14 +462,14 @@ export function resetRoutes(deps: Deps) {
     if (!isWeekStart(body.week)) throw new ApiError(422, 'invalid_week');
     const trx = c.get('trx');
     const member = c.get('member');
-    const existing = await trx
-      .selectFrom('app.weekly_plan')
-      .select(['id', 'notes', 'committed_at', 'version'])
-      .where('household_id', '=', member.householdId)
-      .where('week_start', '=', body.week)
-      .forUpdate()
-      .executeTakeFirst();
-    const notesChanged = body.notes !== undefined && body.notes !== (existing?.notes ?? null);
+    const lockPlan = () =>
+      trx
+        .selectFrom('app.weekly_plan')
+        .select(['id', 'notes', 'committed_at', 'version'])
+        .where('household_id', '=', member.householdId)
+        .where('week_start', '=', body.week)
+        .forUpdate()
+        .executeTakeFirst();
     const audit = (id: string, action: string, payload: Record<string, unknown>) =>
       recordAudit(trx, {
         householdId: member.householdId,
@@ -480,7 +480,10 @@ export function resetRoutes(deps: Deps) {
         payload,
         requestId: c.get('requestId'),
       });
+    let existing = await lockPlan();
     if (!existing) {
+      // Both adults can commit at the same moment: the second insert waits for the first and
+      // then does nothing, and that request carries on with the row the first one made.
       const row = await trx
         .insertInto('app.weekly_plan')
         .values({
@@ -490,10 +493,19 @@ export function resetRoutes(deps: Deps) {
           committed_at: now(),
           committed_by_member_id: member.id,
         })
+        .onConflict((oc) => oc.columns(['household_id', 'week_start']).doNothing())
         .returning(['id', 'version'])
-        .executeTakeFirstOrThrow();
-      await audit(row.id, 'weekly_plan.committed', { week: body.week, version: row.version });
-    } else if (existing.committed_at === null || notesChanged) {
+        .executeTakeFirst();
+      if (row) {
+        await audit(row.id, 'weekly_plan.committed', { week: body.week, version: row.version });
+      } else {
+        existing = await lockPlan();
+        if (!existing) throw conflict();
+      }
+    }
+    const notesChanged =
+      existing !== undefined && body.notes !== undefined && body.notes !== existing.notes;
+    if (existing && (existing.committed_at === null || notesChanged)) {
       const committing = existing.committed_at === null;
       await trx
         .updateTable('app.weekly_plan')
