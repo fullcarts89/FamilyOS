@@ -220,7 +220,14 @@ export function useOccurrenceActions(onChanged: () => void) {
         onChanged();
         requestWidgetRefresh();
       } catch (caught) {
-        toast.show('Couldn’t undo that.', { error: true, detail: errorMessage(caught) });
+        // A cover only goes back to the usual adult when they take it back (or as the quick
+        // undo of your own): the server says hand_back, and the screen refreshes.
+        const code = caught instanceof ApiRequestError ? caught.code : '';
+        toast.show('Couldn’t undo that.', {
+          error: true,
+          detail: coverRefusal(code) ?? errorMessage(caught),
+        });
+        if (STALE_CODES.has(code)) onChanged();
       }
     },
     [base, onChanged, toast],

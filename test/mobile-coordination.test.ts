@@ -167,8 +167,15 @@ describe('cover requests (only the asked adult’s yes hands a handoff over)', (
       'Maya already took that request back.',
     );
     expect(coverRefusal('use_request')).toMatch(/Ask them/);
+    expect(coverRefusal('hand_back')).toMatch(/only they can take it back/);
     expect(coverRefusal('network_error')).toBeNull();
-    for (const code of ['already_covered', 'request_pending', 'request_closed', 'use_request']) {
+    for (const code of [
+      'already_covered',
+      'request_pending',
+      'request_closed',
+      'use_request',
+      'hand_back',
+    ]) {
       expect(STALE_CODES.has(code)).toBe(true);
     }
     expect(STALE_CODES.has('request_failed')).toBe(false);

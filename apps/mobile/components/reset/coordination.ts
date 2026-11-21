@@ -152,6 +152,8 @@ export function coverRefusal(
       return 'That’s you: choose “I’ll cover it” instead.';
     case 'use_request':
       return 'Ask them instead: it’s theirs once they say yes.';
+    case 'hand_back':
+      return 'It’s yours now, and only they can take it back. Let them know you can’t make it.';
     case 'invalid_cover':
       return 'Only an adult can cover that.';
     case 'read_only':
@@ -173,6 +175,7 @@ export const STALE_CODES = new Set([
   'request_closed',
   'cannot_ask_self',
   'use_request',
+  'hand_back',
   'invalid_cover',
   'read_only',
   'forbidden',
