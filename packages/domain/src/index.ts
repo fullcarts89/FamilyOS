@@ -7,6 +7,7 @@ export * from './handoff';
 export * from './reachability';
 export * from './permissions';
 export * from './today';
+export * from './time-block';
 export * from './presentation';
 export * from './due-options';
 export * from './recurrence';

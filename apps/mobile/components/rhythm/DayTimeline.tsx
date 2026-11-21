@@ -1,14 +1,19 @@
 import type { HeadsUp } from '@familyos/domain';
+import { router } from 'expo-router';
 import { CalendarDays, Car } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Avatar } from '../../design/Avatar';
 import { HitArea, hitSlopFor, type PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
+import { nativeDriver } from '../../design/layout';
+import { RoundCheckbox } from '../../design/RoundCheckbox';
 import { Text } from '../../design/Text';
 import { color, font, radius, space, tint, touch } from '../../design/tokens';
-import type { HandoffView, Occurrence, RhythmLaneView } from '../../lib/api';
+import type { HandoffView, Occurrence, RhythmLaneView, RhythmTaskView } from '../../lib/api';
 import type { People, Person } from '../../lib/people';
+import { canTick, isDone, isOpen } from '../../lib/tasks';
+import { SETTLE_FADE_MS, type SettlePhase } from '../../lib/use-settle';
 import {
   CARE_VERB,
   dayWindow,
@@ -31,6 +36,10 @@ const ROW = touch;
 
 /** Muted text that still reads at 4.5:1 on a lane's fill. */
 const MUTED_ON_LANE = textShade(color.muted, color.lane);
+/** A time block's round check, and the room it takes at the block's start. */
+const CHECK = 20;
+const CHECK_ROOM = CHECK + space[2];
+const NO_SETTLING: ReadonlyMap<string, SettlePhase> = new Map();
 
 /**
  * Handoff lines under a child's lane, left to right: the full line ("Theo drops June at Little
@@ -63,20 +72,20 @@ const estimate = (text: string) => Math.ceil(text.length * 6.4);
  * itself to a screen reader and opens on tap). Never an ellipsis in the middle of a word.
  */
 function placeLabel(
-  b: Pick<Block, 'label' | 'time' | 'sub' | 'height' | 'care'>,
+  b: Pick<Block, 'label' | 'time' | 'sub' | 'height' | 'care' | 'task' | 'labels'>,
   width: number,
   room: number,
 ): { where: 'in' | 'out'; text: string; time: 'inline' | 'below' | null; sub: boolean } | null {
-  const inner = width - space[4] - (b.care ? 22 : 0);
+  const inner = width - space[4] - (b.care ? 22 : 0) - (b.task ? CHECK_ROOM : 0);
   const tall = b.height >= 40;
-  const candidates = b.care ? [b.label] : [b.label, shortTitle(b.label)];
+  const candidates = b.care ? [b.label] : (b.labels ?? [b.label, shortTitle(b.label)]);
   for (const text of candidates) {
     if (estimate(text) <= inner)
-      return { where: 'in', text, time: null, sub: tall && estimate(b.sub) <= inner };
+      return { where: 'in', text, time: null, sub: tall && !!b.sub && estimate(b.sub) <= inner };
     if (b.care) continue;
-    if (tall && estimate(text) <= room && estimate(b.time) <= room)
+    if (b.time && tall && estimate(text) <= room && estimate(b.time) <= room)
       return { where: 'out', text, time: 'below', sub: false };
-    if (estimate(`${text}  ${b.time}`) <= room)
+    if (b.time && estimate(`${text}  ${b.time}`) <= room)
       return { where: 'out', text, time: 'inline', sub: false };
     if (estimate(text) <= room) return { where: 'out', text, time: null, sub: false };
   }
@@ -86,8 +95,9 @@ function placeLabel(
 /**
  * The day as lanes across time (direction C): a lane per adult, and for each child or pet where
  * they are (home or away) with the handoffs between. Events shared by both adults are bands across
- * every lane. The now-line marks the present; what's past is quieted. Tablet and desktop (phones
- * read the day as DayColumn).
+ * every lane. The now-line marks the present; what's past is quieted. An adult's tasks with a
+ * length are blocks in their lane like events, with a round check ("Walk Biscuit · 5:30–6pm").
+ * Tablet and desktop (phones read the day as DayColumn).
  */
 export function DayTimeline({
   date,
@@ -101,6 +111,9 @@ export function DayTimeline({
   onToggleLane,
   onOpen,
   allDay = [],
+  onComplete,
+  onReopen,
+  settling = NO_SETTLING,
 }: {
   date: string;
   timeZone: string;
@@ -116,6 +129,11 @@ export function DayTimeline({
   onOpen: (o: Occurrence) => void;
   /** The day's all-day events: a compact band above the lanes. */
   allDay?: Occurrence[];
+  /** Ticking a time block's check (lib/tasks.ts useTaskActions). */
+  onComplete?: (task: RhythmTaskView) => void;
+  onReopen?: (task: RhythmTaskView) => void;
+  /** Just-finished blocks in their moment (lib/use-settle.ts): held checked, then faded. */
+  settling?: ReadonlyMap<string, SettlePhase>;
 }) {
   const [width, setWidth] = useState(0);
   const onLayout = (e: LayoutChangeEvent) => setWidth(Math.round(e.nativeEvent.layout.width));
@@ -131,8 +149,9 @@ export function DayTimeline({
         people,
         now,
         hidden: hidden ?? NONE,
+        settling,
       }),
-    [date, timeZone, lanes, handoffs, headsUps, people, now, hidden],
+    [date, timeZone, lanes, handoffs, headsUps, people, now, hidden, settling],
   );
 
   // Narrow tablets give the lanes more of the width.
@@ -145,6 +164,9 @@ export function DayTimeline({
   const step = 60;
   for (let m = Math.ceil(from / step) * step; m <= to; m += step) hours.push(m);
 
+  // A block's drawn width: an event's at least 18px, a task's room for its check.
+  const widthOf = (b: Block) =>
+    Math.max(b.task ? CHECK_ROOM + space[1] : 18, x(b.end) - x(b.start));
   // Free track to the right of a block in its row, before the next block (or the edge).
   const roomAfter = (b: Block, right: number) =>
     model.blocks
@@ -354,9 +376,26 @@ export function DayTimeline({
               {/* Events in each lane: the words inside when they fit, else beside, never cut */}
               {model.blocks.map((b) => {
                 const left = x(b.start);
-                const w = Math.max(18, x(b.end) - left);
+                const w = widthOf(b);
                 const c = b.color;
                 const label = placeLabel(b, w, roomAfter(b, left + w));
+                if (b.task) {
+                  return (
+                    <TaskBlock
+                      key={b.key}
+                      block={b}
+                      task={b.task}
+                      left={left}
+                      width={w}
+                      label={label?.where === 'in' ? label.text : null}
+                      settling={settling.get(b.task.id) ?? null}
+                      onComplete={onComplete}
+                      onReopen={onReopen}
+                    />
+                  );
+                }
+                const o = b.o;
+                if (!o) return null;
                 return (
                   <Pressable
                     key={b.key}
@@ -367,7 +406,7 @@ export function DayTimeline({
                         ? `${label.text}${label.sub ? `, ${b.sub}` : ''}. ${b.a11y}`
                         : b.a11y
                     }
-                    onPress={() => onOpen(b.o)}
+                    onPress={() => onOpen(o)}
                     style={(s: PressState) => [
                       styles.block,
                       {
@@ -472,14 +511,15 @@ export function DayTimeline({
               {model.blocks.map((b) => {
                 if (b.care) return null;
                 const left = x(b.start);
-                const w = Math.max(18, x(b.end) - left);
+                const w = widthOf(b);
                 const room = roomAfter(b, left + w);
                 const label = placeLabel(b, w, room);
                 if (label?.where !== 'out') return null;
+                const task = b.task;
                 return (
                   <View
                     key={`out${b.key}`}
-                    pointerEvents="none"
+                    pointerEvents={task ? 'box-none' : 'none'}
                     style={[
                       styles.outside,
                       {
@@ -490,22 +530,51 @@ export function DayTimeline({
                       },
                     ]}
                   >
-                    <View style={styles.outsideText}>
-                      <Text variant="small" numberOfLines={1} style={styles.blockText}>
-                        {label.text}
-                        {label.time === 'inline' ? (
-                          <Text variant="small" color={MUTED_ON_LANE}>
-                            {'  '}
-                            {b.time}
+                    {(() => {
+                      const words = (
+                        <>
+                          <Text
+                            variant="small"
+                            numberOfLines={1}
+                            style={[
+                              styles.blockText,
+                              task && isDone(task) && styles.struck,
+                              task && settling.get(task.id) === 'leaving' && styles.leaving,
+                            ]}
+                          >
+                            {label.text}
+                            {label.time === 'inline' ? (
+                              <Text variant="small" color={MUTED_ON_LANE}>
+                                {'  '}
+                                {b.time}
+                              </Text>
+                            ) : null}
                           </Text>
-                        ) : null}
-                      </Text>
-                      {label.time === 'below' ? (
-                        <Text variant="small" color={MUTED_ON_LANE} numberOfLines={1}>
-                          {b.time}
-                        </Text>
-                      ) : null}
-                    </View>
+                          {label.time === 'below' ? (
+                            <Text variant="small" color={MUTED_ON_LANE} numberOfLines={1}>
+                              {b.time}
+                            </Text>
+                          ) : null}
+                        </>
+                      );
+                      // A short task block is mostly its check: the words beside it open it too,
+                      // for the pointer (the block's own button is the one in the tab order).
+                      return task ? (
+                        <Pressable
+                          aria-hidden
+                          focusable={false}
+                          tabIndex={-1}
+                          onPress={() =>
+                            router.push({ pathname: '/item/[id]', params: { id: task.id } })
+                          }
+                          style={[styles.outsideText, styles.outsideLink]}
+                        >
+                          {words}
+                        </Pressable>
+                      ) : (
+                        <View style={styles.outsideText}>{words}</View>
+                      );
+                    })()}
                   </View>
                 );
               })}
@@ -577,11 +646,109 @@ export function DayTimeline({
   );
 }
 
+/**
+ * A task with a length in its owner's lane: an event's block (tinted, a bar down its edge) with
+ * the round check at its start, outside the block's own button (which opens the task). Ticked, it
+ * stays checked for its moment, then fades (opacity only) and leaves (lib/use-settle.ts).
+ */
+function TaskBlock({
+  block: b,
+  task,
+  left,
+  width,
+  label,
+  settling,
+  onComplete,
+  onReopen,
+}: {
+  block: Block;
+  task: RhythmTaskView;
+  left: number;
+  width: number;
+  /** The words inside, when they fit (else they're beside it, or only in the name). */
+  label: string | null;
+  settling: SettlePhase | null;
+  onComplete?: (task: RhythmTaskView) => void;
+  onReopen?: (task: RhythmTaskView) => void;
+}) {
+  const c = b.color;
+  const done = isDone(task);
+  const opacity = useRef(new Animated.Value(1)).current;
+  const leaving = settling === 'leaving';
+  useEffect(() => {
+    if (!leaving) {
+      opacity.setValue(1);
+      return;
+    }
+    const fade = Animated.timing(opacity, {
+      toValue: 0,
+      duration: SETTLE_FADE_MS,
+      useNativeDriver: nativeDriver,
+    });
+    fade.start();
+    return () => fade.stop();
+  }, [leaving, opacity]);
+  return (
+    <Animated.View
+      style={[
+        styles.block,
+        styles.taskBlock,
+        {
+          left,
+          width,
+          top: b.top,
+          height: b.height,
+          borderRadius: radius.sm,
+          backgroundColor: tint(c, 0.16),
+          borderColor: tint(c, 0.16),
+          borderLeftColor: c,
+          opacity,
+        },
+      ]}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${b.a11y}${done ? ', done' : ''}`}
+        onPress={() => router.push({ pathname: '/item/[id]', params: { id: task.id } })}
+        style={(s: PressState) => [
+          StyleSheet.absoluteFill,
+          styles.taskPress,
+          (s.hovered || s.focused) && styles.taskHover,
+        ]}
+      >
+        <HitArea slop={hitSlopFor(b.height, width)} border={1} />
+        {label ? (
+          <Text variant="small" numberOfLines={1} style={[styles.blockText, done && styles.struck]}>
+            {label}
+          </Text>
+        ) : null}
+      </Pressable>
+      <View style={styles.taskCheck}>
+        <RoundCheckbox
+          checked={done}
+          waiting={!done && !canTick(task)}
+          color={c}
+          size={CHECK}
+          label={`${done ? 'Reopen' : 'Complete'} ${task.title}, ${b.range ?? ''}`}
+          onPress={() => (done ? onReopen?.(task) : onComplete?.(task))}
+          disabled={done ? !onReopen : !onComplete}
+        />
+      </View>
+    </Animated.View>
+  );
+}
+
 // -----------------------------------------------------------------------------------------------
 
 interface Block {
   key: string;
-  o: Occurrence;
+  /** An event's occurrence, or a task with a length (`task`). */
+  o?: Occurrence;
+  task?: RhythmTaskView;
+  /** Labels to try in order, longest first (tasks: "Walk Biscuit · 5:30–6pm", then shorter). */
+  labels?: string[];
+  /** A task's block, "5:30–6pm". */
+  range?: string;
   start: number;
   end: number;
   top: number;
@@ -605,6 +772,7 @@ function buildModel({
   people,
   now,
   hidden,
+  settling,
 }: {
   date: string;
   timeZone: string;
@@ -614,6 +782,7 @@ function buildModel({
   people: People;
   now: Date | null;
   hidden: Set<string>;
+  settling: ReadonlyMap<string, SettlePhase>;
 }) {
   const adultIds = new Set(people.all.filter((p) => !p.caredFor).map((p) => p.id));
   const span = (o: Occurrence) => spanOn(o, date, timeZone);
@@ -670,12 +839,19 @@ function buildModel({
     conflictKeys.set(h.memberId, set);
   }
 
-  // Each lane's own events, in rows when they overlap (a lane grows a row rather than squeeze).
+  // Each lane's own events, and an adult's tasks with a length (open, or just ticked and still in
+  // their moment), in rows when they overlap (a lane grows a row rather than squeeze).
   const placeLane = (lane: RhythmLaneView) => {
-    const own = lane.occurrences.filter((o) => timed(o) && !isTogether(o));
+    const own: { o?: Occurrence; t?: RhythmTaskView; start: number; end: number }[] = [
+      ...lane.occurrences.filter((o) => timed(o) && !isTogether(o)).map((o) => ({ o, ...span(o) })),
+      ...(lane.caredFor ? [] : lane.tasks.timed).flatMap((t) =>
+        t.block && (isOpen(t) || settling.has(t.id))
+          ? [{ t, ...spanOn(t.block, date, timeZone) }]
+          : [],
+      ),
+    ];
     const rows: number[] = [];
     const placed = own
-      .map((o) => ({ o, ...span(o) }))
       .sort((a, b) => a.start - b.start)
       .map((p) => {
         let r = rows.findIndex((end) => end <= p.start);
@@ -759,8 +935,34 @@ function buildModel({
     const { placed, n } = lm.layout;
     const inner = lm.height - pad * 2;
     for (const p of placed) {
-      const o = p.o;
       spans.push(p);
+      const rh = (inner - (n - 1) * 2) / n;
+      const t = p.t;
+      if (t?.block) {
+        const range = rangeOf(t.block.startsAt, t.block.endsAt, timeZone);
+        blocks.push({
+          key: `${person.id}:task:${t.id}`,
+          task: t,
+          range,
+          labels: [`${t.title} · ${range}`, t.title, shortTitle(t.title)],
+          start: p.start,
+          end: p.end > p.start ? p.end : p.start + 15,
+          top: lm.top + pad + p.row * (rh + 2),
+          height: rh,
+          color: person.color,
+          label: `${t.title} · ${range}`,
+          time: '',
+          sub: '',
+          // Starts with the words it shows (the full label; shorter ones are its prefixes).
+          a11y: `${t.title} · ${range}, ${person.isMe ? 'yours' : `${person.name}’s`}. Open it`,
+          care: false,
+          imported: false,
+          conflict: false,
+        });
+        continue;
+      }
+      const o = p.o;
+      if (!o) continue;
       // In a child's lane the handoff shows as its own marker; skip repeating events about them.
       const care = !!o.careAction;
       const adultOf = o.memberIds.find((id) => adultIds.has(id));
@@ -773,7 +975,6 @@ function buildModel({
         care && child && o.careAction
           ? `${o.careAction === 'drop_off' ? 'Drop-off' : 'Pickup'}`
           : o.title;
-      const rh = (inner - (n - 1) * 2) / n;
       blocks.push({
         key: `${person.id}:${o.key}`,
         o,
@@ -936,6 +1137,18 @@ const styles = StyleSheet.create({
     cursor: 'pointer',
   },
   blockHover: { transform: [{ translateY: -1 }] },
+  taskBlock: { borderLeftWidth: 3, cursor: 'auto' },
+  taskPress: { justifyContent: 'center', paddingLeft: CHECK_ROOM, paddingRight: space[2] - 1 },
+  taskHover: { backgroundColor: 'rgba(23,32,27,0.04)' },
+  taskCheck: {
+    position: 'absolute',
+    left: space[1],
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  struck: { textDecorationLine: 'line-through', textDecorationColor: color.line2 },
+  leaving: { opacity: 0 },
   glyph: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -947,6 +1160,7 @@ const styles = StyleSheet.create({
   blockInner: { paddingHorizontal: space[2] - 1, gap: 1, flexDirection: 'column' },
   blockText: { fontFamily: font.uiBold, color: color.ink },
   outside: { position: 'absolute', justifyContent: 'center', alignItems: 'flex-start' },
+  outsideLink: { cursor: 'pointer' },
   outsideText: { backgroundColor: color.lane, paddingRight: space[1], borderRadius: 4 },
   handoffText: { backgroundColor: color.surface, paddingRight: space[1] },
   handoffLabel: {

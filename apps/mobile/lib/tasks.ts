@@ -33,6 +33,7 @@ export {
   dueText,
   isDone,
   isOpen,
+  timeText,
   whenOf,
   type When,
 } from '../components/tasks/rules';

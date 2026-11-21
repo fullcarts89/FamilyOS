@@ -232,9 +232,15 @@ test.describe('Today: your own things first', () => {
     await expect(onYou).toBeVisible();
     const first = onYou.getByRole('checkbox').first();
     const name = ((await first.getAttribute('aria-label')) ?? '').replace(/^Complete /, '');
+    // Late by its day: an all-day date, or a timed one's local date (the demo's late trash turn
+    // is timed, and on the weeks it's Maya's it leads her list).
+    const localDate = (iso: string) =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE }).format(new Date(iso));
     const lateTitles = (await mayaApi.items())
       .filter((i) => i.ownerMemberId === mayaApi.memberId && !DONE.includes(i.status))
-      .filter((i) => (i.dueOn ?? '9999') < today || i.title === late)
+      .filter(
+        (i) => (i.dueOn ?? (i.dueAt ? localDate(i.dueAt) : '9999')) < today || i.title === late,
+      )
       .map((i) => i.title);
     expect(lateTitles).toContain(name);
     expect(await fullyOnScreen(maya, first, app.phone)).toBe(true);

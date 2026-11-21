@@ -108,6 +108,8 @@ export interface WorkItemTable {
   due_at: Timestamp | null;
   /** All-day due date in the household's timezone. Exclusive with due_at. */
   due_on: ColumnType<string | null, string | null | undefined, string | null>;
+  /** With due_at: how long it takes (a time block), 5 to 720 minutes. Cleared with due_at. */
+  duration_minutes: ColumnType<number | null, number | null | undefined, number | null>;
   parent_id: string | null;
   priority: number | null;
   visibility: Generated<Visibility>;
@@ -145,6 +147,8 @@ export interface RecurrenceRuleTable {
   start_on: LocalDate;
   /** HH:MM:SS local wall-clock time, or null for all-day. */
   local_time: string | null;
+  /** With local_time: each turn's length in minutes (copied onto the turns it creates). */
+  duration_minutes: ColumnType<number | null, number | null | undefined, number | null>;
   rotation: ColumnType<string[], string[] | undefined, string[]>;
   paused_at: Timestamp | null;
   generate_from: LocalDate;

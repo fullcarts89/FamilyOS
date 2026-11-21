@@ -4,6 +4,7 @@ import {
   MissingEvidenceError,
   WORK_ITEM_STATUSES,
   assertWorkItemTransition,
+  isValidDuration,
   undoCompletionTarget,
   type WorkItemStatus,
 } from '@familyos/domain';
@@ -27,6 +28,7 @@ export const ITEM_COLUMNS = [
   'parent_id as parentId',
   'due_on as dueOn',
   'due_at as dueAt',
+  'duration_minutes as durationMinutes',
   'priority',
   'visibility',
   'created_by_member_id as createdByMemberId',
@@ -52,6 +54,8 @@ const Uuid = z.uuid();
 /** A calendar date, YYYY-MM-DD, that actually exists. */
 const LocalDate = z.iso.date();
 const DueAt = z.iso.datetime({ offset: true });
+/** Minutes; checked by assertDuration, so a bad length gets its own plain code. */
+const Duration = z.number();
 
 const CreateWorkItem = z
   .object({
@@ -63,6 +67,8 @@ const CreateWorkItem = z
     parentId: Uuid.nullish(),
     dueOn: LocalDate.nullish(),
     dueAt: DueAt.nullish(),
+    /** With dueAt: how long it takes (a time block), 5 to 720 minutes in steps of 5. */
+    durationMinutes: Duration.nullish(),
     priority: z.number().int().min(1).max(3).nullish(),
     contactId: Uuid.nullish(),
     visibility: z.enum(['household', 'private']).default('household'),
@@ -86,6 +92,8 @@ const UpdateWorkItem = z
     parentId: Uuid.nullable().optional(),
     dueOn: LocalDate.nullable().optional(),
     dueAt: DueAt.nullable().optional(),
+    /** Null clears it. Clearing dueAt (or setting dueOn) clears it too. */
+    durationMinutes: Duration.nullable().optional(),
     priority: z.number().int().min(1).max(3).nullable().optional(),
     contactId: Uuid.nullable().optional(),
     status: z.enum(WORK_ITEM_STATUSES).optional(),
@@ -176,6 +184,16 @@ export async function assertSubject(
     .where('role', 'in', ['child', 'pet'])
     .executeTakeFirst();
   if (!subject) throw new ApiError(422, 'invalid_subject');
+}
+
+/**
+ * A task's length: five minutes to twelve hours in steps of five, and only with a time to start
+ * from. `dueAt` is the time the item will have once the change is made.
+ */
+function assertDuration(minutes: number | null | undefined, dueAt: unknown) {
+  if (minutes === null || minutes === undefined) return;
+  if (!isValidDuration(minutes)) throw new ApiError(422, 'invalid_duration');
+  if (dueAt === null || dueAt === undefined) throw new ApiError(422, 'duration_needs_time');
 }
 
 /** A contact of the same household. */
@@ -312,6 +330,7 @@ async function loadForUpdate(
       'owner_member_id',
       'due_on',
       'due_at',
+      'duration_minutes',
       'recurrence_rule_id',
       'occurrence_index',
       'completed_from_status',
@@ -361,6 +380,14 @@ async function applyUpdate(
   const dueOn = body.dueOn !== undefined ? body.dueOn : body.dueAt ? null : undefined;
   const dueAt = body.dueAt !== undefined ? body.dueAt : body.dueOn ? null : undefined;
   if (body.dueOn && body.dueAt) throw new ApiError(422, 'invalid_body');
+  // A length goes with a time: checked against the time it will have, and cleared with it.
+  assertDuration(body.durationMinutes, dueAt !== undefined ? dueAt : current.due_at);
+  const durationMinutes =
+    body.durationMinutes !== undefined
+      ? body.durationMinutes
+      : dueAt === null && current.duration_minutes !== null
+        ? null
+        : undefined;
 
   const statusChanged = status !== undefined && status !== current.status;
   const finishing = statusChanged && status !== undefined && DONE_STATUSES.includes(status);
@@ -373,6 +400,7 @@ async function applyUpdate(
     ...(body.parentId !== undefined && { parent_id: body.parentId }),
     ...(dueOn !== undefined && { due_on: dueOn }),
     ...(dueAt !== undefined && { due_at: dueAt }),
+    ...(durationMinutes !== undefined && { duration_minutes: durationMinutes }),
     ...(body.priority !== undefined && { priority: body.priority }),
     ...(body.contactId !== undefined && { contact_id: body.contactId }),
     ...(statusChanged && { status }),
@@ -559,6 +587,7 @@ export function workItemRoutes(deps: Deps) {
     if (body.parentId)
       await assertValidParent(trx, member.householdId, body.parentId, { type: body.type });
     if (body.contactId) await assertContact(trx, member.householdId, body.contactId);
+    assertDuration(body.durationMinutes, body.dueAt);
     const item = await trx
       .insertInto('app.work_item')
       .values({
@@ -572,6 +601,7 @@ export function workItemRoutes(deps: Deps) {
         parent_id: body.parentId ?? null,
         due_on: body.dueOn ?? null,
         due_at: body.dueAt ?? null,
+        duration_minutes: body.durationMinutes ?? null,
         priority: body.priority ?? null,
         contact_id: body.contactId ?? null,
         visibility: body.visibility,
@@ -747,7 +777,7 @@ export function workItemRoutes(deps: Deps) {
         ...(body.ownerMemberId !== undefined && { owner_member_id: body.ownerMemberId }),
         ...(body.dueOn !== undefined && {
           due_on: body.dueOn,
-          ...(body.dueOn && { due_at: null }),
+          ...(body.dueOn && { due_at: null, duration_minutes: null }),
         }),
         version: current.version + 1,
         updated_at: now(),

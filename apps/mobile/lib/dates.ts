@@ -73,6 +73,41 @@ export function clock(hhmm: string): string {
 }
 
 /**
+ * A wall-clock span from a start ("17:30") and a length in minutes: "5:30–6pm", "11:30am–12:30pm"
+ * (the start's am/pm only when it differs), or just "5:30pm" without a length.
+ */
+export function clockRange(start: string, minutes: number | null): string {
+  if (!minutes) return clock(start);
+  const [h = 0, m = 0] = start.split(':').map(Number);
+  const from = h * 60 + m;
+  const to = (from + minutes) % (24 * 60);
+  const end = `${String(Math.floor(to / 60)).padStart(2, '0')}:${String(to % 60).padStart(2, '0')}`;
+  const a = clock(start);
+  const b = clock(end);
+  const samePart = from < 12 * 60 === to < 12 * 60 && from + minutes < 24 * 60;
+  return `${samePart ? a.replace(/am|pm/, '') : a}–${b}`;
+}
+
+/** "8:15", "8:15am", "5pm", "17:30" → "HH:MM", or null. */
+export function parseTime(input: string): string | null {
+  const m = input
+    .trim()
+    .toLowerCase()
+    .match(/^(\d{1,2})(?::?(\d{2}))?\s*(am|pm|a|p)?$/);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const min = Number(m[2] ?? '0');
+  const suffix = m[3];
+  if (min > 59 || h > 23) return null;
+  if (suffix) {
+    if (h < 1 || h > 12) return null;
+    if (suffix.startsWith('p') && h < 12) h += 12;
+    if (suffix.startsWith('a') && h === 12) h = 0;
+  }
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+}
+
+/**
  * A schedule line from the API or the domain ("Every Monday at 20:00") in the app's one time
  * format: "Every Monday at 8pm".
  */

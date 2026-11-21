@@ -9,7 +9,12 @@ import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet
 import type { CoverRequestLists } from '../../components/reset/coordination';
 import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
 import { NextUp, dayEntries } from '../../components/rhythm/NextUp';
-import { allDayOn, readableOn, type LateCounts } from '../../components/rhythm/today-model';
+import {
+  allDayOn,
+  readableOn,
+  withLatestTasks,
+  type LateCounts,
+} from '../../components/rhythm/today-model';
 import { WhileAway } from '../../components/rhythm/WhileAway';
 import { SinceLastLooked } from '../../components/rhythm/SinceLastLooked';
 import { WeekStrip } from '../../components/rhythm/WeekStrip';
@@ -138,9 +143,15 @@ export default function Today() {
   const occurrenceActions = useOccurrenceActions(() => void load());
 
   const today = rhythm?.today ?? '';
+  // The day's lanes with each timed task as the lists have it now (ticked a moment ago, say), so
+  // a time block ticked on the timeline shows done at once and holds for its moment.
+  const lanes = useMemo(
+    () => (rhythm ? withLatestTasks(rhythm.lanes, items) : []),
+    [rhythm, items],
+  );
   const entries = useMemo(
-    () => (rhythm ? dayEntries(rhythm.lanes, people, timeZone) : []),
-    [rhythm, people, timeZone],
+    () => dayEntries(lanes, people, timeZone, { keep: (id) => settling.has(id) }),
+    [lanes, people, timeZone, settling],
   );
   // All-day events ("School closed") never sit on the timed lines: they get their own band.
   const allDay = useMemo(
@@ -352,7 +363,7 @@ export default function Today() {
     <DayTimeline
       date={rhythm.date}
       timeZone={timeZone}
-      lanes={rhythm.lanes}
+      lanes={lanes}
       handoffs={rhythm.handoffs}
       headsUps={rhythm.headsUps}
       people={people}
@@ -361,6 +372,9 @@ export default function Today() {
       onToggleLane={toggleLane}
       onOpen={openOccurrence}
       allDay={allDay}
+      onComplete={actions.complete}
+      onReopen={actions.reopen}
+      settling={settling}
     />
   ) : null;
 
@@ -369,12 +383,15 @@ export default function Today() {
       date={rhythm.date}
       timeZone={timeZone}
       entries={entries}
-      lanes={rhythm.lanes}
+      lanes={lanes}
       handoffs={rhythm.handoffs}
       headsUps={rhythm.headsUps}
       people={people}
       now={rhythm.date === rhythm.today ? now : null}
       onOpen={openOccurrence}
+      onComplete={actions.complete}
+      onReopen={actions.reopen}
+      settling={settling}
     />
   ) : null;
 

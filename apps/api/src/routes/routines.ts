@@ -5,6 +5,7 @@ import {
   assertWorkItemTransition,
   describeSchedule,
   isCalendarRule,
+  isValidDuration,
   isValidRule,
   localDateOf,
   occurrenceDate,
@@ -50,6 +51,8 @@ const CreateRoutine = z
     rule: Rule,
     startOn: LocalDate,
     time: LocalTime.nullish(),
+    /** With a time: each turn's length (a time block), 5 to 720 minutes in steps of 5. */
+    durationMinutes: z.number().nullish(),
     ownerMemberId: Uuid.nullish(),
     /** The child or pet it's about ("Biscuit's flea meds"). */
     subjectMemberId: Uuid.nullish(),
@@ -67,12 +70,21 @@ const UpdateRoutine = z
     subjectMemberId: Uuid.nullable().optional(),
     rotation: Rotation.optional(),
     paused: z.boolean().optional(),
+    /** Each turn's length; needs the routine to have a time. Null clears it. */
+    durationMinutes: z.number().nullable().optional(),
   })
   .strict()
   .refine((b) => !(b.ownerMemberId && b.rotation?.length), { message: 'owner or rotation' });
 
 const VersionOnly = z.object({ expectedVersion: z.number().int().min(1) }).strict();
 const Swap = z.object({ expectedVersion: z.number().int().min(1), withMemberId: Uuid }).strict();
+
+/** A routine's length: five minutes to twelve hours in steps of five, only with a time of day. */
+function assertDuration(minutes: number | null | undefined, time: string | null | undefined) {
+  if (minutes === null || minutes === undefined) return;
+  if (!isValidDuration(minutes)) throw new ApiError(422, 'invalid_duration');
+  if (!time) throw new ApiError(422, 'duration_needs_time');
+}
 
 /** Occurrence indexes in paths; anything else is a 404 like an unknown ID. */
 function indexParam(value: string | undefined): number {
@@ -108,6 +120,7 @@ async function loadRoutine(
       'r.timezone',
       'r.start_on as startOn',
       'r.local_time as localTime',
+      'r.duration_minutes as durationMinutes',
       'r.rotation',
       'r.paused_at as pausedAt',
       'r.generate_from as generateFrom',
@@ -139,6 +152,7 @@ function view(r: Routine) {
     rule: r.rule,
     startOn: r.startOn,
     time: r.localTime ? r.localTime.slice(0, 5) : null,
+    durationMinutes: r.durationMinutes,
     timezone: r.timezone,
     summary: describeSchedule(r.rule, r.localTime),
     createdByMemberId: r.createdByMemberId,
@@ -331,6 +345,7 @@ export function routineRoutes(deps: Deps) {
       await assertAssignable(trx, member.householdId, id);
     }
     if (body.subjectMemberId) await assertSubject(trx, member.householdId, body.subjectMemberId);
+    assertDuration(body.durationMinutes, body.time);
     const { timezone } = await trx
       .selectFrom('app.household')
       .select('timezone')
@@ -362,6 +377,7 @@ export function routineRoutes(deps: Deps) {
         timezone,
         start_on: body.startOn,
         local_time: body.time ?? null,
+        duration_minutes: body.durationMinutes ?? null,
         rotation,
         generate_from: body.startOn > today ? body.startOn : today,
       })
@@ -511,6 +527,9 @@ export function routineRoutes(deps: Deps) {
       ownerMemberId !== routine.ownerMemberId || rotation.join() !== routine.rotation.join();
     const pausing = body.paused === true && !routine.pausedAt;
     const resuming = body.paused === false && routine.pausedAt !== null;
+    assertDuration(body.durationMinutes, routine.localTime);
+    const durationChanged =
+      body.durationMinutes !== undefined && body.durationMinutes !== routine.durationMinutes;
 
     const fields = [
       ...(body.title !== undefined ? ['title'] : []),
@@ -519,6 +538,7 @@ export function routineRoutes(deps: Deps) {
       ...(assignmentChanged ? ['assignment'] : []),
       ...(pausing ? ['paused'] : []),
       ...(resuming ? ['resumed'] : []),
+      ...(durationChanged ? ['duration'] : []),
     ];
     if (fields.length === 0) throw new ApiError(422, 'no_changes');
 
@@ -534,6 +554,7 @@ export function routineRoutes(deps: Deps) {
         rotation,
         ...(pausing && { paused_at: now() }),
         ...(resuming && { paused_at: null, generate_from: today }),
+        ...(durationChanged && { duration_minutes: body.durationMinutes ?? null }),
         updated_at: now(),
       })
       .where('id', '=', routine.ruleId)
@@ -552,6 +573,17 @@ export function routineRoutes(deps: Deps) {
         .where('household_id', '=', member.householdId)
         .where('recurrence_rule_id', '=', routine.ruleId)
         .where('status', 'not in', CLOSED)
+        .execute();
+    }
+    // And its length, on the open turns that still have the routine's time.
+    if (durationChanged) {
+      await trx
+        .updateTable('app.work_item')
+        .set({ duration_minutes: body.durationMinutes ?? null })
+        .where('household_id', '=', member.householdId)
+        .where('recurrence_rule_id', '=', routine.ruleId)
+        .where('status', 'not in', CLOSED)
+        .where('due_at', 'is not', null)
         .execute();
     }
 

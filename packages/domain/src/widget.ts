@@ -1,5 +1,5 @@
 import { Temporal } from 'temporal-polyfill';
-import { localDueDate } from './today';
+import { dueThrough, localDueDate } from './today';
 import { isDone, type WorkItemStatus } from './work-item';
 
 /**
@@ -17,6 +17,8 @@ export interface WidgetSourceTask {
   ownerMemberId: string | null;
   dueOn: string | null;
   dueAt: string | null;
+  /** With dueAt: its length (a time block), which decides when it's late. */
+  durationMinutes?: number | null;
   recurrenceRuleId: string | null;
   /** For routine occurrences: whether this is the routine's current (earliest open) turn. */
   isCurrentTurn: boolean | null;
@@ -41,11 +43,14 @@ export function widgetItems<T extends WidgetSourceTask>(
   });
   const instant = (t: T) =>
     t.dueAt ? Temporal.Instant.from(t.dueAt).epochMilliseconds : Number.POSITIVE_INFINITY;
+  // Late as the app says it: a time block still under way past midnight isn't late yet.
+  const late = (t: T) =>
+    (dueThrough(t, options.timeZone)?.toString() ?? options.today) < options.today;
   const sorted = [...eligible].sort((a, b) => {
     const da = due(a) ?? '';
     const db = due(b) ?? '';
-    const lateA = da < options.today;
-    const lateB = db < options.today;
+    const lateA = late(a);
+    const lateB = late(b);
     if (lateA !== lateB) return lateA ? -1 : 1;
     if (lateA && da !== db) return da.localeCompare(db);
     // Timed before all-day, by time; all-day by title.

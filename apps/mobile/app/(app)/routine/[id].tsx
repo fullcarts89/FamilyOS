@@ -1,3 +1,4 @@
+import { DURATION_CHOICES, durationLabel } from '@familyos/domain';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Pause, Play, Square } from 'lucide-react-native';
 import { useCallback, useState } from 'react';
@@ -198,6 +199,9 @@ export default function RoutineScreen() {
             <Text variant="hero">{routine.title}</Text>
             <Text variant="lead" tone="muted">
               {friendlyTimes(routine.summary)}
+              {routine.time && routine.durationMinutes
+                ? ` for ${durationLabel(routine.durationMinutes)}`
+                : ''}
               {rotation.length > 1
                 ? `. Turns: ${rotation.map((p) => (p.isMe ? 'you' : p.name)).join(' → ')}.`
                 : turn
@@ -300,6 +304,39 @@ export default function RoutineScreen() {
                       run('', { ownerMemberId: null }, 'Anyone can do it', 'PATCH')
                     }
                   />
+                </View>
+              </View>
+            ) : null}
+            {!routine.ended && routine.time ? (
+              <View style={styles.block}>
+                <Text variant="kicker" tone="muted">
+                  How long
+                </Text>
+                <View style={styles.chips} role="group" aria-label="How long each turn takes">
+                  <Chip
+                    label="No length"
+                    selected={!routine.durationMinutes}
+                    onPress={() =>
+                      !!routine.durationMinutes &&
+                      void run('', { durationMinutes: null }, 'Turns have no set length', 'PATCH')
+                    }
+                  />
+                  {DURATION_CHOICES.map((m) => (
+                    <Chip
+                      key={m}
+                      label={durationLabel(m)}
+                      selected={routine.durationMinutes === m}
+                      onPress={() =>
+                        routine.durationMinutes !== m &&
+                        void run(
+                          '',
+                          { durationMinutes: m },
+                          `Each turn takes ${durationLabel(m)}`,
+                          'PATCH',
+                        )
+                      }
+                    />
+                  ))}
                 </View>
               </View>
             ) : null}

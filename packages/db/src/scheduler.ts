@@ -85,6 +85,7 @@ export async function materializeRoutine(
       'r.timezone',
       'r.start_on',
       'r.local_time',
+      'r.duration_minutes',
       'r.rotation',
       'r.paused_at',
       'r.generate_from',
@@ -178,6 +179,8 @@ export async function materializeRoutine(
         occurrence_on: occurrence.date,
         due_on: due.dueOn,
         due_at: due.dueAt,
+        // The routine's length goes with its time; an all-day turn has none.
+        duration_minutes: due.dueAt ? routine.duration_minutes : null,
       })
       .onConflict((oc) =>
         oc

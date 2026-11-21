@@ -175,7 +175,7 @@ export function TaskRow({
 }
 
 /** Opacity only, so nothing around it moves until the row is gone. */
-function FadeOut({ leaving, children }: { leaving: boolean; children: ReactNode }) {
+export function FadeOut({ leaving, children }: { leaving: boolean; children: ReactNode }) {
   const opacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (!leaving) {

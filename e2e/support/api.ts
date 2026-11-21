@@ -10,6 +10,9 @@ export interface WorkItem {
   ownerMemberId: string | null;
   parentId: string | null;
   dueOn: string | null;
+  dueAt?: string | null;
+  /** With dueAt: a time block's length, in minutes. */
+  durationMinutes?: number | null;
   subjectMemberId?: string | null;
   recurrenceRuleId: string | null;
   occurrenceOn: string | null;
@@ -49,6 +52,8 @@ export interface Routine {
   subjectMemberId?: string | null;
   rule: { freq: string; dayOfMonth?: number; interval?: number };
   startOn: string;
+  time?: string | null;
+  durationMinutes?: number | null;
 }
 export interface RoutineDetail {
   routine: Routine;

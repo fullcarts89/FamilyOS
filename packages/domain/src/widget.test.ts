@@ -47,6 +47,28 @@ describe('widget items', () => {
     expect(count).toBe(6);
   });
 
+  it('keeps a time block still under way past midnight with today’s, not the late ones', () => {
+    const { items } = widgetItems(
+      [
+        // Sunday 23:30 PST for an hour: under way until 00:30 on Monday.
+        task('night', { dueOn: null, dueAt: '2026-11-16T07:30:00Z', durationMinutes: 60 }),
+        task('late', { dueOn: '2026-11-15' }),
+        task('morning', { dueOn: null, dueAt: '2026-11-16T16:00:00Z' }),
+      ],
+      options,
+    );
+    expect(items.map((t) => t.id)).toEqual(['late', 'night', 'morning']);
+    // Without its length the same task is late, and sorts with the late ones.
+    const point = widgetItems(
+      [
+        task('night', { dueOn: null, dueAt: '2026-11-16T07:30:00Z' }),
+        task('late', { dueOn: '2026-11-14' }),
+      ],
+      options,
+    );
+    expect(point.items.map((t) => t.id)).toEqual(['late', 'night']);
+  });
+
   it("shows only each routine's current turn, and caps the list but not the count", () => {
     const { items } = widgetItems(
       [

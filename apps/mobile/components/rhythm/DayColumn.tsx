@@ -1,15 +1,19 @@
 import type { HeadsUp } from '@familyos/domain';
 import { router } from 'expo-router';
 import { CalendarDays, Car, CircleCheck } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { PressState } from '../../design/Button';
 import { Hatch } from '../../design/Hatch';
+import { RoundCheckbox } from '../../design/RoundCheckbox';
 import { Text } from '../../design/Text';
 import { color, font, radius, space, tint, touch } from '../../design/tokens';
-import type { HandoffView, Occurrence, RhythmLaneView } from '../../lib/api';
+import type { HandoffView, Occurrence, RhythmLaneView, RhythmTaskView } from '../../lib/api';
 import type { People, Person } from '../../lib/people';
-import { timeOf } from '../../lib/rhythm';
+import { rangeOf, timeOf } from '../../lib/rhythm';
+import { canTick, isDone } from '../../lib/tasks';
+import type { SettlePhase } from '../../lib/use-settle';
+import { FadeOut } from '../tasks/TaskRow';
 import type { NextEntry } from './NextUp';
 import {
   awayRails,
@@ -20,6 +24,7 @@ import {
   readableOn,
   solidFill,
   textOn,
+  textShade,
   verticalDay,
 } from './today-model';
 
@@ -35,7 +40,8 @@ const MARK = 16;
  * marker in its member's color on one continuous line; drop-offs and pickups say who does them;
  * a child away from home (daycare) is a rail beside the line from drop-off to pickup; the now-line
  * marks the present; a handoff that clashes with something else of the same adult's is hatched and
- * says what it clashes with. Ordered rather than to scale, so nothing is squeezed or cut off.
+ * says what it clashes with. A task with a length is a block like an event's, start to end, with
+ * its round check. Ordered rather than to scale, so nothing is squeezed or cut off.
  */
 export function DayColumn({
   date,
@@ -47,6 +53,9 @@ export function DayColumn({
   people,
   now,
   onOpen,
+  onComplete,
+  onReopen,
+  settling,
 }: {
   date: string;
   timeZone: string;
@@ -59,6 +68,11 @@ export function DayColumn({
   /** The current instant when `date` is today. */
   now: Date | null;
   onOpen: (o: Occurrence) => void;
+  /** Ticking a time block's check (lib/tasks.ts useTaskActions). */
+  onComplete?: (task: RhythmTaskView) => void;
+  onReopen?: (task: RhythmTaskView) => void;
+  /** Just-finished blocks in their moment (lib/use-settle.ts). */
+  settling?: ReadonlyMap<string, SettlePhase>;
 }) {
   const rows = useMemo(
     () => verticalDay({ entries, date, timeZone, now }),
@@ -184,6 +198,26 @@ export function DayColumn({
         const awayLine = away
           ? `${away.person.name} at ${away.place} until ${minutesLabel(away.end)}`
           : null;
+        const block = e.kind === 'task' ? (e.task?.block ?? null) : null;
+        if (block && e.task) {
+          return (
+            <BlockRow
+              key={row.key}
+              task={e.task}
+              range={rangeOf(block.startsAt, block.endsAt, timeZone)}
+              entry={e}
+              time={time}
+              past={row.past}
+              ongoing={row.ongoing}
+              line={line}
+              rails={railViews}
+              owner={lead}
+              onComplete={onComplete}
+              onReopen={onReopen}
+              settling={settling?.get(e.task.id) ?? null}
+            />
+          );
+        }
         return (
           <View key={row.key} role="listitem" style={styles.itemRow}>
             <View style={styles.ruler}>
@@ -276,6 +310,111 @@ export function DayColumn({
           </View>
         );
       })}
+    </View>
+  );
+}
+
+/**
+ * A task with a length: a block like an event's (tinted in the owner's color, a bar down its
+ * edge), its round check beside the words (outside the card's own button), "5:30–6pm · You".
+ * Ticked, it stays checked for its moment, then fades and leaves (lib/use-settle.ts).
+ */
+function BlockRow({
+  task,
+  range,
+  entry,
+  time,
+  past,
+  ongoing,
+  line,
+  rails,
+  owner,
+  onComplete,
+  onReopen,
+  settling,
+}: {
+  task: RhythmTaskView;
+  range: string;
+  entry: NextEntry;
+  time: string;
+  past: boolean;
+  ongoing: boolean;
+  line: ReactNode;
+  rails: ReactNode;
+  owner: Person | undefined;
+  onComplete?: (task: RhythmTaskView) => void;
+  onReopen?: (task: RhythmTaskView) => void;
+  settling: SettlePhase | null;
+}) {
+  const c = owner?.color ?? color.ink;
+  const done = isDone(task);
+  const fill = tint(c, 0.16);
+  return (
+    <View role="listitem">
+      <FadeOut leaving={settling === 'leaving'}>
+        <View style={styles.itemRow}>
+          <View style={styles.ruler}>
+            <Text variant="meta" tone={past ? 'muted' : 'ink'} style={styles.itemTime} aria-hidden>
+              {time}
+            </Text>
+          </View>
+          <View style={styles.track}>
+            {line}
+            {rails}
+            <Marker people={entry.people} care={false} nobody={false} hollow={past} fallback={c} />
+          </View>
+          <View style={[styles.block, { backgroundColor: fill, borderLeftColor: c }]}>
+            <View style={styles.blockCheck}>
+              <RoundCheckbox
+                checked={done}
+                waiting={!done && !canTick(task)}
+                color={c}
+                size={22}
+                label={`${done ? 'Reopen' : 'Complete'} ${task.title}, ${range}`}
+                onPress={() => (done ? onReopen?.(task) : onComplete?.(task))}
+                disabled={done ? !onReopen : !onComplete}
+              />
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={[
+                ongoing ? 'Now' : time,
+                entry.title,
+                entry.sub,
+                done ? 'done' : past ? 'was due earlier' : null,
+              ]
+                .filter(Boolean)
+                .join('. ')}
+              onPress={() => router.push({ pathname: '/item/[id]', params: { id: task.id } })}
+              style={(s: PressState) => [
+                styles.blockPress,
+                (s.hovered || s.focused) && styles.blockHover,
+                s.pressed && styles.pressed,
+              ]}
+            >
+              <Text
+                variant="title"
+                color={done ? textShade(color.muted, fill) : color.ink}
+                style={[styles.title, done && styles.struck]}
+              >
+                {entry.title}
+              </Text>
+              <View style={styles.subRow}>
+                {ongoing && !done ? (
+                  <View style={styles.nowTag}>
+                    <Text variant="small" tone="onInk" style={styles.nowText}>
+                      Now
+                    </Text>
+                  </View>
+                ) : null}
+                <Text variant="meta" color={textShade(color.muted, fill)} style={styles.title}>
+                  {entry.sub}
+                </Text>
+              </View>
+            </Pressable>
+          </View>
+        </View>
+      </FadeOut>
     </View>
   );
 }
@@ -438,6 +577,30 @@ const styles = StyleSheet.create({
     cursor: 'pointer',
   },
   cardNobody: { borderColor: color.ink, borderStyle: 'dashed' },
+  block: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: touch,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    marginVertical: space[1],
+    paddingLeft: space[2],
+    borderRadius: radius.md,
+    borderLeftWidth: 3,
+  },
+  blockCheck: { width: touch - space[2], alignItems: 'center', justifyContent: 'center' },
+  blockPress: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+    paddingVertical: space[2],
+    paddingRight: space[3],
+    borderRadius: radius.md,
+    cursor: 'pointer',
+  },
+  blockHover: { opacity: 0.86 },
+  struck: { textDecorationLine: 'line-through', textDecorationColor: color.line2 },
   cardClash: { borderColor: color.ink, overflow: 'hidden' },
   clashText: { fontFamily: font.uiBold },
   cardHover: { borderColor: color.line2 },

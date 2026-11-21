@@ -1,5 +1,5 @@
 import { localInstant, startOfLocalDay, type HeadsUp } from '@familyos/domain';
-import type { Activity, HandoffView, Occurrence, RhythmLaneView } from '../../lib/api';
+import type { Activity, HandoffView, Occurrence, RhythmLaneView, WorkItem } from '../../lib/api';
 import { addDays, clock, daysBetween } from '../../lib/dates';
 import type { People } from '../../lib/people';
 import { hourMark, localParts, spanOn } from '../../lib/rhythm';
@@ -169,6 +169,40 @@ export function verticalDay({
     rows.push({ kind: 'now', key: 'now', minutes: nowMin, order: 1, at: now.getTime() });
   rows.sort((a, b) => a.at - b.at || a.order - b.order);
   return rows;
+}
+
+/**
+ * The day's lanes with each timed task's latest standing from the lists (`items`, updated the
+ * moment something is ticked): its status and version, so a block ticked on the timeline shows
+ * done at once and the next change sends the right version. When it is (its time and block)
+ * stays the rhythm's.
+ */
+export function withLatestTasks<L extends Pick<RhythmLaneView, 'tasks'>>(
+  lanes: L[],
+  items: readonly WorkItem[] | null,
+): L[] {
+  if (!items) return lanes;
+  const byId = new Map(items.map((i) => [i.id, i]));
+  return lanes.map((lane) => {
+    if (!lane.tasks.timed.some((t) => byId.has(t.id))) return lane;
+    return {
+      ...lane,
+      tasks: {
+        ...lane.tasks,
+        timed: lane.tasks.timed.map((t) => {
+          const latest = byId.get(t.id);
+          return latest
+            ? {
+                ...t,
+                status: latest.status,
+                version: latest.version,
+                completedByMemberId: latest.completedByMemberId,
+              }
+            : t;
+        }),
+      },
+    };
+  });
 }
 
 /** Children and pets away from home today, as rails beside the line. */

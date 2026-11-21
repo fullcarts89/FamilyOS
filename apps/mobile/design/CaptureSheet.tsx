@@ -1,11 +1,13 @@
-import { dueOptions } from '@familyos/domain';
+import { dueOptions, localInstant } from '@familyos/domain';
 import { CalendarDays, CornerDownLeft, Flag, FolderKanban, Inbox } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { api, errorMessage, type TodayResponse, type WorkItem } from '../lib/api';
 import { parseCapture } from '../lib/capture-parse';
+import { clockRange } from '../lib/dates';
 import { useHousehold } from '../lib/household';
 import { usePeople, type Person } from '../lib/people';
+import { localParts } from '../lib/rhythm';
 import { Avatar, Either } from './Avatar';
 import { Button, type PressState } from './Button';
 import { Chip, TagChip } from './Chip';
@@ -17,7 +19,8 @@ import { color, em, font, radius } from './tokens';
 
 /**
  * Quick capture with a live preview: type "Call the plumber tomorrow @sam #bathroom" and see the
- * day, project and whose list it lands on before adding it. Nothing is guessed by AI.
+ * day, project and whose list it lands on before adding it; "Walk Biscuit at 5:30pm for 30 min"
+ * blocks out today 5:30–6pm. Nothing is guessed by AI.
  */
 export function CaptureSheet({
   initialOwner,
@@ -37,7 +40,7 @@ export function CaptureSheet({
   /** After a successful save (before the sheet closes). */
   onSaved?: () => void;
 }) {
-  const { household } = useHousehold();
+  const { household, timeZone } = useHousehold();
   const people = usePeople();
   const toast = useToast();
   const { phone } = useLayout();
@@ -90,9 +93,18 @@ export function CaptureSheet({
   // A name typed in the text ("@sam", "for us") wins over the tapped target.
   const owner = parsed.ownerId !== undefined ? parsed.ownerId : picked;
   const dueOn = parsed.dueOn ?? pickedDue;
-  const dueLabel =
+  const dayLabel =
     parsed.dueLabel ??
     (pickedDue && today ? (dueOptions(today).find((o) => o.date === pickedDue)?.label ?? null) : null);
+  // A typed time lands on the day (or today) at that time, with its length if one was typed.
+  const timed = parsed.time
+    ? {
+        date: dueOn ?? today ?? localParts(new Date(), timeZone).date,
+        time: parsed.time,
+        range: clockRange(parsed.time, parsed.durationMinutes),
+      }
+    : null;
+  const dueLabel = timed ? `${dayLabel ?? 'Today'} ${timed.range}` : dayLabel;
   const inProject = projects.find((p) => p.id === parsed.projectId) ?? null;
   const ownerPerson = people.byId(owner);
   const targets: (Person | null)[] = [...people.assignable.slice(0, phone ? 2 : 3), null];
@@ -112,7 +124,12 @@ export function CaptureSheet({
           type: project ? 'project' : 'task',
           inbox,
           ownerMemberId: owner,
-          dueOn,
+          ...(timed
+            ? {
+                dueAt: localInstant(timed.date, timed.time, timeZone).toString(),
+                durationMinutes: parsed.durationMinutes,
+              }
+            : { dueOn }),
           ...(inProject && !project && { parentId: inProject.id }),
           ...(parsed.important && { priority: 1 }),
         },
@@ -206,7 +223,7 @@ export function CaptureSheet({
         placeholder="Call the plumber tomorrow"
         placeholderTextColor={color.faint}
         accessibilityLabel="What needs doing?"
-        accessibilityHint="Type @ and a name, a day like tomorrow, or # and a project"
+        accessibilityHint="Type @ and a name, a day like tomorrow, a time like at 5:30pm, or # and a project"
         maxLength={500}
         returnKeyType="done"
         onSubmitEditing={() => void save(false)}
@@ -214,7 +231,7 @@ export function CaptureSheet({
       />
 
       <View style={styles.chips} aria-live="polite">
-        <TagChip icon={CalendarDays} on={!!dueOn} label={dueLabel ?? 'No day yet'} />
+        <TagChip icon={CalendarDays} on={!!dueOn || !!timed} label={dueLabel ?? 'No day yet'} />
         <TagChip
           icon={FolderKanban}
           on={!!inProject}
@@ -302,6 +319,7 @@ export function CaptureSheet({
         {[
           `@${(people.partner ?? people.me)?.name.split(' ')[0]?.toLowerCase() ?? 'name'}`,
           'tomorrow',
+          'at 5:30pm',
           projects[0] ? `#${projects[0].title.split(/\s+/)[0]?.toLowerCase()}` : '#project',
           '!',
         ].map((code) => (
