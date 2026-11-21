@@ -243,7 +243,9 @@ describe.skipIf(!db)('the notifier role', () => {
       (trx: Trx) => trx.selectFrom('app.event').select('title').execute(),
       (trx: Trx) => trx.selectFrom('app.event').select('notes').execute(),
       (trx: Trx) => trx.selectFrom('app.work_item').select('description').execute(),
-      (trx: Trx) => trx.selectFrom('app.member_state').select('last_seen_at').execute(),
+      // When a member last looked is readable (their first partner batch starts there); their
+      // other preferences outside notifications are not.
+      (trx: Trx) => trx.selectFrom('app.member_state').select('sound').execute(),
       (trx: Trx) => trx.selectFrom('app.weekly_plan').select('notes').execute(),
       (trx: Trx) => trx.selectFrom('app.contact').select('id').execute(),
       (trx: Trx) => trx.selectFrom('app.calendar_source').select('id').execute(),
@@ -347,6 +349,7 @@ describe.skipIf(!db)('the notifier role', () => {
           // Lock-screen details stay hidden unless the member turns them on.
           hideDetails: true,
         }),
+        lastSeenAt: now.toISOString(),
       },
     ]);
     expect(data?.occurrences.map((o) => [o.eventId, o.title, [...o.memberIds].sort()])).toEqual([

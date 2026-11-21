@@ -1,7 +1,7 @@
 import { createDb, type Database } from '@familyos/db';
 import { randomUUID } from 'node:crypto';
 import { purgeHouseholds, seedHousehold, type SeededHousehold } from '@familyos/db/testing';
-import type { Kysely } from 'kysely';
+import { sql, type Kysely } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp } from './testing/harness';
 
@@ -73,7 +73,7 @@ describe.skipIf(!db)('me and activity', () => {
           partnerChanges: false,
           weeklyResetReminder: true,
         },
-        quietHours: null,
+        quietHours: { start: '22:00', end: '06:00' },
         haptics: true,
         sound: false,
         morningTime: '07:30',
@@ -259,6 +259,46 @@ describe.skipIf(!db)('me and activity', () => {
         expect(taken.status).toBe(409);
         expect(await json(taken)).toEqual({ error: 'token_in_use' });
         expect(await stored(other.owner.id)).toEqual([{ expo_push_token: token }]);
+      } finally {
+        await purgeHouseholds(requireDb(), [other.id]);
+      }
+    });
+
+    it("forgets a removed member's devices, and only theirs", async () => {
+      const other = await seedHousehold(requireDb(), 'Me Removal');
+      try {
+        const as = async (member: SeededHousehold['owner']) => tokenOf(member);
+        const post = async (member: SeededHousehold['owner'], token: string) =>
+          request(`/households/${other.id}/me/push-tokens`, {
+            method: 'POST',
+            token: await as(member),
+            body: { token, platform: 'ios' },
+          });
+        const adultPhone = device();
+        const ownerPhone = device();
+        expect((await post(other.adult, adultPhone)).status).toBe(201);
+        expect((await post(other.owner, ownerPhone)).status).toBe(201);
+        const removed = await request(`/households/${other.id}/members/${other.adult.id}`, {
+          method: 'DELETE',
+          token: await as(other.owner),
+        });
+        expect(removed.status).toBe(204);
+        expect(await stored(other.adult.id)).toEqual([]);
+        expect(await stored(other.owner.id)).toEqual([{ expo_push_token: ownerPhone }]);
+        // Nobody can use the function on an active member's devices.
+        await expect(
+          requireDb()
+            .transaction()
+            .execute(async (trx) => {
+              await sql`set local role familyos_api`.execute(trx);
+              await sql`select set_config('app.user_id', ${other.owner.userId ?? ''}, true),
+                set_config('app.household_id', ${other.id}, true)`.execute(trx);
+              await sql`select app.forget_removed_member_devices(${other.owner.id}::uuid)`.execute(
+                trx,
+              );
+            }),
+        ).rejects.toThrow(/not a removed member/);
+        expect(await stored(other.owner.id)).toHaveLength(1);
       } finally {
         await purgeHouseholds(requireDb(), [other.id]);
       }

@@ -19,11 +19,11 @@ import type { WorkItemStatus } from './work-item';
  *   something of yours, covered your handoff, settled a decision you voted on.
  * - Weekly Reset reminder at a chosen weekly time, only while that week isn't planned.
  *
- * Quiet hours are always respected. A check-in, Weekly Reset reminder or partner batch that
- * falls in them waits for their end. A handoff reminder is never deferred, because after the
- * handoff it is useless: it is sent only while the member is outside quiet hours and the
- * handoff is still ahead (so quiet hours ending at 07:00 before a 07:15 drop-off still give a
- * reminder at 07:00; a 06:15 drop-off gives none).
+ * Quiet hours (22:00–06:00 unless the member changes them) are always respected. A check-in,
+ * Weekly Reset reminder or partner batch that falls in them waits for their end. A handoff
+ * reminder that falls in them comes when they end if that is still at least
+ * HANDOFF_MIN_NOTICE_MINUTES before the handoff, and is dropped otherwise (quiet hours ending at
+ * 06:00 give a 06:20 drop-off a reminder at 06:00; a 06:03 one gets none).
  *
  * Pure: the caller passes the instant, the household's timezone and the data. Every
  * notification has a dedupe key, and the caller records each key once, so none is sent twice.
@@ -63,7 +63,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   weeklyResetReminder: true,
   morningTime: '07:30',
   weeklyReset: { weekday: 7, time: '19:00' },
-  quietHours: null,
+  quietHours: { start: '22:00', end: '06:00' },
   // Push text passes through Expo and Apple and shows on lock screens: no children's names or
   // places unless the member asks for them.
   hideDetails: true,
@@ -72,6 +72,8 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
 /** A notification due longer ago than this (the worker was down) is dropped, not sent late. */
 export const SEND_WINDOW_MINUTES = 120;
 export const HANDOFF_LEAD_MINUTES = 30;
+/** A handoff reminder held back by quiet hours is sent only if this much notice remains. */
+export const HANDOFF_MIN_NOTICE_MINUTES = 5;
 /** Partner changes go out at most once in this many minutes. */
 export const PARTNER_BATCH_MINUTES = 60;
 /** How far back partner changes are collected after the last batch (a night's quiet hours). */
@@ -319,6 +321,8 @@ export interface NotificationPlanInput {
   partnerContext: PartnerContext;
   /** This member's recent log: what has been sent or considered already. */
   log: readonly NotificationLogEntry[];
+  /** When the member last looked at the app: their first partner batch starts there. */
+  lastSeenAt?: string | null;
 }
 
 export interface PlannedNotification {
@@ -380,14 +384,18 @@ export function planNotifications(input: NotificationPlanInput): PlannedNotifica
     });
   const planned: PlannedNotification[] = [];
 
-  // Handoff reminders: never deferred, only outside quiet hours and before the handoff.
+  // Handoff reminders: 30 minutes ahead, or when quiet hours end if enough notice remains.
   if (settings.handoffReminders && !inQuietHours(now, timeZone, quiet)) {
     for (const date of [today, addDays(today, 1)]) {
       const rhythm = rhythmOn(date, []);
       for (const h of rhythm.handoffs) {
         if (!h.byMemberIds.includes(memberId)) continue;
         const at = Temporal.Instant.from(h.time);
-        if (before(now, plusMinutes(at, -HANDOFF_LEAD_MINUTES)) || !before(now, at)) continue;
+        const due = plusMinutes(at, -HANDOFF_LEAD_MINUTES);
+        const sendAt = afterQuietHours(due, timeZone, quiet);
+        const deferred = Temporal.Instant.compare(sendAt, due) !== 0;
+        if (deferred && before(plusMinutes(at, -HANDOFF_MIN_NOTICE_MINUTES), sendAt)) continue;
+        if (before(now, sendAt) || !before(now, at)) continue;
         const dedupeKey = `handoff_reminder:${h.occurrenceKey}`;
         if (logged.has(dedupeKey)) continue;
         const minutes = Math.max(1, Math.ceil(at.since(now).total('minutes')));
@@ -494,10 +502,11 @@ export function planNotifications(input: NotificationPlanInput): PlannedNotifica
       return c !== null && (max === null || c > max) ? c : max;
     }, null);
     if (lastAt === null || !before(now, plusMinutes(lastAt, PARTNER_BATCH_MINUTES))) {
-      const since =
-        cursor === null
-          ? plusMinutes(now, -PARTNER_BATCH_MINUTES)
-          : plusMinutes(now, -PARTNER_LOOKBACK_HOURS * 60);
+      // The first batch starts when the member last looked (or a day ago): what they have
+      // seen in the app isn't news, and what happened before they turned this on still is.
+      const dayAgo = plusMinutes(now, -PARTNER_LOOKBACK_HOURS * 60);
+      const seen = input.lastSeenAt ? Temporal.Instant.from(input.lastSeenAt) : null;
+      const since = cursor === null && seen !== null && before(dayAgo, seen) ? seen : dayAgo;
       const rows = input.audit.filter(
         (r) =>
           !before(Temporal.Instant.from(r.createdAt), since) &&

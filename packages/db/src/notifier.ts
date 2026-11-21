@@ -33,6 +33,8 @@ export interface Recipient {
   memberId: string;
   tokens: { id: string; token: string }[];
   settings: NotificationSettings;
+  /** When they last looked at the app, if ever. */
+  lastSeenAt: string | null;
 }
 
 export interface HouseholdNotificationData {
@@ -142,17 +144,22 @@ export async function loadNotificationData(
       'weekly_reset_day',
       'weekly_reset_time',
       'hide_details',
+      'last_seen_at',
     ])
     .where('household_id', '=', householdId)
     .where('member_id', 'in', recipientIds)
     .execute();
-  const recipients: Recipient[] = recipientIds.map((memberId) => ({
-    memberId,
-    tokens: tokens
-      .filter((t) => t.member_id === memberId)
-      .map((t) => ({ id: t.id, token: t.expo_push_token })),
-    settings: settingsOf(states.find((s) => s.member_id === memberId)),
-  }));
+  const recipients: Recipient[] = recipientIds.map((memberId) => {
+    const state = states.find((s) => s.member_id === memberId);
+    return {
+      memberId,
+      tokens: tokens
+        .filter((t) => t.member_id === memberId)
+        .map((t) => ({ id: t.id, token: t.expo_push_token })),
+      settings: settingsOf(state),
+      lastSeenAt: state?.last_seen_at ? iso(state.last_seen_at) : null,
+    };
+  });
 
   const today = localDateOf(now, timeZone);
   const tomorrow = addDays(today, 1);

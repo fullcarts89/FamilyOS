@@ -73,8 +73,15 @@ const emptyContext: PartnerContext = {
   careEvents: new Map(),
 };
 
-/** Most cases check the wording, so they show details (off by default). */
-const DETAILED: NotificationSettings = { ...DEFAULT_NOTIFICATION_SETTINGS, hideDetails: false };
+/**
+ * Most cases check the wording and the timing, so they show details and have no quiet hours
+ * (by default details are hidden and quiet hours are 22:00–06:00).
+ */
+const DETAILED: NotificationSettings = {
+  ...DEFAULT_NOTIFICATION_SETTINGS,
+  hideDetails: false,
+  quietHours: null,
+};
 
 function input(overrides: Partial<NotificationPlanInput> = {}): NotificationPlanInput {
   return {
@@ -292,7 +299,7 @@ describe('handoff reminders', () => {
     expect(reminders({ now: pst('07:45'), occurrences: skipped })).toEqual([]);
   });
 
-  it('are never deferred: sent only outside quiet hours while the handoff is ahead', () => {
+  it('wait for quiet hours to end, and are dropped when that leaves under 5 minutes', () => {
     const quiet = settings({ quietHours: { start: '22:00', end: '08:00' } });
     expect(reminders({ now: pst('07:45'), settings: quiet })).toEqual([]);
     expect(reminders({ now: pst('08:00'), settings: quiet })[0]?.message?.body).toBe(
@@ -670,5 +677,112 @@ describe('with default settings', () => {
       expect({ word, found: text.filter((t) => t.includes(word)) }).toEqual({ word, found: [] });
     }
     expect(text).toContain('You have a handoff in 25 minutes.');
+  });
+});
+
+describe('quiet-hours defaults and handoffs at night', () => {
+  const reminders = (overrides: Partial<NotificationPlanInput>) =>
+    only(input({ dinner: null, tasks: [], ...overrides }), 'handoff_reminder');
+  const handoffAt = (start: string, date = DATE): EventSeries => ({
+    ...dropOff(),
+    id: `h-${date}-${start}`,
+    recurrence: null,
+    startsAt: start,
+    endsAt: start,
+  });
+  const defaults = settings({ quietHours: DEFAULT_NOTIFICATION_SETTINGS.quietHours });
+
+  it('default to 22:00–06:00', () => {
+    expect(DEFAULT_NOTIFICATION_SETTINGS.quietHours).toEqual({ start: '22:00', end: '06:00' });
+  });
+
+  it('deliver a reminder that falls in them when they end, with the minutes left', () => {
+    const early = occurrencesFor([handoffAt(pst('06:20'))]);
+    expect(reminders({ now: pst('05:50'), settings: defaults, occurrences: early })).toEqual([]);
+    const at6 = reminders({ now: pst('06:00'), settings: defaults, occurrences: early });
+    expect(at6.map((r) => r.message?.body)).toEqual(['In 20 minutes, at Little Oaks.']);
+    // Exactly five minutes left at 06:00 is still enough; less is not.
+    const five = occurrencesFor([handoffAt(pst('06:05'))]);
+    expect(reminders({ now: pst('06:00'), settings: defaults, occurrences: five })).toHaveLength(1);
+    const three = occurrencesFor([handoffAt(pst('06:03'))]);
+    for (const time of ['06:00', '06:01', '06:02']) {
+      expect(reminders({ now: pst(time), settings: defaults, occurrences: three })).toEqual([]);
+    }
+  });
+
+  it('cross midnight: a 00:20 handoff falls in quiet hours that end after it, so none', () => {
+    const night = occurrencesFor([handoffAt(pst('00:20', '2026-11-17'))], DATE);
+    for (const time of ['21:50', '23:50']) {
+      expect(reminders({ now: pst(time), settings: defaults, occurrences: night })).toEqual([]);
+    }
+    // Before quiet hours begin, an evening handoff is reminded as usual.
+    const evening = occurrencesFor([handoffAt(pst('22:10'))]);
+    expect(reminders({ now: pst('21:40'), settings: defaults, occurrences: evening })).toHaveLength(
+      1,
+    );
+    expect(reminders({ now: pst('22:00'), settings: defaults, occurrences: evening })).toEqual([]);
+  });
+
+  it('end at 06:00 local on the days the clocks change', () => {
+    // Spring forward (Sunday 2026-03-08): 06:20 PDT is 13:20Z; quiet hours end 06:00 PDT, 13:00Z.
+    const spring = occurrencesFor([handoffAt('2026-03-08T13:20:00Z')], '2026-03-08');
+    const at = (now: string, occurrences: typeof spring) =>
+      reminders({ now, settings: defaults, occurrences }).map((r) => r.message?.body);
+    expect(at('2026-03-08T12:55:00Z', spring)).toEqual([]);
+    expect(at('2026-03-08T13:00:00Z', spring)).toEqual(['In 20 minutes, at Little Oaks.']);
+    // Fall back (Sunday 2026-11-01): 06:20 PST is 14:20Z; quiet hours end 06:00 PST, 14:00Z.
+    const fall = occurrencesFor([handoffAt('2026-11-01T14:20:00Z')], '2026-11-01');
+    expect(at('2026-11-01T13:55:00Z', fall)).toEqual([]);
+    expect(at('2026-11-01T14:00:00Z', fall)).toEqual(['In 20 minutes, at Little Oaks.']);
+  });
+});
+
+describe('the first partner batch', () => {
+  const on = settings({ partnerChanges: true });
+  const context: PartnerContext = {
+    ...emptyContext,
+    items: new Map([
+      [
+        'car',
+        {
+          id: 'car',
+          title: 'Car registration',
+          ownerMemberId: 'theo',
+          createdByMemberId: 'maya',
+          visibility: 'household',
+        },
+      ],
+    ]),
+  };
+  const took = (createdAt: string): NotifierAuditRow => ({
+    id: '50',
+    actorMemberId: 'theo',
+    action: 'work_item.updated',
+    entityType: 'work_item',
+    entityId: 'car',
+    payload: { fields: ['owner_member_id'], fromOwnerMemberId: 'maya', ownerMemberId: 'theo' },
+    createdAt,
+  });
+  const batch = (createdAt: string, lastSeenAt: string | null) =>
+    only(
+      input({
+        now: pst('09:00'),
+        settings: on,
+        audit: [took(createdAt)],
+        partnerContext: context,
+        lastSeenAt,
+      }),
+      'partner_changes',
+    ).map((p) => p.dedupeKey);
+
+  it('looks back to when the member last looked, or a day', () => {
+    // Three hours ago, before an hour's lookback but after they last looked: still news.
+    expect(batch(pst('06:00'), pst('21:00', '2026-11-15'))).toEqual(['partner_changes:50']);
+    // Already seen in the app.
+    expect(batch(pst('06:00'), pst('07:00'))).toEqual([]);
+    // Never looked: a day back, no further.
+    expect(batch(pst('10:00', '2026-11-15'), null)).toEqual(['partner_changes:50']);
+    expect(batch(pst('08:00', '2026-11-15'), null)).toEqual([]);
+    expect(batch(pst('08:00', '2026-11-15'), pst('08:00', '2026-11-14'))).toEqual([]);
   });
 });

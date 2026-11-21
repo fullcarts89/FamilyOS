@@ -262,9 +262,9 @@ export interface MemberStateTable {
   household_id: string;
   last_seen_at: Timestamp | null;
   notifications: ColumnType<NotificationPrefs, NotificationPrefs | undefined, NotificationPrefs>;
-  /** HH:MM:SS local times, both or neither. */
-  quiet_hours_start: string | null;
-  quiet_hours_end: string | null;
+  /** HH:MM:SS local times, both or neither; 22:00 to 06:00 unless the member changes them. */
+  quiet_hours_start: ColumnType<string | null, string | null | undefined, string | null>;
+  quiet_hours_end: ColumnType<string | null, string | null | undefined, string | null>;
   haptics: Generated<boolean>;
   sound: Generated<boolean>;
   /** HH:MM:SS local times. */

@@ -16,6 +16,8 @@ const DEFAULT_NOTIFICATIONS: Required<NotificationPrefs> = {
   weekly_reset_reminder: true,
 };
 const DEFAULT_MORNING_TIME = '07:30';
+/** Household time; the member can change them or turn them off. */
+const DEFAULT_QUIET_HOURS = { start: '22:00', end: '06:00' };
 const DEFAULT_WEEKLY_RESET = { weekday: 7, time: '19:00' };
 
 const LocalTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -81,8 +83,9 @@ function stateView(row: Awaited<ReturnType<typeof loadState>>) {
       partnerChanges: prefs.partner_changes,
       weeklyResetReminder: prefs.weekly_reset_reminder,
     },
-    quietHours:
-      row?.quiet_hours_start && row.quiet_hours_end
+    quietHours: !row
+      ? DEFAULT_QUIET_HOURS
+      : row.quiet_hours_start && row.quiet_hours_end
         ? { start: row.quiet_hours_start.slice(0, 5), end: row.quiet_hours_end.slice(0, 5) }
         : null,
     haptics: row?.haptics ?? true,
@@ -167,8 +170,6 @@ export function meRoutes(deps: Deps) {
           member_id: member.id,
           household_id: member.householdId,
           notifications,
-          quiet_hours_start: null,
-          quiet_hours_end: null,
           ...changes,
           updated_at: now(),
         })
@@ -199,8 +200,6 @@ export function meRoutes(deps: Deps) {
         member_id: member.id,
         household_id: member.householdId,
         last_seen_at: seenAt,
-        quiet_hours_start: null,
-        quiet_hours_end: null,
         updated_at: seenAt,
       })
       .onConflict((oc) => oc.column('member_id').doUpdateSet({ last_seen_at: seenAt }))

@@ -1,5 +1,6 @@
 import { isCaredFor } from '@familyos/domain';
 import { Hono } from 'hono';
+import { sql } from 'kysely';
 import { z } from 'zod';
 import { recordAudit } from '../audit';
 import { authorize } from '../http/authorize';
@@ -318,6 +319,8 @@ export function householdRoutes(deps: Deps) {
       .where('status', '=', 'active')
       .executeTakeFirst();
     if (result.numUpdatedRows === 0n) throw notFound();
+    // Their phones get nothing more from this household, and the tokens aren't kept.
+    await sql`select app.forget_removed_member_devices(${memberId}::uuid)`.execute(trx);
     // Their open invites, if any, stop working too.
     await trx
       .updateTable('app.invite')
