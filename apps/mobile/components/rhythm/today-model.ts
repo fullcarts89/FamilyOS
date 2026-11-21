@@ -1,6 +1,7 @@
 import { localInstant, startOfLocalDay } from '@familyos/domain';
-import type { HandoffView, RhythmLaneView } from '../../lib/api';
-import { addDays, clock } from '../../lib/dates';
+import type { Activity, HandoffView, RhythmLaneView } from '../../lib/api';
+import { addDays, clock, daysBetween } from '../../lib/dates';
+import type { People } from '../../lib/people';
 import { hourMark, localParts, spanOn } from '../../lib/rhythm';
 import type { NextEntry } from './NextUp';
 
@@ -302,4 +303,77 @@ export function railRows(rows: DayRow[], rail: AwayRail): { first: number; last:
 /** Handoffs on a day by the occurrence they belong to (who does them is on the handoff). */
 export function handoffByKey(handoffs: HandoffView[]): Map<string, HandoffView> {
   return new Map(handoffs.map((h) => [h.occurrenceKey, h]));
+}
+
+// ---------------------------------------------------------------------------------------------
+// The headline's late count
+
+/** Late rows on each list Today shows: yours, each other adult's (by name), the shared one. */
+export interface LateCounts {
+  mine: number;
+  others: { name: string; count: number }[];
+  shared: number;
+}
+
+/**
+ * What's running late, counted the way the lists below show it, yours first: "1 of yours is
+ * running late · Theo has 2". Null when nothing is late.
+ */
+export function lateWords({ mine, others, shared }: LateCounts): string | null {
+  const rest = [
+    ...others.filter((o) => o.count > 0).map((o) => `${o.name} has ${o.count}`),
+    ...(shared > 0 ? [`${shared} shared`] : []),
+  ];
+  if (mine > 0) {
+    const yours = `${mine} of yours ${mine === 1 ? 'is' : 'are'} running late`;
+    return [yours, ...rest].join(' · ');
+  }
+  if (rest.length === 0) return null;
+  return `Nothing of yours is late · ${rest.join(' · ')}`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Back after days away
+
+/** What the other adults "handled": things done, routines done, projects finished. */
+const HANDLED = new Set<Activity['action']>([
+  'task.completed',
+  'routine.done',
+  'project.completed',
+]);
+
+/**
+ * One catch-up line when you come back after two or more days: "While you were away: Theo handled
+ * 6 things; 3 need you." Built from the activity Today already loads and your own late and
+ * due-today rows. Null on an ordinary day.
+ */
+export function awayWords({
+  since,
+  today,
+  timeZone,
+  activity,
+  people,
+  needYou,
+}: {
+  since: string | null;
+  today: string;
+  timeZone: string;
+  activity: Activity[] | null;
+  people: Pick<People, 'byId'>;
+  needYou: number;
+}): string | null {
+  if (!since || !today || !activity) return null;
+  if (daysBetween(localParts(since, timeZone).date, today) < 2) return null;
+  const handled = new Map<string, number>();
+  for (const a of activity) {
+    const who = people.byId(a.actorMemberId);
+    if (!who || who.isMe || !HANDLED.has(a.action)) continue;
+    handled.set(who.name, (handled.get(who.name) ?? 0) + 1);
+  }
+  const done = [...handled].map(
+    ([name, n], i) => `${name} handled ${n}${i === 0 ? ` thing${n === 1 ? '' : 's'}` : ''}`,
+  );
+  const need =
+    needYou === 0 ? 'nothing needs you' : `${needYou} need${needYou === 1 ? 's' : ''} you`;
+  return `While you were away: ${done.length ? `${done.join(', ')}; ` : ''}${need}.`;
 }

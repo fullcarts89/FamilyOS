@@ -4,7 +4,8 @@ import type { Milestone } from '../design/motion';
 import { hapticsAvailable, useHaptics } from '../design/motion/haptics';
 import { requestWidgetRefresh } from '../native/WidgetSync';
 import { useToast } from '../design/Toast';
-import { api, errorMessage, type WorkItem } from './api';
+import type { MissedTurns } from '../components/tasks/lists';
+import { api, errorMessage, type Routine, type WorkItem } from './api';
 import { useHousehold } from './household';
 import { usePeople, type Person } from './people';
 
@@ -196,5 +197,59 @@ export function useTaskActions(
     [optimistic, haptics, toast, patch, fail],
   );
 
-  return { complete, reopen, assign, reschedule, patch, fail };
+  /**
+   * A routine's missed turns in one go. "done": the most recent turn is done and the older ones
+   * are skipped; "skip": every missed turn is skipped. Uses the routine's skip and the item's
+   * complete, one request at a time (each skip moves the routine's version on). `after` runs
+   * either way (reload the lists: a partial failure shows where it stopped).
+   */
+  const catchUp = useCallback(
+    async (missed: MissedTurns, how: 'done' | 'skip', after: () => void): Promise<boolean> => {
+      pressed();
+      const latest = missed.turns.at(-1);
+      const skips = how === 'done' ? missed.turns.slice(0, -1) : missed.turns;
+      try {
+        if (!household || !missed.routineId || !latest) throw new Error('no routine');
+        const routineBase = `/households/${household.id}/routines/${missed.routineId}`;
+        let version = (await api<{ routine: Routine }>(routineBase)).routine.version;
+        for (const turn of skips) {
+          const { routine } = await api<{ routine: Routine }>(
+            `${routineBase}/occurrences/${turn.occurrenceIndex ?? 0}/skip`,
+            { method: 'POST', body: { expectedVersion: version } },
+          );
+          version = routine.version;
+        }
+        if (how === 'done') {
+          await api(`${base}/${latest.id}`, {
+            method: 'PATCH',
+            body: { expectedVersion: latest.version, status: 'verified_complete', confirmed: true },
+          });
+        }
+        requestWidgetRefresh();
+        haptics.light();
+        const n = skips.length;
+        toast.show(
+          how === 'done' ? `Done: ${missed.title}` : `Skipped ${n} missed: ${missed.title}`,
+          {
+            detail:
+              how === 'done' && n > 0
+                ? `${n} older ${n === 1 ? 'turn' : 'turns'} skipped. You’re caught up.`
+                : 'You’re caught up.',
+          },
+        );
+        return true;
+      } catch (caught) {
+        toast.show(`Couldn’t catch up “${missed.title}”.`, {
+          error: true,
+          detail: errorMessage(caught),
+        });
+        return false;
+      } finally {
+        after();
+      }
+    },
+    [pressed, household, base, haptics, toast],
+  );
+
+  return { complete, reopen, assign, reschedule, catchUp, patch, fail };
 }

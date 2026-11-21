@@ -31,6 +31,7 @@ export function TaskRow({
   context,
   last,
   settling,
+  postpone,
 }: {
   item: WorkItem;
   today: string;
@@ -47,6 +48,8 @@ export function TaskRow({
    * while you're still tapping), fades when `leaving`, then the list drops it.
    */
   settling?: SettlePhase | null;
+  /** Also offer "Move to tomorrow" on something due today (Today's "On you"). */
+  postpone?: boolean;
 }) {
   const { timeZone } = useHousehold();
   const people = usePeople();
@@ -61,6 +64,7 @@ export function TaskRow({
   // lib/use-settle.ts), then fades and leaves the list. Ticking it again in that moment reopens it.
   const tick = () => (done ? onReopen?.(item) : onComplete(item));
   const lateSteps = !done && when === 'late' && onReschedule;
+  const laterStep = !done && postpone && when === 'today' && onReschedule;
   // The room the open row's actions took, held empty while it settles: without them the title
   // would rewrap and the row shrink, and the next row would slide under the next tap.
   const [room, setRoom] = useState({ trailing: 0, footer: 0 });
@@ -117,7 +121,7 @@ export function TaskRow({
           </>
         }
         footer={
-          lateSteps ? (
+          lateSteps || laterStep ? (
             <View
               style={styles.next}
               onLayout={(e) => {
@@ -125,13 +129,15 @@ export function TaskRow({
                 setRoom((r) => (r.footer === footer ? r : { ...r, footer }));
               }}
             >
-              <NextStep
-                label="Do it today"
-                onPress={() => onReschedule(item, today, 'Moved to today')}
-              />
+              {lateSteps ? (
+                <NextStep
+                  label="Do it today"
+                  onPress={() => onReschedule(item, today, 'Moved to today')}
+                />
+              ) : null}
               <NextStep
                 label="Move to tomorrow"
-                onPress={() => onReschedule(item, addDays(today, 1), 'Moved to tomorrow')}
+                onPress={() => onReschedule?.(item, addDays(today, 1), 'Moved to tomorrow')}
               />
             </View>
           ) : hold && room.footer ? (

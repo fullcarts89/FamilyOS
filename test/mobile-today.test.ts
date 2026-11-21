@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { NextEntry } from '../apps/mobile/components/rhythm/NextUp';
+import type { Activity } from '../apps/mobile/lib/api';
 import {
   awayRails,
+  awayWords,
   byStart,
   contrast,
+  lateWords,
   railRows,
   readableOn,
   shortTitle,
@@ -227,5 +230,73 @@ describe('readable color', () => {
     expect(shortTitle('Dinner: sheet-pan salmon')).toBe('Dinner');
     expect(shortTitle('Quarterly planning (runs late)')).toBe('Quarterly planning');
     expect(shortTitle('Laundry')).toBe('Laundry');
+  });
+});
+
+describe('the headline’s late count', () => {
+  it('counts yours first, then each other adult and the shared list', () => {
+    expect(lateWords({ mine: 1, others: [{ name: 'Theo', count: 2 }], shared: 0 })).toBe(
+      '1 of yours is running late · Theo has 2',
+    );
+    expect(lateWords({ mine: 3, others: [{ name: 'Theo', count: 0 }], shared: 1 })).toBe(
+      '3 of yours are running late · 1 shared',
+    );
+    expect(lateWords({ mine: 0, others: [{ name: 'Theo', count: 2 }], shared: 0 })).toBe(
+      'Nothing of yours is late · Theo has 2',
+    );
+    expect(lateWords({ mine: 0, others: [{ name: 'Theo', count: 0 }], shared: 0 })).toBeNull();
+  });
+});
+
+describe('back after days away', () => {
+  const people = {
+    byId: (id: string | null | undefined) => (id === 't' ? THEO : id === 'm' ? MAYA : null),
+  };
+  const did = (n: number, action: Activity['action'] = 'task.completed', actor = 't'): Activity[] =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `${action}${i}`,
+      at: '2026-11-19T18:00:00Z',
+      actorMemberId: actor,
+      action,
+      entityType: 'work_item',
+      entityId: `w${i}`,
+      title: `Thing ${i}`,
+      memberId: null,
+    }));
+  const base = { today: DATE, timeZone: TZ, people };
+
+  it('one line after two or more days: what Theo handled, and what needs you', () => {
+    expect(
+      awayWords({
+        ...base,
+        since: '2026-11-15T17:00:00Z',
+        activity: [...did(5), ...did(1, 'routine.done'), ...did(2, 'task.assigned')],
+        needYou: 3,
+      }),
+    ).toBe('While you were away: Theo handled 6 things; 3 need you.');
+    expect(awayWords({ ...base, since: '2026-11-16T17:00:00Z', activity: [], needYou: 1 })).toBe(
+      'While you were away: 1 needs you.',
+    );
+  });
+
+  it('nothing on an ordinary day, or before the activity has loaded', () => {
+    expect(
+      awayWords({ ...base, since: '2026-11-18T17:00:00Z', activity: did(3), needYou: 3 }),
+    ).toBeNull();
+    expect(awayWords({ ...base, since: null, activity: did(3), needYou: 3 })).toBeNull();
+    expect(
+      awayWords({ ...base, since: '2026-11-10T17:00:00Z', activity: null, needYou: 3 }),
+    ).toBeNull();
+  });
+
+  it('never counts your own activity', () => {
+    expect(
+      awayWords({
+        ...base,
+        since: '2026-11-15T17:00:00Z',
+        activity: did(4, 'task.completed', 'm'),
+        needYou: 0,
+      }),
+    ).toBe('While you were away: nothing needs you.');
   });
 });

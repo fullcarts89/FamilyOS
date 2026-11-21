@@ -8,11 +8,15 @@ import type { WorkItem } from '../../lib/api';
 import type { Person } from '../../lib/people';
 import { WHEN_LABEL, WHEN_ORDER, type When } from '../../lib/tasks';
 import type { SettlePhase } from '../../lib/use-settle';
+import type { MissedTurns } from './lists';
+import { MissedRow } from './MissedRow';
 import { TaskRow } from './TaskRow';
 
 /**
  * One person's list (or the shared one): what they have, grouped by when. No scores or
- * comparisons: the same number of things is never the same amount of work.
+ * comparisons: the same number of things is never the same amount of work. On Today, a routine's
+ * missed turns lead the late group as one row, and open things with no date come last, under a
+ * quiet "Anytime".
  */
 export function PersonColumn({
   person,
@@ -29,6 +33,9 @@ export function PersonColumn({
   showHeader = true,
   contextOf,
   settling,
+  missed = [],
+  onCatchUp,
+  anytime = [],
 }: {
   /** null for the shared list. */
   person: Person | null;
@@ -48,8 +55,31 @@ export function PersonColumn({
   contextOf?: (item: WorkItem) => string | undefined;
   /** Just-finished rows still showing, and whether each is fading out. */
   settling?: ReadonlyMap<string, SettlePhase>;
+  /** Routines with missed turns, one row each (with `onCatchUp`). */
+  missed?: MissedTurns[];
+  onCatchUp?: (missed: MissedTurns, how: 'done' | 'skip') => Promise<unknown>;
+  /** Open things with no date. */
+  anytime?: WorkItem[];
 }) {
-  const empty = WHEN_ORDER.every((w) => groups[w].length === 0);
+  const shownMissed = onCatchUp ? missed : [];
+  const empty =
+    WHEN_ORDER.every((w) => groups[w].length === 0) &&
+    shownMissed.length === 0 &&
+    anytime.length === 0;
+  const row = (item: WorkItem, last: boolean) => (
+    <TaskRow
+      key={item.id}
+      item={item}
+      today={today}
+      onComplete={onComplete}
+      onReopen={onReopen}
+      onAssign={onAssign}
+      onReschedule={onReschedule}
+      context={contextOf?.(item)}
+      last={last}
+      settling={settling?.get(item.id)}
+    />
+  );
   return (
     <View style={styles.column}>
       {showHeader ? (
@@ -78,39 +108,46 @@ export function PersonColumn({
               : 'Nothing up for grabs.'}
         </Text>
       ) : (
-        WHEN_ORDER.map((when) => {
-          const rows = groups[when];
-          if (rows.length === 0) return null;
-          return (
-            <View key={when}>
-              <GroupLabel
-                label={
-                  when === 'waiting'
-                    ? 'Waiting on someone else'
-                    : when === 'late'
-                      ? 'Running late'
-                      : WHEN_LABEL[when]
-                }
-                count={rows.length}
-                late={when === 'late'}
-              />
-              {rows.map((item, i) => (
-                <TaskRow
-                  key={item.id}
-                  item={item}
-                  today={today}
-                  onComplete={onComplete}
-                  onReopen={onReopen}
-                  onAssign={onAssign}
-                  onReschedule={onReschedule}
-                  context={contextOf?.(item)}
-                  last={i === rows.length - 1}
-                  settling={settling?.get(item.id)}
+        <>
+          {WHEN_ORDER.map((when) => {
+            const rows = groups[when];
+            const lead = when === 'late' ? shownMissed : [];
+            if (rows.length === 0 && lead.length === 0) return null;
+            return (
+              <View key={when}>
+                <GroupLabel
+                  label={
+                    when === 'waiting'
+                      ? 'Waiting on someone else'
+                      : when === 'late'
+                        ? 'Running late'
+                        : WHEN_LABEL[when]
+                  }
+                  count={rows.length + lead.length}
+                  late={when === 'late'}
                 />
-              ))}
+                {lead.map((m, i) =>
+                  onCatchUp ? (
+                    <MissedRow
+                      key={m.key}
+                      missed={m}
+                      today={today}
+                      onCatchUp={onCatchUp}
+                      last={i === lead.length - 1 && rows.length === 0}
+                    />
+                  ) : null,
+                )}
+                {rows.map((item, i) => row(item, i === rows.length - 1))}
+              </View>
+            );
+          })}
+          {anytime.length > 0 ? (
+            <View>
+              <GroupLabel label="Anytime" />
+              {anytime.map((item, i) => row(item, i === anytime.length - 1))}
             </View>
-          );
-        })
+          ) : null}
+        </>
       )}
       <Button
         title="Add"

@@ -7,9 +7,18 @@ import { DayTimeline } from '../../components/rhythm/DayTimeline';
 import { EventSheet, type EventTarget } from '../../components/rhythm/EventSheet';
 import { HeadsUps, type DatedHeadsUp } from '../../components/rhythm/HeadsUps';
 import { NextUp, dayEntries } from '../../components/rhythm/NextUp';
+import type { LateCounts } from '../../components/rhythm/today-model';
+import { WhileAway } from '../../components/rhythm/WhileAway';
 import { SinceLastLooked } from '../../components/rhythm/SinceLastLooked';
 import { WeekStrip } from '../../components/rhythm/WeekStrip';
 import { WeekPlanStrip } from '../../components/rhythm/WeekPlanStrip';
+import {
+  lateRows,
+  todayLists,
+  type MissedTurns,
+  type TodayList,
+} from '../../components/tasks/lists';
+import { OnYou } from '../../components/tasks/OnYou';
 import { PersonColumn } from '../../components/tasks/PersonColumn';
 import { Avatar, Either } from '../../design/Avatar';
 import type { PressState } from '../../design/Button';
@@ -38,21 +47,18 @@ import { usePeople, type Person } from '../../lib/people';
 import { headsUpsForDays, localParts, timeOf } from '../../lib/rhythm';
 import {
   WHEN_ORDER,
-  byDue,
   clearsToday,
-  currentTurns,
-  isOpen,
   todayClearMilestone,
   useTaskActions,
-  whenOf,
   type When,
 } from '../../lib/tasks';
 import { addDays } from '../../lib/dates';
 import { useSettle } from '../../lib/use-settle';
 import { useTodayData } from '../../lib/use-today';
 
-const NEAR: When[] = ['late', 'today', 'week'];
 const PER_COLUMN = 6;
+/** Undated things shown per list on Today; the rest are a tap away in Tasks. */
+const ANYTIME = 3;
 
 // Today's rhythm: a greeting and a headline from the day's real data; the day as lanes (desktop)
 // or the next few things with the whole day a tap away (phone); heads-ups you can act on; what
@@ -177,28 +183,31 @@ export default function Today() {
     [rhythm, week, timeZone],
   );
 
-  const lists = useMemo(() => {
-    const out = new Map<string | null, Record<When, WorkItem[]>>();
-    if (!items || !today) return out;
-    const sort = byDue(timeZone);
-    for (const item of currentTurns(items)) {
-      if (item.type === 'project' || (!isOpen(item) && !settling.has(item.id))) continue;
-      // A project's step shows on its owner's list too; unowned steps stay with the project.
-      if (item.parentId && !item.ownerMemberId) continue;
-      const when = whenOf(item, today, timeZone);
-      if (!NEAR.includes(when)) continue;
-      const g =
-        out.get(item.ownerMemberId) ??
-        (Object.fromEntries(WHEN_ORDER.map((w) => [w, [] as WorkItem[]])) as Record<
-          When,
-          WorkItem[]
-        >);
-      g[when].push(item);
-      out.set(item.ownerMemberId, g);
-    }
-    for (const g of out.values()) for (const w of WHEN_ORDER) g[w].sort(sort);
-    return out;
-  }, [items, today, timeZone, settling]);
+  const lists = useMemo(
+    () =>
+      items && today
+        ? todayLists({ items, today, timeZone, keep: (id) => settling.has(id) })
+        : new Map<string | null, TodayList>(),
+    [items, today, timeZone, settling],
+  );
+  // What's late, counted the way the lists show it: yours, then the other adults', then shared.
+  const late: LateCounts | undefined = items
+    ? {
+        mine: lateRows(lists.get(people.me?.id ?? '')),
+        others: people.adults
+          .filter((p) => !p.isMe)
+          .map((p) => ({ name: p.name, count: lateRows(lists.get(p.id)) })),
+        shared: lateRows(lists.get(null)),
+      }
+    : undefined;
+  const mine = people.me ? lists.get(people.me.id) : undefined;
+  const needYou = mine ? lateRows(mine) + mine.groups.today.length : 0;
+  const contextOf = (item: WorkItem) =>
+    item.parentId ? items?.find((i) => i.id === item.parentId)?.title : undefined;
+  const catchUp = useCallback(
+    (m: MissedTurns, how: 'done' | 'skip') => actions.catchUp(m, how, () => void load()),
+    [actions, load],
+  );
 
   const refresh = async () => {
     setRefreshing(true);
@@ -211,11 +220,29 @@ export default function Today() {
   const hour = Math.floor(localParts(now, timeZone).minutes / 60);
   const greeting = `${greetingFor(hour)}${first ? `, ${first}` : ''}`;
   const head = rhythm
-    ? headline({ rhythm, entries, week: week?.occurrences ?? [], people, now, timeZone })
+    ? headline({ rhythm, entries, week: week?.occurrences ?? [], people, now, timeZone, late })
     : null;
   const nowMin = localParts(now, timeZone).minutes;
   const clockText = `${Math.floor(nowMin / 60) % 12 || 12}:${String(nowMin % 60).padStart(2, '0')}`;
   const openOccurrence = (o: Occurrence) => setSheet({ mode: 'occurrence', occurrence: o });
+
+  // Your own late and due-today things, first (phone: under "Next up"; desktop: beside the
+  // headline), so they're on the first screen.
+  const onYou =
+    me && items && today ? (
+      <OnYou
+        me={me}
+        list={mine}
+        today={today}
+        onComplete={actions.complete}
+        onReopen={actions.reopen}
+        onAssign={actions.assign}
+        onReschedule={actions.reschedule}
+        onCatchUp={catchUp}
+        settling={settling}
+        contextOf={contextOf}
+      />
+    ) : null;
 
   // ---------------------------------------------------------------------------------------------
   const header = (
@@ -252,7 +279,18 @@ export default function Today() {
             {head.line}
           </Text>
         ) : null}
+        {rhythm ? (
+          <WhileAway
+            since={data.since}
+            today={today}
+            timeZone={timeZone}
+            activity={activity}
+            people={people}
+            needYou={needYou}
+          />
+        ) : null}
       </View>
+      {desktop && onYou ? <View style={styles.headSide}>{onYou}</View> : null}
     </View>
   );
 
@@ -332,9 +370,13 @@ export default function Today() {
           onOpen={openOccurrence}
           tonight
           onMoreTonight={() => setWholeDay(true)}
+          middle={onYou}
         />
       ) : (
-        <Tomorrow occurrences={week?.occurrences ?? []} today={today} onOpen={openOccurrence} />
+        <View style={styles.stack}>
+          <Tomorrow occurrences={week?.occurrences ?? []} today={today} onOpen={openOccurrence} />
+          {onYou}
+        </View>
       )
     ) : null;
 
@@ -381,30 +423,32 @@ export default function Today() {
     ...people.adults.map((p) => ({
       key: p.id as string | null,
       person: p,
-      title: p.isMe ? 'On you' : `${p.name}’s handling`,
+      title: p.isMe ? 'You' : `${p.name}’s handling`,
       sub: p.isMe ? 'Late, today and this week' : `What ${p.name} has this week`,
     })),
     { key: null, person: null, title: 'Up for grabs', sub: 'Either of you' },
   ];
-  const groupsFor = (key: string | null): Record<When, WorkItem[]> => {
-    const g = lists.get(key);
-    const empty = Object.fromEntries(WHEN_ORDER.map((w) => [w, [] as WorkItem[]])) as Record<
+  // Keep each column short: a routine's missed turns and the first few by urgency, then at most
+  // three undated ("Anytime"); the rest live in Tasks.
+  const columnFor = (key: string | null) => {
+    const list = lists.get(key);
+    const groups = Object.fromEntries(WHEN_ORDER.map((w) => [w, [] as WorkItem[]])) as Record<
       When,
       WorkItem[]
     >;
-    if (!g) return empty;
-    // Keep the column short: the first few by urgency; the rest live in Tasks.
-    let left = PER_COLUMN;
+    if (!list) return { groups, missed: [], anytime: [], hidden: 0 };
+    const missed = list.missed.slice(0, PER_COLUMN);
+    let left = PER_COLUMN - missed.length;
+    let total = list.missed.length + list.anytime.length;
     for (const w of WHEN_ORDER) {
-      empty[w] = g[w].slice(0, Math.max(0, left));
-      left -= empty[w].length;
+      groups[w] = list.groups[w].slice(0, Math.max(0, left));
+      left -= groups[w].length;
+      total += list.groups[w].length;
     }
-    return empty;
-  };
-  const hidden = (key: string | null) => {
-    const g = lists.get(key);
-    const total = g ? WHEN_ORDER.reduce((n, w) => n + g[w].length, 0) : 0;
-    return Math.max(0, total - PER_COLUMN);
+    const anytime = list.anytime.slice(0, ANYTIME);
+    const shown =
+      missed.length + anytime.length + WHEN_ORDER.reduce((n, w) => n + groups[w].length, 0);
+    return { groups, missed, anytime, hidden: total - shown };
   };
   const activeKey = column === undefined ? (me?.id ?? null) : column;
   const partnerColors: [string, string] | undefined =
@@ -442,27 +486,29 @@ export default function Today() {
       <View style={[styles.cols, !phone && styles.colsWide]}>
         {columns
           .filter((c) => !phone || c.key === activeKey)
-          .map((c) => (
+          .map((c) => ({ c, col: columnFor(c.key) }))
+          .map(({ c, col }) => (
             <View key={c.key ?? 'shared'} style={!phone ? styles.col : undefined}>
               <PersonColumn
                 person={c.person}
                 title={c.title}
                 sub={c.sub}
-                groups={groupsFor(c.key)}
+                groups={col.groups}
+                missed={col.missed}
+                onCatchUp={catchUp}
+                anytime={col.anytime}
                 today={today}
                 onComplete={actions.complete}
                 onReopen={actions.reopen}
                 onAssign={actions.assign}
                 onReschedule={actions.reschedule}
                 onAdd={() => open(c.key)}
-                contextOf={(item) =>
-                  item.parentId ? items?.find((i) => i.id === item.parentId)?.title : undefined
-                }
+                contextOf={contextOf}
                 sharedColors={partnerColors}
                 showHeader={!phone}
                 settling={settling}
               />
-              {hidden(c.key) > 0 ? (
+              {col.hidden > 0 ? (
                 <Pressable
                   accessibilityRole="link"
                   onPress={() =>
@@ -470,7 +516,7 @@ export default function Today() {
                   }
                   style={styles.more}
                 >
-                  <Text variant="label">{hidden(c.key)} more in Tasks</Text>
+                  <Text variant="label">{col.hidden} more in Tasks</Text>
                   <ArrowRight size={15} color={color.ink} strokeWidth={2.2} />
                 </Pressable>
               ) : null}
@@ -559,7 +605,11 @@ export default function Today() {
               {wholeDay ? <View style={styles.compactDay}>{dayColumn}</View> : null}
             </View>
           ) : (
-            <View style={styles.timelineCard}>{timeline}</View>
+            <>
+              {/* Tablets: your own things under the headline (desktop has them beside it). */}
+              {!desktop && onYou ? <View style={styles.blockTight}>{onYou}</View> : null}
+              <View style={styles.timelineCard}>{timeline}</View>
+            </>
           )}
 
           <View style={styles.blockTight}>
@@ -683,6 +733,8 @@ const styles = StyleSheet.create({
   },
   clockDot: { fontFamily: font.displayHeavy },
   headText: { flex: 1, gap: space[2] - 2, minWidth: 0, paddingTop: space[1] },
+  headSide: { width: 400, flexShrink: 0 },
+  stack: { gap: space[4] },
   headline: {
     fontFamily: font.display,
     fontSize: 25,

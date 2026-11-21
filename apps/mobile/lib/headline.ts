@@ -1,4 +1,5 @@
 import type { NextEntry } from '../components/rhythm/NextUp';
+import { lateWords, type LateCounts } from '../components/rhythm/today-model';
 import type { Occurrence, RhythmResponse } from './api';
 import { addDays } from './dates';
 import type { People, Person } from './people';
@@ -16,6 +17,8 @@ const name = (p: Person | null, capital = true) =>
 /**
  * Today's headline and one supporting line, derived only from the day's real data: the next
  * handoff, else the next thing on the calendar, else a plain "that's the day". Nothing invented.
+ * `late` counts what's late the way Today's lists show it, yours first ("1 of yours is running
+ * late · Theo has 2"); without it, the household's total.
  */
 export function headline({
   rhythm,
@@ -24,6 +27,7 @@ export function headline({
   people,
   now,
   timeZone,
+  late: lateCounts,
 }: {
   rhythm: RhythmResponse;
   entries: NextEntry[];
@@ -31,8 +35,16 @@ export function headline({
   people: People;
   now: Date;
   timeZone: string;
+  late?: LateCounts;
 }): { title: Phrase[]; line: string } {
+  const overdue = rhythm.summary.overdue;
+  const lateLine = lateCounts
+    ? lateWords(lateCounts)
+    : overdue > 0
+      ? `${overdue === 1 ? 'one thing is' : `${overdue} things are`} running late`
+      : null;
   const title: Phrase[] = [];
+  let lateInTitle = false;
   const next = rhythm.summary.nextHandoff;
   const isToday = rhythm.date === rhythm.today;
   const t = now.getTime();
@@ -66,19 +78,17 @@ export function headline({
       }
     } else {
       // Never "all done" while something is late: say what's still open instead.
-      const late = rhythm.summary.overdue;
-      const lateText =
-        late > 0 ? ` ${late === 1 ? 'One thing is' : `${late} things are`} running late.` : '';
+      const lateText = lateLine ? ` ${lateLine.charAt(0).toUpperCase()}${lateLine.slice(1)}.` : '';
+      lateInTitle = !!lateLine;
       if (entries.length > 0) {
         title.push({
-          text: late > 0 ? `No more plans today.${lateText}` : 'That’s the day’s plans done.',
+          text: lateLine ? `No more plans today.${lateText}` : 'That’s the day’s plans done.',
         });
       } else {
         title.push({ text: `A quiet day on the calendar.${lateText}` });
       }
     }
   }
-  const lateInTitle = title.some((p) => p.text.includes('running late'));
 
   // The supporting line: where the children are, what's yours today, and tomorrow's first handoff.
   const facts: string[] = [];
@@ -111,11 +121,7 @@ export function headline({
     ).length;
     if (open > 0) facts.push(`you have ${open === 1 ? 'one thing' : `${open} things`} due today`);
   }
-  if (rhythm.summary.overdue > 0 && !lateInTitle) {
-    facts.push(
-      `${rhythm.summary.overdue === 1 ? 'one thing is' : `${rhythm.summary.overdue} things are`} running late`,
-    );
-  }
+  if (lateLine && !lateInTitle) facts.push(lateLine);
   if (isToday && nowMin >= 17 * 60) {
     const tomorrow = addDays(rhythm.date, 1);
     const first = week
