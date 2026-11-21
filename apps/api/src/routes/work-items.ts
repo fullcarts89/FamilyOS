@@ -8,7 +8,7 @@ import {
 } from '@familyos/domain';
 import { materializeRoutine, type Database } from '@familyos/db';
 import { Hono } from 'hono';
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { z } from 'zod';
 import { recordAudit } from '../audit';
 import { authorize } from '../http/authorize';
@@ -43,6 +43,9 @@ export const ITEM_COLUMNS = [
 
 const DONE_STATUSES: readonly WorkItemStatus[] = ['verified_complete', 'done_unverified'];
 const CLOSED_STATUSES: readonly WorkItemStatus[] = [...DONE_STATUSES, 'cancelled'];
+/** The list's finished items: completed this recently, at most this many. */
+export const FINISHED_DAYS = 14;
+export const FINISHED_CAP = 1000;
 
 const Uuid = z.uuid();
 /** A calendar date, YYYY-MM-DD, that actually exists. */
@@ -471,23 +474,44 @@ export function workItemRoutes(deps: Deps) {
   const app = new Hono<AppEnv>();
   const now = () => deps.now?.() ?? new Date();
 
+  // Every open item, however old, plus what was finished in the last FINISHED_DAYS (Today and
+  // Tasks show recent completions), newest first. Only the finished part is capped: a busy
+  // household's routine turns must never push an open item out of the list.
   app.get('/', async (c) => {
     authorize(c, 'work_item.read');
+    const trx = c.get('trx');
+    const { householdId } = c.get('member');
     const parentId = c.req.query('parentId');
-    let query = c
-      .get('trx')
-      .selectFrom('app.work_item')
-      .select(ITEM_COLUMNS)
-      .where('household_id', '=', c.get('member').householdId)
-      .where('type', '!=', 'routine')
-      .where('status', 'not in', ['new', 'cancelled']);
-    if (parentId) query = query.where('parent_id', '=', uuidParam(parentId));
     const subjectId = c.req.query('subjectMemberId');
-    if (subjectId) query = query.where('subject_member_id', '=', uuidParam(subjectId));
     const contactId = c.req.query('contactId');
-    if (contactId) query = query.where('contact_id', '=', uuidParam(contactId));
-    const items = await query.orderBy('created_at', 'desc').limit(500).execute();
-    return c.json({ items: await decorateItems(c.get('trx'), c.get('member').householdId, items) });
+    const base = () => {
+      let query = trx
+        .selectFrom('app.work_item')
+        .select(ITEM_COLUMNS)
+        .where('household_id', '=', householdId)
+        .where('type', '!=', 'routine');
+      if (parentId) query = query.where('parent_id', '=', uuidParam(parentId));
+      if (subjectId) query = query.where('subject_member_id', '=', uuidParam(subjectId));
+      if (contactId) query = query.where('contact_id', '=', uuidParam(contactId));
+      return query;
+    };
+    const open = await base()
+      .where('status', 'not in', ['new', ...CLOSED_STATUSES])
+      .orderBy('created_at', 'desc')
+      .execute();
+    const since = new Date(now().getTime() - FINISHED_DAYS * 24 * 3600 * 1000);
+    const finished = await base()
+      .where('status', 'in', DONE_STATUSES)
+      .where((eb) => eb(eb.fn.coalesce('completed_at', 'updated_at'), '>=', since))
+      .orderBy(sql`coalesce(completed_at, updated_at)`, 'desc')
+      .limit(FINISHED_CAP)
+      .execute();
+    const items = [...open, ...finished].sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() ||
+        a.id.localeCompare(b.id),
+    );
+    return c.json({ items: await decorateItems(trx, householdId, items) });
   });
 
   app.post('/', async (c) => {

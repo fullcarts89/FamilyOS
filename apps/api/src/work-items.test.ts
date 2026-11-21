@@ -1,5 +1,10 @@
 import { createDb, type Database } from '@familyos/db';
-import { purgeHouseholds, seedHousehold, type SeededHousehold } from '@familyos/db/testing';
+import {
+  purgeHouseholds,
+  seedHousehold,
+  seedRoutine,
+  type SeededHousehold,
+} from '@familyos/db/testing';
 import type { Kysely } from 'kysely';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestApp } from './testing/harness';
@@ -78,6 +83,72 @@ describe.skipIf(!db)('work items, inbox and Today (G2)', () => {
   afterAll(async () => {
     await purgeHouseholds(requireDb(), [h.id]);
     await db?.destroy();
+  });
+
+  describe('the list', () => {
+    it('returns every open item however old, and only recent finished ones', async () => {
+      const busy = await seedHousehold(requireDb(), 'Busy');
+      try {
+        const { ruleId } = await seedRoutine(requireDb(), busy, {
+          title: 'Feed the cat',
+          rule: { freq: 'daily', interval: 1 },
+          startOn: '2025-01-01',
+        });
+        // 600 finished turns this week, all created after the old open task.
+        await requireDb()
+          .insertInto('app.work_item')
+          .values(
+            Array.from({ length: 600 }, (_, i) => ({
+              household_id: busy.id,
+              title: 'Feed the cat',
+              status: 'done_unverified' as const,
+              created_by_member_id: busy.owner.id,
+              recurrence_rule_id: ruleId,
+              occurrence_index: i,
+              occurrence_on: '2026-11-07',
+              completed_at: new Date(NOW.getTime() - (i + 1) * 60_000),
+              completed_by_member_id: busy.owner.id,
+              created_at: new Date(NOW.getTime() - (i + 1) * 60_000),
+            })),
+          )
+          .execute();
+        const insert = (values: Record<string, unknown>) =>
+          requireDb()
+            .insertInto('app.work_item')
+            .values({
+              household_id: busy.id,
+              created_by_member_id: busy.owner.id,
+              title: 't',
+              ...values,
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+        const oldOpen = await insert({
+          title: 'Renew passports',
+          status: 'ready',
+          created_at: new Date('2025-03-01T12:00:00Z'),
+        });
+        const longDone = await insert({
+          title: 'Fixed the gate',
+          status: 'verified_complete',
+          completed_at: new Date(NOW.getTime() - 20 * 24 * 3600 * 1000),
+          completed_by_member_id: busy.owner.id,
+          created_at: new Date(NOW.getTime() - 30 * 24 * 3600 * 1000),
+        });
+        const token = await tokenOf(busy.owner);
+        const list = await json<{ items: Item[] }>(
+          await request(`/households/${busy.id}/work-items`, { token }),
+        );
+        const ids = list.items.map((i) => i.id);
+        expect(ids).toContain(oldOpen.id);
+        expect(ids).not.toContain(longDone.id);
+        expect(list.items.filter((i) => i.status === 'done_unverified')).toHaveLength(600);
+        // Newest first, as before.
+        expect(ids.at(-1)).toBe(oldOpen.id);
+      } finally {
+        await purgeHouseholds(requireDb(), [busy.id]);
+      }
+    });
   });
 
   describe('inbox', () => {
