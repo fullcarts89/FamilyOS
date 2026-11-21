@@ -1,4 +1,4 @@
-import { can } from '@familyos/domain';
+import { can, DEFAULT_NOTIFICATION_SETTINGS } from '@familyos/domain';
 import { useFocusEffect } from 'expo-router';
 import {
   CalendarDays,
@@ -49,6 +49,9 @@ import {
   widgetLockScreenVisible,
   widgetsAvailable,
 } from '../../native/widget';
+
+// Turning quiet hours back on offers the household default (the server's), not a second guess.
+const QUIET_DEFAULT = DEFAULT_NOTIFICATION_SETTINGS.quietHours ?? { start: '22:00', end: '06:00' };
 
 const ROLE_LABEL: Record<Member['role'], string> = {
   owner: 'Owner',
@@ -608,8 +611,8 @@ function Settings({ timeZone }: { timeZone: string }) {
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   useEffect(() => {
-    setStart(clock(state?.quietHours?.start ?? '21:00'));
-    setEnd(clock(state?.quietHours?.end ?? '07:00'));
+    setStart(clock(state?.quietHours?.start ?? QUIET_DEFAULT.start));
+    setEnd(clock(state?.quietHours?.end ?? QUIET_DEFAULT.end));
   }, [state?.quietHours?.start, state?.quietHours?.end]);
 
   const save = async (patch: Parameters<typeof update>[0]) => {
@@ -705,7 +708,10 @@ function Settings({ timeZone }: { timeZone: string }) {
         (v) =>
           void save({
             quietHours: v
-              ? { start: parseTime(start) ?? '21:00', end: parseTime(end) ?? '07:00' }
+              ? {
+                  start: parseTime(start) ?? QUIET_DEFAULT.start,
+                  end: parseTime(end) ?? QUIET_DEFAULT.end,
+                }
               : null,
           }),
         !state,
