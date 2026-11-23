@@ -2,6 +2,7 @@
   "expo": {
     "name": "FamilyOS",
     "slug": "familyos",
+    "owner": "thoroxnard",
     "scheme": "familyos",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -42,6 +43,11 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4f13afac-e536-4da6-948e-8dbc6ed7ea00"
+      }
     }
   }
 }
