@@ -10,6 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.familyos.household",
+      "appleTeamId": "G3FXWBPJY2",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
