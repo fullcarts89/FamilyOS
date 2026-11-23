@@ -201,6 +201,6 @@ Not implemented yet; the widget already calls it and falls back to the app's sna
 - **Untested Swift.** It follows Apple's documented APIs (WidgetKit `TimelineProvider`, `AppIntent`, `Button(intent:)`, `containerBackground`, `invalidatableContent`) and passes a syntax parse, but it's first type-checked in the EAS build. Expect possibly one round of small fixes.
 - **`@bacons/apple-targets` 5.0.0** declares SDK 55's prebuild config; `pnpm-workspace.yaml` overrides it to SDK 58's (same API, checked). It is a community plugin by an Expo team member, the usual choice for widgets in Expo projects.
 - **Extension build number:** the plugin sets the widget's build number from `ios.buildNumber` (1 when unset), while EAS increments the app's remotely. If App Store Connect warns that they differ (ITMS-90473, a warning, not a rejection), Claude can make the two match.
-- **App version** is `0.0.0` in `app.json`. If App Store Connect refuses it, set `version` to `1.0.0`.
+- **App version** is `1.0.0` in `app.json`, and the widget takes the same version from it. Raise it there when you want testers to see a new version number; the build number increases on its own.
 - **Sign-in once more on iPhone:** the iOS session moved to a new shared keychain item. No iPhone build existed before, so nobody is affected.
 - **Data freshness:** until `GET …/widget` exists, the widget only learns about changes made elsewhere (your partner, the web) when the app runs on your phone.
