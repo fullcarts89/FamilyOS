@@ -1,0 +1,216 @@
+{
+ "lg.restart_then_approve": {
+  "sends": 1,
+  "next": [
+   "await_reply"
+  ],
+  "status": "awaiting_external",
+  "start_ms": 1415,
+  "resume_ms": 257,
+  "db_bytes": 32768
+ },
+ "lg.preinterrupt_effect_reexecuted": {
+  "notify_count_after_start": "1",
+  "notify_count_after_resume": "3",
+  "sends": 1
+ },
+ "lg.reinvoke_without_approval": {
+  "sends": 0,
+  "next": [
+   "approval"
+  ],
+  "rc": 0
+ },
+ "lg.rejected": {
+  "sends": 0,
+  "status": "rejected"
+ },
+ "lg.crash_after_send_no_idem.sync": {
+  "crash_rc": 137,
+  "sends_after_recovery": 2,
+  "next": [
+   "await_reply"
+  ],
+  "err": ""
+ },
+ "lg.crash_after_send_no_idem.async": {
+  "crash_rc": 137,
+  "sends_after_recovery": 2,
+  "next": [
+   "await_reply"
+  ],
+  "err": ""
+ },
+ "lg.crash_after_send_no_idem.exit": {
+  "crash_rc": 137,
+  "sends_after_recovery": 1,
+  "next": [
+   "approval"
+  ],
+  "err": ""
+ },
+ "lg.crash_after_send_provider_idem": {
+  "sends_after_recovery": 1,
+  "next": [
+   "await_reply"
+  ],
+  "external_ref": "dedup"
+ },
+ "lg.duplicate_approval_event": {
+  "sends": 1,
+  "next": [],
+  "reply_field": "approved",
+  "status": "needs_review"
+ },
+ "lg.duplicate_approval_keyed_to_stale_interrupt_id": {
+  "sends": 1,
+  "rc": 0,
+  "err": "",
+  "next": [
+   "await_reply"
+  ],
+  "reply_field": null
+ },
+ "lg.payload_changed_after_approval_shown": {
+  "sends": 1,
+  "delivered_to": [
+   "attacker@example.test"
+  ],
+  "rc": 0
+ },
+ "lg.other_tenant_with_thread_id_can_resume": {
+  "sends": 1,
+  "note": "harness passes no identity because the API has none; scoping is the caller's job"
+ },
+ "lg.deploy_renames_paused_node": {
+  "rc": 0,
+  "err": "",
+  "sends": 0,
+  "next": [],
+  "status": "drafted"
+ },
+ "lg.transient_failure_with_retry_policy": {
+  "sends": 1,
+  "attempts": "3",
+  "next": [
+   "await_reply"
+  ]
+ },
+ "lg.retries_exhausted_then_recover": {
+  "rc": 1,
+  "err": "During task with name 'send' and id 'ab71ad14-78ce-57ca-5179-9a8804171bfc'",
+  "sends_after": 1,
+  "recovered_next": [
+   "await_reply"
+  ]
+ },
+ "lg.checkpoint_plaintext": {
+  "contains_recipient": true,
+  "contains_body": true,
+  "db_bytes": 28672
+ },
+ "oa.restart_then_approve": {
+  "sends": 1,
+  "interruptions": [
+   {
+    "name": "send_vendor_email",
+    "args": "{\"to\": \"vendor@example.test\", \"body\": \"Can you quote gutter cleaning at 12 Elm St?\"}"
+   }
+  ],
+  "final": "Done: the vendor has been emailed.",
+  "start_ms": 1551,
+  "resume_ms": 516,
+  "state_bytes": 9380
+ },
+ "oa.rejected": {
+  "sends": 0,
+  "final": "Done: the vendor has been emailed."
+ },
+ "oa.crash_after_send_reapprove_from_saved_state": {
+  "crash_rc": 137,
+  "sends_after_recovery": 2,
+  "final": "Done: the vendor has been emailed."
+ },
+ "oa.duplicate_approval_event": {
+  "sends": 2,
+  "rc": 0,
+  "final": "Done: the vendor has been emailed."
+ },
+ "oa.payload_changed_in_saved_state": {
+  "sends": 0,
+  "delivered_to": [],
+  "rc": 1,
+  "err": "agents.exceptions.ModelBehaviorError: Model reused a tool call ID for a different invocation. Use a unique call ID for each tool invocation."
+ },
+ "oa.tool_failed_but_model_says_done": {
+  "sends": 0,
+  "final": "Done: the vendor has been emailed.",
+  "rc": 0
+ },
+ "oa.deploy_renames_agent": {
+  "rc": 1,
+  "err": "agents.exceptions.UserError: Run state agent not found in agent map",
+  "sends": 0
+ },
+ "oa.deploy_renames_tool": {
+  "rc": 1,
+  "err": "agents.exceptions.ModelBehaviorError: Tool send_vendor_email not found in agent gutter",
+  "sends": 0,
+  "final": null
+ },
+ "oa.state_plaintext": {
+  "contains_recipient": true,
+  "state_bytes": 9380
+ },
+ "cp.restart_then_approve": {
+  "sends": 1,
+  "state": "awaiting_external",
+  "start_ms": 19,
+  "resume_ms": 19
+ },
+ "cp.crash_after_send_no_provider_idem": {
+  "crash_rc": 137,
+  "sends_after_recovery": 1,
+  "state": {
+   "state": "blocked",
+   "reason": "delivery_unknown_needs_human"
+  }
+ },
+ "cp.crash_after_send_provider_idem": {
+  "sends_after_recovery": 1,
+  "state": {
+   "state": "awaiting_external"
+  }
+ },
+ "cp.duplicate_approval_event": {
+  "sends": 1,
+  "same_event": {
+   "ignored": "duplicate_event",
+   "state": "awaiting_external"
+  },
+  "new_event": {
+   "error": "no_pending_approval",
+   "state": "awaiting_external"
+  }
+ },
+ "cp.payload_changed_after_approval_shown": {
+  "sends": 0,
+  "out": {
+   "error": "payload_changed_since_approval",
+   "state": "blocked"
+  }
+ },
+ "cp.other_tenant": {
+  "sends": 0,
+  "out": {
+   "error": "not_found"
+  }
+ },
+ "cp.reply_before_send_rejected": {
+  "out": {
+   "error": "unexpected_event_for_state",
+   "state": "awaiting_approval"
+  },
+  "sends": 0
+ }
+}
