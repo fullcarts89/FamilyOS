@@ -21,6 +21,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconButton } from './Button';
+import { SheetEnteredContext } from './sheet-entered';
 import { nativeDriver, reducedMotion, useLayout, useReducedMotion } from './layout';
 import { easing } from './motion/easing';
 import { duration } from './motion/timing';
@@ -109,6 +110,8 @@ export function Sheet({
   const [slot] = useState(createFooterSlot);
   // Stays on screen through the exit fade after `visible` turns false.
   const [mounted, setMounted] = useState(visible);
+  // On screen and laid out: fields inside may ask for the keyboard now (design/sheet-entered.ts).
+  const [entered, setEntered] = useState(false);
   const exited = useRef(onExited);
   exited.current = onExited;
 
@@ -117,7 +120,9 @@ export function Sheet({
       setMounted(true);
       if (reducedMotion()) {
         progress.setValue(1);
-        return;
+        // A frame later: the sheet has been laid out.
+        const frame = requestAnimationFrame(() => setEntered(true));
+        return () => cancelAnimationFrame(frame);
       }
       progress.setValue(0);
       const enter = Animated.timing(progress, {
@@ -126,9 +131,12 @@ export function Sheet({
         easing: easing.enter,
         useNativeDriver: nativeDriver,
       });
-      enter.start();
+      enter.start(({ finished }) => {
+        if (finished) setEntered(true);
+      });
       return () => enter.stop();
     }
+    setEntered(false);
     if (reducedMotion()) {
       progress.setValue(0);
       setMounted(false);
@@ -201,15 +209,17 @@ export function Sheet({
             )}
             <IconButton icon={X} label="Close" onPress={onClose} size={36} />
           </View>
-          <FooterContext.Provider value={slot}>
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.body}
-              keyboardShouldPersistTaps="handled"
-            >
-              {children}
-            </ScrollView>
-          </FooterContext.Provider>
+          <SheetEnteredContext.Provider value={entered}>
+            <FooterContext.Provider value={slot}>
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={styles.body}
+                keyboardShouldPersistTaps="handled"
+              >
+                {children}
+              </ScrollView>
+            </FooterContext.Provider>
+          </SheetEnteredContext.Provider>
           <FooterHost slot={slot} fallback={footer} />
         </Animated.View>
       </KeyboardAvoidingView>
