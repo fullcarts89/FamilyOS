@@ -17,6 +17,14 @@ const ConfigSchema = z
     SUPABASE_JWT_SECRET: z.string().min(32).optional(),
     /** Defaults to the app's own /invite page on Railway's address, else the iPhone app's link. */
     INVITE_LINK_BASE: z.string().optional(),
+    /**
+     * Apple Developer Team ID (10 letters and digits, not secret). Lets the iPhone app open
+     * password reset links (apple-app-site-association); unset, they open in Safari.
+     */
+    APPLE_TEAM_ID: z
+      .string()
+      .regex(/^[A-Z0-9]{10}$/)
+      .optional(),
     /** Set by Railway: the service's public hostname. */
     RAILWAY_PUBLIC_DOMAIN: z.string().optional(),
     /** Directory of the Expo web export to serve beside the API (production); unset in development. */

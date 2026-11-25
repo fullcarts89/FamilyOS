@@ -18,3 +18,18 @@ export const supabase = createClient(config.supabaseUrl, config.supabasePublisha
 /** Signs in with email and password. There is no public sign-up: accounts come from invites. */
 export const signInWithPassword = (email: string, password: string) =>
   supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+
+/**
+ * Emails a link to choose a new password, if the address has an account. The link comes from the
+ * Reset Password email template (supabase/templates/recovery.html), built from the Site URL, so
+ * no redirect address is passed. Supabase answers the same for an address without an account.
+ */
+export const requestPasswordReset = (email: string) =>
+  supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
+
+/** Uses up a reset link's token: signs this device in as the account it was sent to. */
+export const openResetLink = (tokenHash: string) =>
+  supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' });
+
+/** Sets the signed-in account's password. */
+export const setPassword = (password: string) => supabase.auth.updateUser({ password });

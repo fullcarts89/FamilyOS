@@ -18,6 +18,8 @@ export const API_URL = `${BASE_URL}/api`;
 export const SUPABASE_URL = process.env.SUPABASE_URL ?? 'http://127.0.0.1:55321';
 export const DATABASE_URL =
   process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@127.0.0.1:55322/postgres';
+/** The local stack's Mailpit (supabase/config.toml [local_smtp]): every email Auth sends. */
+export const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://127.0.0.1:55324';
 
 /** Synthetic demo family from `pnpm demo:seed` (apps/api/src/cli/seed-demo.ts). */
 export const DEMO_PASSWORD = 'familyos-demo-1';

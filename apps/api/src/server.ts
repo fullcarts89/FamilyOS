@@ -31,7 +31,11 @@ const app = createApp({
 const server = createServer(
   app,
   config.WEB_DIST_DIR
-    ? { root: config.WEB_DIST_DIR, supabaseUrl: config.WEB_SUPABASE_URL ?? config.SUPABASE_URL }
+    ? {
+        root: config.WEB_DIST_DIR,
+        supabaseUrl: config.WEB_SUPABASE_URL ?? config.SUPABASE_URL,
+        ...(config.APPLE_TEAM_ID && { appleTeamId: config.APPLE_TEAM_ID }),
+      }
     : undefined,
 );
 

@@ -33,8 +33,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setState((s) => ({
         session,
         loading: false,
-        // A fresh sign-in clears the "sign in again" note.
-        expired: event === 'SIGNED_IN' ? false : s.expired,
+        // A fresh sign-in (or a reset link opened) clears the "sign in again" note.
+        expired: event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY' ? false : s.expired,
       }));
     });
     // The API refused the session (401): forget it on this device and go back to sign-in, once.

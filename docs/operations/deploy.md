@@ -2,9 +2,10 @@
 
 **Status:** in progress. Steps 1–3 are done; the database is not migrated and nothing is deployed yet. Every step marked **You** needs your own account, payment details or secrets; nobody else does them.
 **Decision 3 (2026-11-08):** Railway Hobby for the API and the worker. Supabase as a new project in your existing organisation. The iPhone app goes out through TestFlight. A subdomain you own serves the app.
-**Decision 4 (2026-11-11):** sign-in is email and password, not an emailed code, so there is no email provider. The owner's password is set by the household bootstrap; the second adult chooses theirs when opening the invite link. A forgotten password is reset by the operator command in Everyday operations.
+**Decision 4 (2026-11-11):** sign-in is email and password, not an emailed code, so there is no email provider. The owner's password is set by the household bootstrap; the second adult chooses theirs when opening the invite link. A forgotten password is reset by the operator command in Everyday operations. (Changed for forgotten passwords by decision 7.)
 **Decision 6 (2026-11-14):** the worker runs inside the `api` service (`deploy/start.mjs`) instead of a second Railway service, so there is one service to set up and pay for. It still connects with its own login, and never gets the API's credentials. `deploy/worker.Dockerfile` stays for running it separately again.
 **Decision 5 (2026-11-11):** first get a working web app with the least setup: the setup commands run in GitHub Actions, the app starts on Railway's own address, and the custom domain, second backup copy and iPhone app come later.
+**Decision 7 (2026-11-24, proposed in the password reset PR):** a forgotten password is reset by the person themselves: **Forgot password?** on the sign-in screen emails a link to choose a new one. That needs an email sender (step 4). The link is an ordinary `https://<app address>/reset-password` address, not the `familyos://` scheme. On a computer, or a phone without the app, it opens the web app. On an iPhone with the app it opens the app (a universal link), once steps 8 and 11 set the Team ID and the address. Why not the scheme: mail apps such as Gmail don't make `familyos://` links tappable, the link would do nothing on a computer, and any app can claim a scheme, while only FamilyOS can claim a universal link to your address. The operator command stays as the fallback.
 
 ## What runs where
 
@@ -46,11 +47,25 @@ Do the steps in order. Every value you create goes into your password manager an
   - Turn off "Allow new users to sign up". Accounts are created only by the household bootstrap and by invites.
   - Leave the Email provider on: it carries password sign-in.
   - Email: set "Minimum password length" to 12, and turn on "Prevent use of leaked passwords".
-- **Auth → URL Configuration:** set the Site URL to `https://<app subdomain>`.
+- **Auth → URL Configuration:**
+  - **Site URL:** `https://<app address>`, with no path. The reset email builds its link from it, so change it whenever the address changes (see "Custom address" below).
+  - **Redirect URLs:** nothing to add. The reset link goes straight to `<Site URL>/reset-password`, and the app never asks Supabase to redirect anywhere.
+- **Auth → Emails → Templates → Reset password:**
+  - Subject: `Reset your FamilyOS password`.
+  - Body: paste the whole of `supabase/templates/recovery.html` (the local stack sends the same file).
+  - Why not the default: it links through Supabase's own address, which uses up the link as soon as anything opens it (some mail apps check links before you tap them), and it lands on the home page, which ignores it. This link is used up only when the new password is saved.
+- **Auth → Sign In / Providers → Email:** leave "Email OTP Expiration" at 3600 seconds. It is how long a reset link works, and the email says an hour.
 - **Connect (top bar) → Session pooler:** copy the connection string for `postgres`. This is the *admin URL* used below. It goes over IPv4, which Railway and GitHub can reach.
 - **API keys:** note the project URL, the publishable key and a secret key.
 
-**4. Email sender: not needed.** Sign-in is by password (decision 4), so Supabase sends no email and there is no custom SMTP to set up.
+**4. Email sender (You), for password reset.** Supabase's built-in sender delivers only to members of your Supabase organisation, and only a few emails an hour, so the second adult would never get a reset email. Set up your own sender (decision 7):
+- **Provider:** sign up with an email provider that offers SMTP, for example Resend or Postmark. Their free plans cover a household.
+- **Domain:** add `fullcarts.org` (or a subdomain) as a sending domain, and create the DNS records it shows (SPF and DKIM) in Squarespace (Domains → fullcarts.org → DNS). Wait until the provider says the domain is verified.
+- **SMTP credentials:** create them in the provider. The password goes into your password manager and Supabase only.
+- **Supabase → Auth → Emails → SMTP Settings:** turn on custom SMTP. Fill in the host, port, user and password, sender email `familyos@fullcarts.org` and sender name `FamilyOS`.
+- **Check:** after step 9, on the sign-in screen choose **Forgot password?** and enter your own email. The email should arrive within a minute, from FamilyOS.
+
+Until this step is done, **Forgot password?** still answers as usual but no email arrives; reset passwords with the operator command in Everyday operations.
 
 **5. Backup key: later.** Until it exists, *Migrate production* skips its own backup and relies on Supabase's daily backups (7 days on Pro). To add the second, encrypted copy, see "Later" below.
 
@@ -89,6 +104,8 @@ Do the steps in order. Every value you create goes into your password manager an
 
   The pooler host is the one in the admin URL, for example `aws-0-us-west-2.pooler.supabase.com`. Invite links point at the service's own address unless `INVITE_LINK_BASE` is set.
 
+  Once you have the Apple Team ID (developer.apple.com → Account → Membership details; 10 characters, not secret), add `APPLE_TEAM_ID=<Team ID>` too. It lets the iPhone app open reset links (decision 7). Check it at `https://<app address>/.well-known/apple-app-site-association`: it should show JSON naming `<Team ID>.app.familyos.household`. Without it that address is 404 and reset links open in Safari.
+
   Then, in the service settings:
   - Networking → Generate Domain.
   - Healthcheck path `/api/health`.
@@ -115,7 +132,7 @@ Railway's config-file format is deprecated and stops being read on 2026-12-01, s
 
 These make the deploy sturdier but aren't needed to use FamilyOS.
 
-- **Custom address:** add `familyos.fullcarts.org` as a custom domain on the `api` service, create the CNAME Railway shows in Squarespace (Domains → fullcarts.org → DNS), then set `APP_URL` to it.
+- **Custom address:** add `familyos.fullcarts.org` as a custom domain on the `api` service, create the CNAME Railway shows in Squarespace (Domains → fullcarts.org → DNS), then set `APP_URL` to it. For reset links, also change Supabase's Site URL to it and set the EAS variable `APP_LINK_HOST` to `familyos.fullcarts.org`, then build the iPhone app again. Until the new build is installed, reset links open in Safari, which still works.
 - **Second backup copy:** create the backup key below, set `BACKUP_PUBLIC_KEY`, set `BACKUPS_ENABLED` to `true`, then run *Production backup* once by hand.
 
 **Backup key (You).** On your laptop:
@@ -158,6 +175,7 @@ Store the private key and its passphrase in your password manager. Without them 
   - `EXPO_PUBLIC_SUPABASE_URL`
   - `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
   - `EXPO_PUBLIC_API_URL=https://<app subdomain>/api`. It must be a full URL; the app refuses a relative one.
+  - `APP_LINK_HOST=<app address>`, the bare host with no `https://` (for example `familyos.fullcarts.org`). It must be the host in Supabase's Site URL. It gives the build the Associated Domains entitlement, so reset links open in the app. When the build asks to turn on Associated Domains for `app.familyos.household`, say yes.
 - **Build and submit:**
   ```bash
   npx eas-cli build -p ios --profile production
@@ -175,7 +193,8 @@ Store the private key and its passphrase in your password manager. Without them 
 - **Backups:** Supabase keeps 7 daily backups. GitHub keeps 30 days of encrypted dumps, plus 90 days of pre-migration dumps. CI runs the restore drill (`scripts/ops/restore-drill.sh`) on every pull request.
 - **Rotate a database password:** run `enable-login.mjs` again for that login, then update `DATABASE_URL` on that Railway service.
 - **Rotate the Supabase secret key:** create a new key in Supabase, update `SUPABASE_SECRET_KEY` on `api`, then revoke the old key.
-- **Reset a forgotten password** (on your laptop, with the admin URL and the secret key). It asks for the new password without showing it.
+- **Forgotten password:** anyone can choose **Forgot password?** on the sign-in screen and get an email with a link to choose a new one (needs step 4). The link works once, for an hour. It goes from the app to Supabase Auth directly, so it shows in Supabase's Auth logs, not Railway's.
+- **Reset a forgotten password yourself,** if email isn't working (on your laptop, with the admin URL and the secret key). It asks for the new password without showing it.
   ```bash
   DATABASE_URL="$ADMIN_DATABASE_URL" SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SECRET_KEY=<secret key> pnpm --filter @familyos/api household:set-password --email <their email>
   ```
@@ -188,6 +207,7 @@ Store the private key and its passphrase in your password manager. Without them 
 | Railway Hobby (two small services) | about $5/month, including $5 of usage |
 | Supabase project in an existing Pro organisation | about $10/month of compute, if the org's included $10 credit is already used |
 | Apple Developer | $99/year, if you don't already have it |
+| Email sender for password reset (step 4) | free plan, at a household's volume |
 | GitHub Actions (private repository) | within the free minutes and storage |
 
 Check current prices before signing up.
