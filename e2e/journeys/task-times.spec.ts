@@ -82,15 +82,20 @@ test.describe('Task times: blocking out time on the day', () => {
     } else {
       const block = day.getByRole('button', { name: new RegExp(`${title}.*5:30–6pm, yours`) });
       await expect(block).toBeVisible();
-      // Level with Maya's lane head ("You"), not Theo's.
-      const [blockBox, headBox] = await Promise.all([
+      // In Maya's lane ("You"), not Theo's: nearer her lane head than his. (A lane is as tall as
+      // its head, whose second line varies with the day, so a fixed distance doesn't hold.)
+      const [blockBox, mineBox, theirsBox] = await Promise.all([
         block.boundingBox(),
         day.getByText('You', { exact: true }).last().boundingBox(),
+        day.getByText('Theo', { exact: true }).last().boundingBox(),
       ]);
-      if (!blockBox || !headBox) throw new Error('the block or the lane head is not on screen');
-      expect(
-        Math.abs(blockBox.y + blockBox.height / 2 - (headBox.y + headBox.height / 2)),
-      ).toBeLessThan(30);
+      if (!blockBox || !mineBox || !theirsBox) {
+        throw new Error('the block or a lane head is not on screen');
+      }
+      const middle = (box: { y: number; height: number }) => box.y + box.height / 2;
+      expect(Math.abs(middle(blockBox) - middle(mineBox))).toBeLessThan(
+        Math.abs(middle(blockBox) - middle(theirsBox)),
+      );
     }
 
     // Ticked from the block: checked for its moment, "Done", then it leaves the day view.
