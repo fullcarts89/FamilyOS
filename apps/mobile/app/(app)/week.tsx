@@ -115,7 +115,10 @@ export default function Week() {
   );
   const occ = useMemo(() => (data?.occurrences ?? []).filter((o) => !o.skipped), [data]);
   const headsUps = useMemo(
-    () => (data && today ? headsUpsForDays(data.occurrences, members, days, today, timeZone) : []),
+    () =>
+      data && today
+        ? headsUpsForDays(data.occurrences, members, days, today, timeZone, data.away ?? [])
+        : [],
     [data, members, days, today, timeZone],
   );
   const flagged = useMemo(() => {

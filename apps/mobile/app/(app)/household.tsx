@@ -1,10 +1,11 @@
 import { can, DEFAULT_NOTIFICATION_SETTINGS } from '@familyos/domain';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import {
   CalendarDays,
   ChevronRight,
   Link2,
   LogOut,
+  Luggage,
   Plus,
   RefreshCw,
   Send,
@@ -244,6 +245,18 @@ export default function HouseholdScreen() {
         Each color marks what’s theirs across the app: lanes, tasks and the week. Tap someone to
         change it.
       </Text>
+      <GroupLabel label="Who’s in town" />
+      <Pressable
+        accessibilityRole="link"
+        accessibilityHint="Opens who’s in town"
+        onPress={() => router.push('/in-town')}
+        style={(s: PressState) => [styles.addRow, s.hovered && styles.rowHover]}
+      >
+        <View style={styles.addIcon}>
+          <Luggage size={18} color={color.ink} strokeWidth={2.2} />
+        </View>
+        <Text variant="label">Away and visiting</Text>
+      </Pressable>
     </View>
   );
 

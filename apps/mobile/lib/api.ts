@@ -1,4 +1,5 @@
 import type {
+  AwayPeriod,
   CalendarRule,
   CareAction,
   EventKind,
@@ -357,6 +358,8 @@ export interface EventsResponse {
   to: string;
   timezone: string;
   occurrences: Occurrence[];
+  /** Away periods overlapping the range (Who's in town). */
+  away?: AwayPeriod[];
 }
 
 /** A whole event series (GET/POST/PATCH /events/:id). */
@@ -403,6 +406,67 @@ export interface RhythmLaneView {
     withMemberIds: string[];
   }[];
   tasks: { timed: RhythmTaskView[]; dueToday: RhythmTaskView[] };
+  /** Their away period covering the day (Who's in town). */
+  away?: Pick<AwayPeriod, 'id' | 'startsOn' | 'endsOn' | 'coverMemberId'> | null;
+}
+
+/** A member's away period, as the API returns it. */
+export interface AwayPeriodView extends AwayPeriod {
+  /** The day they're back; null while open-ended. */
+  backOn: string | null;
+  createdByMemberId: string;
+  version: number;
+}
+
+/** Family or friends staying. Not an account. */
+export interface VisitorView {
+  id: string;
+  name: string;
+  arrivesOn: string;
+  leavesOn: string;
+  notes: string | null;
+  createdByMemberId: string;
+  version: number;
+}
+
+/** Who's away, here, or arriving within a week, for a day (Today) or a week (Weekly Reset). */
+export interface PresenceView {
+  away: AwayPeriodView[];
+  /** Away periods starting within a week after the day(s). */
+  leaving?: AwayPeriodView[];
+  visiting: VisitorView[];
+  arriving: VisitorView[];
+}
+
+/** One of the away member's items an away period suggests handing to the cover. */
+export interface HandoverSuggestion {
+  item: WorkItem;
+  date: string;
+  coverMemberId: string;
+}
+
+/** GET /presence: the household's away periods and visitors from today on. */
+export interface PresenceResponse {
+  today: string;
+  awayPeriods: AwayPeriodView[];
+  visitors: VisitorView[];
+  /** Away periods with something to review, and how many. */
+  handovers: { awayPeriodId: string; count: number }[];
+}
+
+/** GET /away-periods/:id/handover. */
+export interface HandoverResponse {
+  awayPeriod: AwayPeriodView;
+  suggestions: HandoverSuggestion[];
+  moved: {
+    id: string;
+    title: string;
+    status: WorkItemStatus;
+    dueOn: string | null;
+    dueAt: string | null;
+    toMemberId: string;
+    paybackIndex: number | null;
+  }[];
 }
 
 export interface HandoffView {
@@ -425,6 +489,17 @@ export interface RhythmResponse {
   headsUps: HeadsUp[];
   summary: RhythmSummary;
   members: Member[];
+  /** Who's in town that day, and what away periods suggest handing over. */
+  presence?: PresenceView & {
+    handovers: {
+      awayPeriodId: string;
+      memberId: string;
+      coverMemberId: string | null;
+      count: number;
+    }[];
+  };
+  /** The day's tasks someone covers while their owner is away. */
+  covering?: { workItemId: string; forMemberId: string }[];
 }
 
 export type CalendarStatus = 'ok' | 'error' | 'pending';
@@ -624,6 +699,8 @@ export interface RoutineTurns {
     index: number;
     date: string;
     ownerMemberId: string | null;
+    /** Set when the turn goes to the cover because its owner is away that day. */
+    coveringFor?: string | null;
     skipped: boolean;
     itemId: string | null;
     status: WorkItemStatus | null;
@@ -675,7 +752,11 @@ export interface ResetResponse {
     days: { date: string; occurrences: Occurrence[]; handoffs: HandoffView[] }[];
     needsOwner: Extract<HeadsUp, { type: 'care_unassigned' }>[];
     conflicts: Extract<HeadsUp, { type: 'handoff_conflict' }>[];
+    /** A child's or pet's handoff still on while they're away. */
+    whileAway?: Extract<HeadsUp, { type: 'care_while_away' }>[];
   };
+  /** Who's away and visiting that week, and visitors arriving the week after. */
+  presence?: PresenceView;
   decisions: Decision[];
   meals: Meal[];
   groceries: GroceryItem[];
@@ -739,6 +820,16 @@ export function errorMessage(error: unknown): string {
       return 'Choose who the drop-off or pickup is for.';
     case 'invalid_member':
       return 'Choose someone from the household.';
+    case 'away_overlaps':
+      return 'They’re already marked away on some of those days. Change that one instead.';
+    case 'ends_before_start':
+      return 'The last day needs to be on or after the first.';
+    case 'too_long':
+      return 'That’s more than a year. Leave the last day empty instead.';
+    case 'invalid_date':
+      return 'Check the dates.';
+    case 'handover_changed':
+      return 'Something on that list just changed. Here’s the list as it is now.';
     case 'decision_closed':
       return 'That decision was already settled. Reload to see how.';
     case 'invalid_option':

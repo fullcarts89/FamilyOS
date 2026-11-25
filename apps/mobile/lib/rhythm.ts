@@ -1,4 +1,4 @@
-import { buildRhythm, startOfLocalDay, type HeadsUp } from '@familyos/domain';
+import { buildRhythm, startOfLocalDay, type AwayPeriod, type HeadsUp } from '@familyos/domain';
 import type { Member, Occurrence } from './api';
 import { addDays, clock } from './dates';
 
@@ -103,11 +103,12 @@ export function occurrencesOn<T extends Occurrence>(all: T[], date: string, time
 
 export interface DayHeadsUp {
   date: string;
-  headsUp: Extract<HeadsUp, { type: 'handoff_conflict' | 'care_unassigned' }>;
+  headsUp: Extract<HeadsUp, { type: 'handoff_conflict' | 'care_unassigned' | 'care_while_away' }>;
 }
 
 /**
- * Handoff conflicts and care events nobody is down for, for each day in a range: the same rules
+ * Handoff conflicts, care events nobody is down for, and handoffs for a child or pet who's away,
+ * for each day in a range: the same rules
  * the API's /rhythm uses for one day (packages/domain rhythm.ts), run over a week of occurrences.
  */
 export function headsUpsForDays(
@@ -116,6 +117,8 @@ export function headsUpsForDays(
   dates: string[],
   today: string,
   timeZone: string,
+  /** Away periods (Who's in town): a child's or pet's handoff while they're away is flagged. */
+  away: readonly AwayPeriod[] = [],
 ): DayHeadsUp[] {
   const out: DayHeadsUp[] = [];
   for (const date of dates) {
@@ -126,9 +129,14 @@ export function headsUpsForDays(
       members: members.map((m) => ({ id: m.id, role: m.role, displayName: m.displayName })),
       occurrences: occurrencesOn(occurrences, date, timeZone).filter((o) => o.date === date),
       tasks: [],
+      away,
     });
     for (const h of view.headsUps) {
-      if (h.type === 'handoff_conflict' || h.type === 'care_unassigned') {
+      if (
+        h.type === 'handoff_conflict' ||
+        h.type === 'care_unassigned' ||
+        h.type === 'care_while_away'
+      ) {
         out.push({ date, headsUp: h });
       }
     }
