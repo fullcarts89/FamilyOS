@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCapture, type CapturePerson } from '../apps/mobile/lib/capture-parse';
+import { parseCapture, withoutWords, type CapturePerson } from '../apps/mobile/lib/capture-parse';
 
 // Quick capture's shorthand for a time and a length (lib/capture-parse.ts).
 const TODAY = '2026-11-19';
@@ -95,5 +95,54 @@ describe('quick capture: times and lengths', () => {
       durationMinutes: null,
     });
     expect(parse('Drive at 6am for 13 hours').durationMinutes).toBeNull();
+  });
+
+  it('keeps the words it read for the time and the length', () => {
+    expect(parse('Walk Biscuit at 5:30pm for 30 min')).toMatchObject({
+      timeWords: 'at 5:30pm',
+      lengthWords: 'for 30 min',
+    });
+    expect(parse('5pm walk Biscuit')).toMatchObject({ timeWords: '5pm', lengthWords: null });
+    expect(parse('Walk Biscuit')).toMatchObject({ timeWords: null, lengthWords: null });
+  });
+});
+
+describe('quick capture: a picked time replaces a typed one', () => {
+  const people: CapturePerson[] = [{ id: MAYA, name: 'Maya Rivera', isMe: true }];
+  const parse = (text: string) => parseCapture(text, TODAY, people, []);
+  const pickInstead = (text: string) => {
+    const p = parse(text);
+    return withoutWords(text, p.timeWords, p.lengthWords);
+  };
+
+  it('takes out the typed time and length, and leaves everything else as typed', () => {
+    expect(pickInstead('Walk Biscuit at 5:30pm for 30 min')).toBe('Walk Biscuit');
+    expect(pickInstead('Walk Biscuit tomorrow at 7am for 45 min @maya')).toBe(
+      'Walk Biscuit tomorrow @maya',
+    );
+    expect(pickInstead('5pm walk Biscuit')).toBe('walk Biscuit');
+    expect(pickInstead('Dinner for 2 at 7pm')).toBe('Dinner for 2');
+    // Nothing read: nothing taken out.
+    expect(pickInstead('Wait at the station')).toBe('Wait at the station');
+  });
+
+  it('takes out only whole words, and only the first match', () => {
+    expect(withoutWords('Chat at 5pm', 'at 5pm')).toBe('Chat');
+    expect(withoutWords('Format at 5pm', 'at 5pm')).toBe('Format');
+    expect(withoutWords('Pick up at 5pm, then at 5pm again', 'at 5pm')).toBe(
+      'Pick up at 5pm, then again',
+    );
+    expect(withoutWords('Walk for 30 min at 5pm', 'for 30 min')).toBe('Walk at 5pm');
+  });
+
+  it('what is left reads the same, without a time', () => {
+    const left = pickInstead('Call the vet tomorrow at 17:30 for 1 hour !');
+    expect(parse(left)).toMatchObject({
+      title: 'Call the vet',
+      dueLabel: 'Tomorrow',
+      time: null,
+      durationMinutes: null,
+      important: true,
+    });
   });
 });

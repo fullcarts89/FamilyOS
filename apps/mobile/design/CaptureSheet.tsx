@@ -1,10 +1,17 @@
-import { dueOptions, localInstant } from '@familyos/domain';
-import { CalendarDays, CornerDownLeft, Flag, FolderKanban, Inbox } from 'lucide-react-native';
+import { DURATION_CHOICES, dueOptions, durationLabel, localInstant } from '@familyos/domain';
+import {
+  CalendarDays,
+  Clock,
+  CornerDownLeft,
+  Flag,
+  FolderKanban,
+  Inbox,
+} from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { api, errorMessage, type TodayResponse, type WorkItem } from '../lib/api';
-import { parseCapture } from '../lib/capture-parse';
-import { clockRange } from '../lib/dates';
+import { parseCapture, withoutWords } from '../lib/capture-parse';
+import { TIME_CHOICES, clock, clockRange, parseTime } from '../lib/dates';
 import { useHousehold } from '../lib/household';
 import { usePeople, type Person } from '../lib/people';
 import { localParts } from '../lib/rhythm';
@@ -20,7 +27,8 @@ import { color, em, font, radius } from './tokens';
 /**
  * Quick capture with a live preview: type "Call the plumber tomorrow @sam #bathroom" and see the
  * day, project and whose list it lands on before adding it; "Walk Biscuit at 5:30pm for 30 min"
- * blocks out today 5:30–6pm. Nothing is guessed by AI.
+ * blocks out today 5:30–6pm. "Add a time" does the same by tapping: a time (or another one typed)
+ * and how long it takes. Nothing is guessed by AI.
  */
 export function CaptureSheet({
   initialOwner,
@@ -50,6 +58,11 @@ export function CaptureSheet({
     initialOwner === undefined ? (people.me?.id ?? null) : initialOwner,
   );
   const [pickedDue, setPickedDue] = useState<string | null>(null);
+  // "Add a time": the row is open; the time tapped, or another one typed; and how long.
+  const [timeOpen, setTimeOpen] = useState(false);
+  const [pickedTime, setPickedTime] = useState<string | null>(null);
+  const [otherTime, setOtherTime] = useState('');
+  const [pickedLength, setPickedLength] = useState<number | null>(null);
   const [project, setProject] = useState(false);
   const [today, setToday] = useState<string | null>(null);
   const [projects, setProjects] = useState<WorkItem[]>([]);
@@ -96,21 +109,59 @@ export function CaptureSheet({
   const dayLabel =
     parsed.dueLabel ??
     (pickedDue && today ? (dueOptions(today).find((o) => o.date === pickedDue)?.label ?? null) : null);
-  // A typed time lands on the day (or today) at that time, with its length if one was typed.
-  const timed = parsed.time
+  // A time typed in the text wins over the picked one (tapping or typing a time below replaces
+  // it). Projects have no time of day, so a picked one is set aside while "Project" is on.
+  const otherTyped = otherTime.trim();
+  const otherParsed = otherTyped ? parseTime(otherTyped) : null;
+  const timeBad = !parsed.time && !!otherTyped && !otherParsed;
+  const picked24 = project ? null : otherTyped ? otherParsed : pickedTime;
+  const time = parsed.time ?? picked24;
+  const length = time ? (parsed.durationMinutes ?? (project ? null : pickedLength)) : null;
+  // A time lands on the day (or today) at that time, with its length if it has one.
+  const timed = time
     ? {
         date: dueOn ?? today ?? localParts(new Date(), timeZone).date,
-        time: parsed.time,
-        range: clockRange(parsed.time, parsed.durationMinutes),
+        time,
+        range: clockRange(time, length),
       }
     : null;
+  // Typed time words give way to a time picked below; their length carries over.
+  const dropTypedTime = () => {
+    if (!parsed.time) return;
+    if (parsed.durationMinutes) setPickedLength(parsed.durationMinutes);
+    setRaw((r) => withoutWords(r, parsed.timeWords, parsed.lengthWords));
+  };
+  const pickTime = (value: string) => {
+    dropTypedTime();
+    setOtherTime('');
+    setPickedTime(value);
+  };
+  // Typing here (even clearing a typed time it shows) makes this field the time.
+  const typeOtherTime = (text: string) => {
+    dropTypedTime();
+    setOtherTime(text);
+  };
+  const pickLength = (minutes: number | null) => {
+    if (parsed.durationMinutes) setRaw((r) => withoutWords(r, parsed.lengthWords));
+    setPickedLength(minutes);
+  };
+  // A typed time that isn't one of the chips shows in the "Other" field, ready to change.
+  const otherValue =
+    parsed.time && !TIME_CHOICES.includes(parsed.time) ? clock(parsed.time) : otherTime;
+  const clearTime = () => {
+    if (parsed.time) setRaw((r) => withoutWords(r, parsed.timeWords, parsed.lengthWords));
+    setPickedTime(null);
+    setOtherTime('');
+    setPickedLength(null);
+    setTimeOpen(false);
+  };
   const dueLabel = timed ? `${dayLabel ?? 'Today'} ${timed.range}` : dayLabel;
   const inProject = projects.find((p) => p.id === parsed.projectId) ?? null;
   const ownerPerson = people.byId(owner);
   const targets: (Person | null)[] = [...people.assignable.slice(0, phone ? 2 : 3), null];
 
   const save = async (inbox: boolean) => {
-    if (!household || !parsed.title || saving.current) return;
+    if (!household || !parsed.title || timeBad || saving.current) return;
     saving.current = true;
     setBusy(true);
     setError(null);
@@ -127,7 +178,7 @@ export function CaptureSheet({
           ...(timed
             ? {
                 dueAt: localInstant(timed.date, timed.time, timeZone).toString(),
-                durationMinutes: parsed.durationMinutes,
+                durationMinutes: length,
               }
             : { dueOn }),
           ...(inProject && !project && { parentId: inProject.id }),
@@ -200,7 +251,7 @@ export function CaptureSheet({
               variant="quiet"
               size="sm"
               icon={Inbox}
-              disabled={!parsed.title || busy}
+              disabled={!parsed.title || timeBad || busy}
               onPress={() => void save(true)}
               accessibilityLabel="Put in the inbox, to sort later"
             />
@@ -209,7 +260,7 @@ export function CaptureSheet({
               icon={CornerDownLeft}
               iconRight
               busy={busy}
-              disabled={!parsed.title}
+              disabled={!parsed.title || timeBad}
               onPress={() => void save(false)}
             />
           </View>
@@ -303,12 +354,71 @@ export function CaptureSheet({
               onPress={() => setPickedDue(pickedDue === o.date ? null : o.date)}
             />
           ))}
+          {!project ? (
+            <Chip
+              label={time ? clockRange(time, length) : 'Add a time'}
+              icon={Clock}
+              selected={!!time}
+              accessibilityLabel={time ? `Time: ${clockRange(time, length)}` : 'Add a time'}
+              onPress={() => setTimeOpen((v) => !v)}
+            />
+          ) : null}
           <Chip
             label="Project with steps"
             icon={FolderKanban}
             selected={project}
             onPress={() => setProject((v) => !v)}
           />
+        </View>
+      ) : null}
+
+      {timeOpen && !project ? (
+        <View style={styles.time} role="group" aria-label="Time">
+          <View style={styles.chips}>
+            {TIME_CHOICES.map((value) => (
+              <Chip
+                key={value}
+                label={clock(value)}
+                selected={time === value && !otherTyped}
+                onPress={() => pickTime(value)}
+              />
+            ))}
+            <TextInput
+              value={otherValue}
+              onChangeText={typeOtherTime}
+              onSubmitEditing={() => void save(false)}
+              maxLength={8}
+              placeholder="Other, e.g. 6:30am"
+              placeholderTextColor={color.faint}
+              accessibilityLabel="Another time, like 6:30am"
+              aria-invalid={timeBad}
+              keyboardType="numbers-and-punctuation"
+              autoCapitalize="none"
+              returnKeyType="done"
+              style={[styles.timeInput, timeBad && styles.timeBad]}
+            />
+            {time || otherTyped ? (
+              <Chip label="No time" onPress={clearTime} accessibilityLabel="No time, clear it" />
+            ) : null}
+          </View>
+          {timeBad ? (
+            <Text variant="meta" tone="danger" accessibilityRole="alert">
+              Write the time like 6:30am or 8pm.
+            </Text>
+          ) : null}
+          {time ? (
+            <View style={styles.chips} role="group" aria-label="How long it takes">
+              <Chip label="No length" selected={!length} onPress={() => pickLength(null)} />
+              {DURATION_CHOICES.map((m) => (
+                <Chip
+                  key={m}
+                  label={durationLabel(m)}
+                  selected={length === m}
+                  onPress={() => pickLength(m)}
+                />
+              ))}
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -376,6 +486,21 @@ const styles = StyleSheet.create({
   ghostBead: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, marginTop: 1 },
   ghostText: { flex: 1 },
   hint: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
+  time: { gap: 8 },
+  // Like New routine's "Other" time: a chip-sized field.
+  timeInput: {
+    height: 36,
+    width: 150,
+    paddingHorizontal: 13,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: color.line2,
+    backgroundColor: color.surface,
+    fontFamily: font.uiSemi,
+    fontSize: 13.5,
+    color: color.ink,
+  },
+  timeBad: { borderColor: color.danger },
   code: {
     paddingHorizontal: 7,
     paddingVertical: 3,

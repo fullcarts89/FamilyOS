@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { DONE } from '../support/api';
+import { DONE, addDays } from '../support/api';
 import { TIME_ZONE } from '../support/env';
 import { expect, test, toast } from '../support/fixtures';
 
@@ -143,6 +143,100 @@ test.describe('Task times: blocking out time on the day', () => {
     await expect(
       day.getByRole('checkbox', { name: 'Complete Walk Biscuit, 5:30–6pm' }),
     ).toBeVisible();
+  });
+
+  test('the + sheet: “Add a time”, a time of your own and how long, without typing them in', async ({
+    app,
+    maya,
+    mayaApi,
+  }) => {
+    const today = await mayaApi.today();
+    const sheet = await app.openCapture(maya);
+    await sheet.getByRole('textbox', { name: 'What needs doing?' }).fill('Call the vet tomorrow');
+    await sheet.getByRole('button', { name: 'Add a time' }).click();
+    const time = sheet.getByRole('group', { name: 'Time' });
+
+    // One tap for a usual time: the preview reads it on the day.
+    await time.getByRole('button', { name: '7pm', exact: true }).click();
+    await expect(sheet.getByText('Tomorrow 7pm', { exact: true })).toBeVisible();
+
+    // Another time in its own field: a time it can't read says so, and nothing can be added.
+    const other = time.getByRole('textbox', { name: 'Another time, like 6:30am' });
+    await other.fill('soon');
+    await expect(sheet.getByText('Write the time like 6:30am or 8pm.')).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Add to your list' })).toBeDisabled();
+    await other.fill('5:15pm');
+    await expect(sheet.getByText('Tomorrow 5:15pm', { exact: true })).toBeVisible();
+    await expect(time.getByRole('button', { name: '7pm', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    // How long, once it has a time.
+    await time.getByRole('button', { name: '45 min', exact: true }).click();
+    await expect(sheet.getByText('Tomorrow 5:15–6pm', { exact: true })).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Time: 5:15–6pm' })).toBeVisible();
+    await sheet.screenshot({ path: test.info().outputPath('capture-time.png') });
+    await sheet.getByRole('button', { name: 'Add to your list' }).click();
+    await expect(toast(maya, 'Added to your list: Call the vet')).toBeVisible();
+    await expect(sheet).toBeHidden();
+
+    // Tomorrow 5:15 for 45 minutes, on the server.
+    expect(await mayaApi.item('Call the vet')).toMatchObject({
+      ownerMemberId: mayaApi.memberId,
+      dueOn: null,
+      dueAt: householdTime(addDays(today, 1), '17:15'),
+      durationMinutes: 45,
+      status: 'ready',
+    });
+  });
+
+  test('the + sheet: a tapped time replaces one typed in the words, and keeps its length', async ({
+    app,
+    maya,
+    mayaApi,
+  }) => {
+    const today = await mayaApi.today();
+    const sheet = await app.openCapture(maya);
+    const words = sheet.getByRole('textbox', { name: 'What needs doing?' });
+    await words.fill('Walk Biscuit at 5:30pm for 30 min');
+    await expect(sheet.getByText('Today 5:30–6pm', { exact: true })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Time: 5:30–6pm' }).click();
+    const time = sheet.getByRole('group', { name: 'Time' });
+    // The typed time shows in the field, ready to change, with its length.
+    await expect(time.getByRole('textbox', { name: 'Another time, like 6:30am' })).toHaveValue(
+      '5:30pm',
+    );
+    await expect(time.getByRole('button', { name: '30 min', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    await time.getByRole('button', { name: '7pm', exact: true }).click();
+    await expect(words).toHaveValue('Walk Biscuit');
+    await expect(sheet.getByText('Today 7–7:30pm', { exact: true })).toBeVisible();
+    await sheet.getByRole('button', { name: 'Add to your list' }).click();
+    await expect(toast(maya, 'Added to your list: Walk Biscuit')).toBeVisible();
+    expect(await mayaApi.item('Walk Biscuit')).toMatchObject({
+      dueAt: householdTime(today, '19:00'),
+      durationMinutes: 30,
+    });
+
+    // "No time" takes it all back off: an untimed task.
+    const again = await app.openCapture(maya);
+    await again.getByRole('textbox', { name: 'What needs doing?' }).fill('Brush Biscuit at 6pm');
+    await again.getByRole('button', { name: 'Time: 6pm' }).click();
+    await again.getByRole('button', { name: 'No time, clear it' }).click();
+    await expect(again.getByRole('textbox', { name: 'What needs doing?' })).toHaveValue(
+      'Brush Biscuit',
+    );
+    await expect(again.getByRole('button', { name: 'Add a time' })).toBeVisible();
+    await again.getByRole('button', { name: 'Add to your list' }).click();
+    await expect(toast(maya, 'Added to your list: Brush Biscuit')).toBeVisible();
+    expect(await mayaApi.item('Brush Biscuit')).toMatchObject({
+      dueAt: null,
+      durationMinutes: null,
+    });
   });
 
   test('a routine with a length makes turns that carry it', async ({ app, maya, mayaApi }) => {
