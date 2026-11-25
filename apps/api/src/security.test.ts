@@ -215,6 +215,8 @@ describe.skipIf(!db)('API security (G1)', () => {
         | 'app.grocery_item'
         | 'app.weekly_plan'
         | 'app.budget_snapshot'
+        | 'app.budget_plan_change'
+        | 'app.monarch_sync'
         | 'app.device_push_token'
         | 'app.notification_log',
     ) =>
@@ -275,6 +277,8 @@ describe.skipIf(!db)('API security (G1)', () => {
       groceries: await count('app.grocery_item'),
       weeklyPlans: await count('app.weekly_plan'),
       budgets: await count('app.budget_snapshot'),
+      planChanges: await count('app.budget_plan_change'),
+      syncKeys: await count('app.monarch_sync'),
       pushTokens: await count('app.device_push_token'),
       notificationLog: await count('app.notification_log'),
       lists: {
@@ -554,6 +558,15 @@ describe.skipIf(!db)('API security (G1)', () => {
         `/households/${b.id}/budgets/import`,
         { csv: 'Month,Category,Budgeted\n2026-11,Intrusion,1\n' },
       ],
+      [
+        'POST',
+        `/households/${b.id}/budgets/changes`,
+        { month: '2026-11-01', monarchCategoryId: '1', amount: 1 },
+      ],
+      ['DELETE', `/households/${b.id}/budgets/changes/${b.sharedItemId}`],
+      ['GET', `/households/${b.id}/budgets/sync`],
+      ['POST', `/households/${b.id}/budgets/sync/key`],
+      ['DELETE', `/households/${b.id}/budgets/sync/key`],
       ['GET', `/households/${b.id}/reset?week=2026-11-16`],
       ['POST', `/households/${b.id}/reset/commit`, { week: '2026-11-16' }],
       // The iPhone widget.
@@ -659,6 +672,7 @@ describe.skipIf(!db)('API security (G1)', () => {
         `/households/${h.id}/meals?from=2026-11-16&to=2026-11-16`,
         `/households/${h.id}/groceries`,
         `/households/${h.id}/budgets`,
+        `/households/${h.id}/budgets/sync`,
         `/households/${h.id}/reset`,
         `/households/${h.id}/widget`,
       ]) {
@@ -802,6 +816,15 @@ describe.skipIf(!db)('API security (G1)', () => {
           `/households/${a.id}/budgets/import`,
           { csv: 'Month,Category,Budgeted\n2026-11,Gas,1\n' },
         ],
+        [
+          'POST',
+          `/households/${a.id}/budgets/changes`,
+          { month: '2026-11-01', monarchCategoryId: '1', amount: 1 },
+        ],
+        ['DELETE', `/households/${a.id}/budgets/changes/${a.sharedItemId}`, undefined],
+        ['GET', `/households/${a.id}/budgets/sync`, undefined],
+        ['POST', `/households/${a.id}/budgets/sync/key`, undefined],
+        ['DELETE', `/households/${a.id}/budgets/sync/key`, undefined],
         ['GET', `/households/${a.id}/reset`, undefined],
         ['POST', `/households/${a.id}/reset/commit`, { week: '2026-11-16' }],
         // Writes to contacts, meals, groceries and tasks.

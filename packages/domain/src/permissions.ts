@@ -58,6 +58,10 @@ export const ACTIONS = [
   /** Monarch budget snapshots: category-level numbers only. */
   'budget.read',
   'budget.import',
+  /** Set a category's plan, which the Monarch sync takes to Monarch. */
+  'budget.plan',
+  /** Make, replace and turn off the household's Monarch sync key. */
+  'budget.sync_manage',
   /** The Weekly Reset session and committing its plan. */
   'reset.run',
   /** Who's in town: members' away periods and visitors. */
@@ -92,6 +96,8 @@ const GRANTS: Readonly<Record<MemberRole, readonly Action[]>> = {
     'contact.manage',
     'budget.read',
     'budget.import',
+    'budget.plan',
+    'budget.sync_manage',
     'reset.run',
     'presence.read',
     'presence.manage',

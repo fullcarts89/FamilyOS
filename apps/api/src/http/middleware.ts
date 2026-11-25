@@ -1,7 +1,9 @@
 import { setContext, withRequestContext, type Database } from '@familyos/db';
-import type { Transaction } from 'kysely';
+import { MONARCH_SYNC_KEY_PREFIX } from '@familyos/domain';
+import { sql, type Transaction } from 'kysely';
 import type { MiddlewareHandler } from 'hono';
 import { InvalidTokenError } from '../auth/verify';
+import { hashToken } from '../tokens';
 import type { AppEnv, CurrentMember, Deps } from './env';
 import { ApiError, notFound } from './errors';
 import { uuidParam } from './validation';
@@ -78,4 +80,56 @@ export async function inHousehold<T>(
     await setContext(trx, { ...scope, memberId: member.id });
     return fn(trx, { id: member.id, role: member.role, householdId: scope.householdId });
   });
+}
+
+const SYNC_KEY = new RegExp(`^Bearer (${MONARCH_SYNC_KEY_PREFIX}[A-Za-z0-9_-]{43})$`);
+
+/**
+ * Opens the request transaction for the Monarch sync (`/sync/monarch/...`): a household's sync key
+ * instead of a signed-in user. The key acts as the adult who made it, under the same row-level
+ * security as that adult's own requests; a revoked key, or one whose maker is no longer an active
+ * owner or adult, gets 401 like any wrong key. Rolled back on any error or 4xx/5xx response.
+ */
+export function monarchSyncScope(deps: Deps): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    const key = SYNC_KEY.exec(c.req.header('authorization') ?? '')?.[1];
+    if (!key) throw new ApiError(401, 'unauthenticated');
+    try {
+      await deps.db.transaction().execute(async (trx) => {
+        await sql`set local role familyos_api`.execute(trx);
+        const found = (
+          await sql<{
+            sync_id: string;
+            household_id: string;
+            member_id: string;
+            user_id: string;
+          }>`select * from app.monarch_sync_for_key(${hashToken(key)})`.execute(trx)
+        ).rows[0];
+        if (!found) throw new ApiError(401, 'unauthenticated');
+        await setContext(trx, {
+          userId: found.user_id,
+          householdId: found.household_id,
+          memberId: found.member_id,
+        });
+        const member = await trx
+          .selectFrom('app.member')
+          .select(['id', 'role'])
+          .where('id', '=', found.member_id)
+          .executeTakeFirst();
+        if (!member) throw new ApiError(401, 'unauthenticated');
+        await trx
+          .updateTable('app.monarch_sync')
+          .set({ last_used_at: (deps.now ?? (() => new Date()))() })
+          .where('id', '=', found.sync_id)
+          .execute();
+        c.set('trx', trx);
+        c.set('member', { id: member.id, role: member.role, householdId: found.household_id });
+        c.set('syncId', found.sync_id);
+        await next();
+        if (c.error || c.res.status >= 400) throw new Rollback();
+      });
+    } catch (error) {
+      if (!(error instanceof Rollback)) throw error;
+    }
+  };
 }

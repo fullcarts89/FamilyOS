@@ -26,6 +26,7 @@ const fixture = (name: string) =>
 interface BudgetView {
   month: string;
   importedAt: string | null;
+  source: 'csv' | 'monarch' | null;
   categories: {
     category: string;
     group: string | null;
@@ -83,10 +84,13 @@ describe.skipIf(!db)('budgets', () => {
     expect(view.categories.find((c) => c.category === 'Restaurants')).toEqual({
       category: 'Restaurants',
       group: 'Food & Dining',
+      type: 'expense',
+      monarchCategoryId: null,
       budgeted: 250,
       actual: 312.4,
       remaining: -62.4,
     });
+    expect(view.source).toBe('csv');
     expect(view.totals).toEqual({ budgeted: 3320, actual: 3069.56 });
     expect(view.groups.map((g) => g.group)).toEqual(['Childcare', 'Food & Dining', 'Pets']);
     expect(view.availableMonths).toEqual(['2026-11-01', '2026-10-01']);
@@ -112,6 +116,28 @@ describe.skipIf(!db)('budgets', () => {
     });
     expect(text.status).toBe(201);
     expect((await json<{ months: string[] }>(text)).months).toEqual(['2026-10-01', '2026-11-01']);
+  });
+
+  it('keeps income and transfers out of spending', async () => {
+    const res = await request(`/households/${h.id}/budgets/import`, {
+      method: 'POST',
+      token: owner,
+      body: {
+        csv: [
+          'Month,Category Group,Category,Budgeted,Actual',
+          '2027-02-01,Food & Dining,Groceries,500,420',
+          '2027-02-01,Income,Paychecks,6000,5800',
+          '2027-02-01,Transfers,Credit Card Payment,0,-1500',
+        ].join('\n'),
+      },
+    });
+    expect(res.status).toBe(201);
+    const view = await json<BudgetView & { income: { budgeted: number; actual: number } | null }>(
+      await request(`/households/${h.id}/budgets?month=2027-02`, { token: owner }),
+    );
+    expect(view.totals).toEqual({ budgeted: 500, actual: 420 });
+    expect(view.income).toEqual({ budgeted: 6000, actual: 5800 });
+    expect(view.groups.map((g) => g.group)).toEqual(['Food & Dining']);
   });
 
   it('explains a file it does not recognize and refuses transaction exports', async () => {
@@ -187,6 +213,7 @@ describe.skipIf(!db)('budgets', () => {
       .where('entity_type', '=', 'budget')
       .execute();
     expect(audit.map((a) => a.action)).toEqual([
+      'budget.imported',
       'budget.imported',
       'budget.imported',
       'budget.imported',

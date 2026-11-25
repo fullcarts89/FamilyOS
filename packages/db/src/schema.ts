@@ -487,7 +487,7 @@ export interface MonarchSyncTable {
   key_hash: ColumnType<never, Buffer, never>;
   key_hint: string;
   created_by_member_id: string;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
   last_used_at: Timestamp | null;
   last_synced_at: Timestamp | null;
   revoked_at: Timestamp | null;
@@ -518,7 +518,7 @@ export interface BudgetPlanChangeTable {
   attempts: ColumnType<number, number | undefined, number>;
   last_failure: string | null;
   requested_by_member_id: string;
-  requested_at: Generated<Timestamp>;
+  requested_at: Timestamp;
   resolved_at: Timestamp | null;
   resolved_by_member_id: string | null;
 }

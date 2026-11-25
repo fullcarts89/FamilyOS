@@ -379,10 +379,51 @@ export function exportRoutes() {
         'actual',
         'imported_at as importedAt',
         'imported_by_member_id as importedByMemberId',
+        'category_type as type',
+        'monarch_category_id as monarchCategoryId',
+        'source',
       ])
       .where('household_id', '=', householdId)
       .orderBy('month')
       .orderBy('category')
+      .execute();
+    const budgetPlanChanges = await trx
+      .selectFrom('app.budget_plan_change')
+      .select([
+        'id',
+        'month',
+        'category',
+        'monarch_category_id as monarchCategoryId',
+        'from_amount as fromAmount',
+        'to_amount as toAmount',
+        'apply_to_future as applyToFuture',
+        'status',
+        'monarch_amount as monarchAmount',
+        'attempts',
+        'last_failure as lastFailure',
+        'requested_by_member_id as requestedByMemberId',
+        'requested_at as requestedAt',
+        'resolved_at as resolvedAt',
+        'resolved_by_member_id as resolvedByMemberId',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('requested_at')
+      .execute();
+    // The keys' hashes are never readable; who made each key and when it was used are.
+    const monarchSyncKeys = await trx
+      .selectFrom('app.monarch_sync')
+      .select([
+        'id',
+        'key_hint as keyHint',
+        'created_by_member_id as createdByMemberId',
+        'created_at as createdAt',
+        'last_used_at as lastUsedAt',
+        'last_synced_at as lastSyncedAt',
+        'revoked_at as revokedAt',
+        'revoked_by_member_id as revokedByMemberId',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
       .execute();
     const auditEvents = await trx
       .selectFrom('app.audit_event')
@@ -427,6 +468,8 @@ export function exportRoutes() {
       groceryItems,
       weeklyPlans,
       budgetSnapshots,
+      budgetPlanChanges,
+      monarchSyncKeys,
       auditEvents: auditEvents.map((e) => ({ ...e, id: String(e.id) })),
       files: sources.flatMap((s) =>
         s.storageRef ? [{ sourceId: s.id, storageRef: s.storageRef }] : [],
