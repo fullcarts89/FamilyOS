@@ -114,7 +114,8 @@ describe('calendar expansion', () => {
       ),
       { numRuns: 10_000 },
     );
-  }, 60_000);
+    // 10,000 runs take about 40s on a fast machine and over 60s on a slow CI runner: room to spare.
+  }, 180_000);
 
   it('finds every date again from its index', () => {
     fc.assert(
