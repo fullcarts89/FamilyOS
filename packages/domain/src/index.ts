@@ -18,6 +18,7 @@ export * from './lists';
 export * from './decisions';
 export * from './reset';
 export * from './budget-csv';
+export * from './monarch-sync';
 export * from './widget';
 export * from './notifications';
 export * from './presence';

@@ -35,5 +35,7 @@ export interface AppEnv {
     user: AuthenticatedUser;
     trx: Transaction<Database>;
     member: CurrentMember;
+    /** The Monarch sync key's row, on `/sync/monarch` requests. */
+    syncId: string;
   };
 }

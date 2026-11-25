@@ -502,7 +502,7 @@ test.describe('Planning together: the Weekly Reset, decisions, meals, contacts, 
   test('Monarch budget CSV import', async ({ app, maya, mayaApi }) => {
     await openMore(app, maya, 'Budgets');
     await expect(maya.getByText('Spent so far')).toBeVisible();
-    await maya.getByRole('button', { name: 'Import from Monarch' }).first().click();
+    await maya.getByRole('button', { name: 'Import a file instead' }).click();
     const sheet = maya.getByRole('dialog', { name: 'Import from Monarch' });
     await expect(sheet.getByText('Export the budget as a CSV file')).toBeVisible();
 

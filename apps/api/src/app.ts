@@ -26,6 +26,7 @@ import { BUDGET_IMPORT_BODY_LIMIT, BUDGET_IMPORT_PATH, budgetRoutes } from './ro
 import { resetRoutes } from './routes/reset';
 import { widgetRoutes } from './routes/widget';
 import { presenceRoutes } from './routes/presence';
+import { SYNC_BUDGET_BODY_LIMIT, SYNC_BUDGET_PATH, monarchSyncRoutes } from './routes/monarch-sync';
 
 /** Three missed heartbeats (every 10 minutes) mean the worker has stopped. */
 const WORKER_STALE_AFTER_MS = 30 * 60 * 1000;
@@ -56,13 +57,16 @@ export function createApp(deps: Deps) {
     throw new ApiError(413, 'body_too_large');
   };
   const smallBody = bodyLimit({ maxSize: 64 * 1024, onError: tooLarge });
-  // Budget exports are larger than any other request; only that route accepts up to 1 MB.
+  // Budget exports are larger than any other request; only that route accepts up to 1 MB, and a
+  // month from the Monarch sync up to 256 KB.
   const uploadBody = bodyLimit({ maxSize: BUDGET_IMPORT_BODY_LIMIT, onError: tooLarge });
+  const syncBody = bodyLimit({ maxSize: SYNC_BUDGET_BODY_LIMIT, onError: tooLarge });
   app.use('*', (c, next) =>
-    (c.req.method === 'POST' && BUDGET_IMPORT_PATH.test(c.req.path) ? uploadBody : smallBody)(
-      c,
-      next,
-    ),
+    (c.req.method === 'POST' && BUDGET_IMPORT_PATH.test(c.req.path)
+      ? uploadBody
+      : c.req.method === 'PUT' && SYNC_BUDGET_PATH.test(c.req.path)
+        ? syncBody
+        : smallBody)(c, next),
   );
   app.use('*', async (c, next) => {
     const started = performance.now();
@@ -104,6 +108,8 @@ export function createApp(deps: Deps) {
 
   // Before the signed-in routes, so their auth check never runs for it.
   app.route('/', inviteClaimRoutes(deps));
+  // The Monarch sync signs in with the household's sync key, not as a user.
+  app.route('/sync/monarch', monarchSyncRoutes(deps));
 
   const authed = new Hono<AppEnv>();
   authed.use('*', requireUser(deps));

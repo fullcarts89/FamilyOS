@@ -88,6 +88,9 @@ export function clockRange(start: string, minutes: number | null): string {
   return `${samePart ? a.replace(/am|pm/, '') : a}–${b}`;
 }
 
+/** The times offered as one tap (New routine, quick capture): 8am, 12pm, 7pm. */
+export const TIME_CHOICES: readonly string[] = ['08:00', '12:00', '19:00'];
+
 /** "8:15", "8:15am", "5pm", "17:30" → "HH:MM", or null. */
 export function parseTime(input: string): string | null {
   const m = input

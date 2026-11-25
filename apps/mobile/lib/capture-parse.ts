@@ -28,6 +28,10 @@ export interface ParsedCapture {
   time: string | null;
   /** With a time: how long it takes, in minutes (5 to 720, in fives), or null. */
   durationMinutes: number | null;
+  /** The words the time was read from ("at 5:30pm"), so a time picked instead can replace them. */
+  timeWords: string | null;
+  /** The words the length was read from ("for 30 min"). */
+  lengthWords: string | null;
   projectId: string | null;
   important: boolean;
 }
@@ -72,6 +76,8 @@ export function parseCapture(
   let dueLabel: string | null = null;
   let time: string | null = null;
   let durationMinutes: number | null = null;
+  let timeWords: string | null = null;
+  let lengthWords: string | null = null;
   let projectId: string | null = null;
   let important = false;
 
@@ -129,6 +135,7 @@ export function parseCapture(
     const parsed = parseTime(token);
     if (!parsed) continue;
     time = parsed;
+    timeWords = found[0].trim();
     text = text.replace(found[0], ' ');
     break;
   }
@@ -138,6 +145,7 @@ export function parseCapture(
     const minutes = found ? lengthOf(found) : null;
     if (found && minutes !== null) {
       durationMinutes = minutes;
+      lengthWords = found[0].trim();
       text = text.replace(found[0], ' ');
     }
   }
@@ -170,7 +178,23 @@ export function parseCapture(
     dueLabel,
     time,
     durationMinutes,
+    timeWords,
+    lengthWords,
     projectId,
     important,
   };
+}
+
+/**
+ * The capture text without words the parser read (`timeWords`, `lengthWords`): a time tapped in
+ * the sheet replaces a typed one, the way tapping a list replaces a typed @name.
+ */
+export function withoutWords(raw: string, ...words: (string | null)[]): string {
+  let text = ` ${raw} `;
+  for (const w of words) {
+    if (!w) continue;
+    const at = new RegExp(`\\s${escape(w)}(?=\\s)`, 'i').exec(text);
+    if (at) text = text.slice(0, at.index) + ' ' + text.slice(at.index + at[0].length);
+  }
+  return text.replace(/\s+/g, ' ').trim();
 }

@@ -459,9 +459,11 @@ test.describe('Today: a request to cover', () => {
     const today = await mayaApi.today();
     const hid = mayaApi.householdId;
     // Clear what would otherwise put a heads-up on Theo's Today: the planning meeting that
-    // clashes with Thursday's pickup, open decisions with a due date, routine turns gone by.
+    // clashes with Thursday's pickup, the Reset week's swim lesson nobody has yet (in Today's
+    // week from Tuesday on), open decisions with a due date, routine turns gone by.
     await sql(
-      `delete from app.event where household_id = $1 and title like 'Quarterly planning%'`,
+      `delete from app.event where household_id = $1
+          and (title like 'Quarterly planning%' or title = 'Swim lesson')`,
       [hid],
     );
     await sql(`update app.decision set due_on = null where household_id = $1`, [hid]);

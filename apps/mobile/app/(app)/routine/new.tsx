@@ -28,7 +28,7 @@ import { useToast } from '../../../design/Toast';
 import { color, font, radius } from '../../../design/tokens';
 import { api, errorMessage, type Routine, type TodayResponse } from '../../../lib/api';
 import { useCapture } from '../../../lib/capture';
-import { clock, friendlyTimes, relativeDay, shortDate } from '../../../lib/dates';
+import { TIME_CHOICES, clock, friendlyTimes, relativeDay, shortDate } from '../../../lib/dates';
 import { parseTime } from '../../../components/rhythm/EventSheet';
 import { useHousehold } from '../../../lib/household';
 import { goBack } from '../../../lib/navigation';
@@ -53,7 +53,6 @@ const NTHS: { nth: NthWeek; label: string }[] = [
   { nth: 4, label: 'Fourth' },
   { nth: -1, label: 'Last' },
 ];
-const TIMES = ['08:00', '12:00', '19:00'];
 const UNITS: Record<Kind, string> = {
   daily: 'day',
   weekly: 'week',
@@ -466,7 +465,7 @@ export default function NewRoutine() {
               setOtherTime('');
             }}
           />
-          {TIMES.map((value) => (
+          {TIME_CHOICES.map((value) => (
             <Chip
               key={value}
               label={clock(value)}

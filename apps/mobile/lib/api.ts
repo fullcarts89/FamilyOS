@@ -637,19 +637,67 @@ export interface Contact {
   version: number;
 }
 
+/** A plan set in FamilyOS for one category and month, on its way to Monarch. */
+export interface BudgetPlanChange {
+  id: string;
+  month: string;
+  category: string;
+  monarchCategoryId: string;
+  /** Monarch's plan when the change was made (null: none). */
+  fromAmount: number | null;
+  toAmount: number;
+  applyToFuture: boolean;
+  status: 'waiting' | 'saved' | 'conflict' | 'failed' | 'cancelled';
+  /** Monarch's plan when the change met a conflict. */
+  monarchAmount: number | null;
+  attempts: number;
+  lastFailure: string | null;
+  requestedByMemberId: string;
+  requestedAt: string;
+  resolvedAt: string | null;
+}
+
+export interface BudgetCategory {
+  category: string;
+  group: string | null;
+  /** Only expenses are spending; income is shown apart and transfers not at all. */
+  type: 'expense' | 'income' | 'transfer';
+  /** Monarch's id, from the sync (none for a CSV import): needed to send a plan back. */
+  monarchCategoryId: string | null;
+  budgeted: number | null;
+  actual: number | null;
+  remaining: number | null;
+}
+
 export interface BudgetMonth {
   month: string;
   importedAt: string | null;
-  categories: {
-    category: string;
-    group: string | null;
-    budgeted: number | null;
-    actual: number | null;
-    remaining: number | null;
-  }[];
+  source: 'monarch' | 'csv' | null;
+  categories: BudgetCategory[];
+  /** Spending only. */
   groups: { group: string | null; budgeted: number; actual: number }[];
+  /** Spending only. */
   totals: { budgeted: number; actual: number };
+  income: { budgeted: number; actual: number } | null;
+  /** Spending in categories with no plan. */
+  unplanned: { actual: number; count: number };
+  changes: BudgetPlanChange[];
+  sync: {
+    connected: boolean;
+    lastSyncedAt: string | null;
+    /** Household time ("HH:MM") of the next scheduled sync. */
+    nextSyncAround: { time: string; tomorrow: boolean } | null;
+  };
   availableMonths: string[];
+}
+
+/** The household's Monarch sync key, as an adult sees it: never the key itself. */
+export interface BudgetSync {
+  keyHint: string;
+  createdByMemberId: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  lastSyncedAt: string | null;
 }
 
 export type LookBackEntry =
@@ -858,6 +906,10 @@ export function errorMessage(error: unknown): string {
       return 'That file is too big. Export one month (or a few) at a time.';
     case 'file_required':
       return 'Choose the budget file to upload.';
+    case 'sync_not_set_up':
+      return 'Set up the Monarch sync first, so the plan can reach Monarch.';
+    case 'not_open':
+      return 'That change was already answered. Reload to see how it went.';
     case 'invalid_body':
       return 'Some of that couldn’t be saved. Check the details and try again.';
     case 'invalid_duration':

@@ -40,7 +40,8 @@ export type AuditEntityType =
   | 'weekly_plan'
   | 'budget'
   | 'away_period'
-  | 'visitor';
+  | 'visitor'
+  | 'monarch_sync';
 
 export interface SchemaInfoTable {
   key: string;
@@ -467,6 +468,59 @@ export interface BudgetSnapshotTable {
   actual: Money;
   imported_at: Timestamp;
   imported_by_member_id: string;
+  /** Only expenses are spending; income is shown apart and transfers not at all. */
+  category_type: ColumnType<BudgetCategoryType, BudgetCategoryType | undefined, BudgetCategoryType>;
+  /** Monarch's id for the category, from the sync (a CSV import has none). */
+  monarch_category_id: string | null;
+  source: ColumnType<'csv' | 'monarch', 'csv' | 'monarch' | undefined, 'csv' | 'monarch'>;
+}
+
+export type BudgetCategoryType = 'expense' | 'income' | 'transfer';
+
+/**
+ * The household's Monarch sync key: only its SHA-256 hash (which the API can write but not read
+ * back) and its last four characters. One live key per household; it acts as the adult who made it.
+ */
+export interface MonarchSyncTable {
+  id: Generated<string>;
+  household_id: string;
+  key_hash: ColumnType<never, Buffer, never>;
+  key_hint: string;
+  created_by_member_id: string;
+  created_at: Timestamp;
+  last_used_at: Timestamp | null;
+  last_synced_at: Timestamp | null;
+  revoked_at: Timestamp | null;
+  revoked_by_member_id: string | null;
+}
+
+export type BudgetPlanChangeStatus = 'waiting' | 'saved' | 'conflict' | 'failed' | 'cancelled';
+
+/** A plan an adult set in FamilyOS for one category and month, on its way to Monarch. */
+export interface BudgetPlanChangeTable {
+  id: Generated<string>;
+  household_id: string;
+  /** First day of the month. */
+  month: LocalDate;
+  category: string;
+  monarch_category_id: string;
+  /** Monarch's plan when the change was made (null: none). */
+  from_amount: Money;
+  to_amount: ColumnType<string, number | string, number | string>;
+  apply_to_future: ColumnType<boolean, boolean | undefined, boolean>;
+  status: ColumnType<
+    BudgetPlanChangeStatus,
+    BudgetPlanChangeStatus | undefined,
+    BudgetPlanChangeStatus
+  >;
+  /** Monarch's plan when the change met a conflict. */
+  monarch_amount: Money;
+  attempts: ColumnType<number, number | undefined, number>;
+  last_failure: string | null;
+  requested_by_member_id: string;
+  requested_at: Timestamp;
+  resolved_at: Timestamp | null;
+  resolved_by_member_id: string | null;
 }
 
 /** A member away from starts_on through ends_on (null: open-ended), and who covers. */
@@ -548,6 +602,8 @@ export interface Database {
   'app.grocery_item': GroceryItemTable;
   'app.weekly_plan': WeeklyPlanTable;
   'app.budget_snapshot': BudgetSnapshotTable;
+  'app.monarch_sync': MonarchSyncTable;
+  'app.budget_plan_change': BudgetPlanChangeTable;
   'app.service_heartbeat': ServiceHeartbeatTable;
   'app.away_period': AwayPeriodTable;
   'app.visitor': VisitorTable;

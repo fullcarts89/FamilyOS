@@ -1,4 +1,4 @@
-import { DONE, addMonths } from '../support/api';
+import { DONE, addMonths, weekdayName } from '../support/api';
 import { expect, test, toast } from '../support/fixtures';
 
 /** "Dec 1": how the app writes a date more than a week away. */
@@ -9,6 +9,22 @@ const short = (date: string) =>
     timeZone: 'UTC',
   });
 
+/**
+ * How a routine's history names a turn's day (lib/dates.ts relativeDay, not late): "Today",
+ * "Tomorrow", "Yesterday", the weekday within the next week, else "Dec 1". A turn done early in
+ * the last week before the 1st reads "Tuesday".
+ */
+function dayLabel(date: string, today: string): string {
+  const diff = Math.round(
+    (Date.parse(`${date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 864e5,
+  );
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
+  if (diff > 1 && diff < 7) return weekdayName(date);
+  return short(date);
+}
+
 test.describe('Routines, including pets', () => {
   test('completing Biscuit’s monthly flea meds moves the routine to the next month', async ({
     app,
@@ -16,6 +32,7 @@ test.describe('Routines, including pets', () => {
     mayaApi,
   }) => {
     const title = 'Biscuit’s flea meds';
+    const today = await mayaApi.today();
     const before = await mayaApi.routine(title);
     const biscuit = await mayaApi.member('Biscuit');
     expect(before.routine.subjectMemberId).toBe(biscuit.id);
@@ -43,7 +60,7 @@ test.describe('Routines, including pets', () => {
     await expect(maya.getByRole('heading', { level: 1, name: title })).toBeVisible();
     await expect(
       maya.getByRole('link', {
-        name: new RegExp(`^${short(turn.date)}(, \\d{4})? · done by you$`),
+        name: new RegExp(`^${dayLabel(turn.date, today)}(, \\d{4})? · done by you$`),
       }),
     ).toBeVisible();
     await expect(maya.getByText(new RegExp(`^${short(next)}(, \\d{4})?$`))).toBeVisible();
