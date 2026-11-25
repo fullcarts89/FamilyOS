@@ -115,7 +115,7 @@ export class AppDriver {
     if (!new URL(page.url()).pathname.startsWith('/sign-in')) await page.goto('/sign-in');
     await expect(page.getByRole('heading', { name: 'Welcome home' })).toBeVisible();
     await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Password').fill(password);
+    await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page).toHaveURL(`${BASE_URL}/`);
     await expect(greeting(page)).toBeVisible();

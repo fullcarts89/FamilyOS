@@ -21,12 +21,12 @@ test.describe('Forgotten password', () => {
     await page.getByRole('button', { name: 'Forgot password?' }).click();
     await expect(page).toHaveURL(/\/forgot-password$/);
     await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
-    await page.getByLabel('Email').fill(e2eEmail('nobody'));
+    await page.getByRole('textbox', { name: 'Email' }).fill(e2eEmail('nobody'));
     await page.getByRole('button', { name: 'Send reset link' }).click();
     await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
     await expect(page.getByText(SENT)).toBeVisible();
     await page.getByRole('button', { name: 'Use a different email' }).click();
-    await page.getByLabel('Email').fill(email.toUpperCase());
+    await page.getByRole('textbox', { name: 'Email' }).fill(email.toUpperCase());
     await page.getByRole('button', { name: 'Send reset link' }).click();
     await expect(page.getByText(SENT)).toBeVisible();
 
@@ -60,7 +60,7 @@ test.describe('Forgotten password', () => {
     await app.as(email, 'lanterns in the hall');
     const old = await app.open('/sign-in');
     await old.getByLabel('Email').fill(email);
-    await old.getByLabel('Password').fill('the old password, long forgotten');
+    await old.getByLabel('Password', { exact: true }).fill('the old password, long forgotten');
     await old.getByRole('button', { name: 'Sign in' }).click();
     await expect(old.getByText('That email and password don’t match.')).toBeVisible();
     app.allowConsoleError(/status of 400/);
