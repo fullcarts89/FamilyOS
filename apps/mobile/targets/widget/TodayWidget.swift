@@ -92,9 +92,12 @@ struct SmallView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
-      Text("Today")
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(Theme.muted)
+      HStack(spacing: 5) {
+        FamilyOSBrandMark(size: 14)
+        Text("Today")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(Theme.muted)
+      }
       if model.dueTodayCount > 0 {
         Text("\(model.dueTodayCount)")
           .font(.system(size: 38, weight: .bold, design: .rounded))
@@ -147,9 +150,12 @@ struct ListView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       HStack(alignment: .firstTextBaseline, spacing: 6) {
-        Text("Today")
-          .font(.headline)
-          .foregroundStyle(Theme.ink)
+        HStack(spacing: 6) {
+          FamilyOSBrandMark(size: 18)
+          Text("Today")
+            .font(.headline)
+            .foregroundStyle(Theme.ink)
+        }
         Text(countLine(model.dueTodayCount))
           .font(.caption)
           .foregroundStyle(Theme.muted)
@@ -345,9 +351,12 @@ struct MessageView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
     } else {
       VStack(alignment: .leading, spacing: 4) {
-        Text(title)
-          .font(.headline)
-          .foregroundStyle(Theme.ink)
+        HStack(spacing: 6) {
+          FamilyOSBrandMark(size: family == .systemSmall ? 16 : 18)
+          Text(title)
+            .font(.headline)
+            .foregroundStyle(Theme.ink)
+        }
         Text(text)
           .font(.subheadline)
           .foregroundStyle(Theme.muted)
