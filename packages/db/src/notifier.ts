@@ -5,6 +5,7 @@ import {
   isCaredFor,
   localDateOf,
   occurrenceOf,
+  routeAwayOccurrences,
   startOfLocalDay,
   MAX_EVENT_DAYS,
   type EventOccurrence,
@@ -14,12 +15,14 @@ import {
   type NotificationSettings,
   type NotifierAuditRow,
   type NotifierCoverRequest,
+  type NotifierHandover,
   type NotifierItem,
   type PartnerContext,
   type RhythmMember,
   type RhythmTask,
 } from '@familyos/domain';
 import type { Kysely, Transaction } from 'kysely';
+import { loadAwayPeriods } from './presence';
 import type { Database, NotificationLogStatus, NotificationPrefs } from './schema';
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -44,7 +47,7 @@ export interface HouseholdNotificationData {
   today: string;
   members: RhythmMember[];
   recipients: Recipient[];
-  /** Care occurrences today and tomorrow, covers and skips applied. */
+  /** Care occurrences today and tomorrow, covers, skips and away periods applied. */
   occurrences: EventOccurrence[];
   /** Tasks the recipients own: due today, or still open from before. */
   tasks: RhythmTask[];
@@ -55,6 +58,8 @@ export interface HouseholdNotificationData {
   logs: Map<string, NotificationLogEntry[]>;
   /** Requests made or answered in the last day, about care events. */
   coverRequests: NotifierCoverRequest[];
+  /** What away periods that haven't ended handed to their covers, as counts. */
+  handovers: NotifierHandover[];
 }
 
 /** Audit actions that can be a partner change (packages/domain/src/notifications.ts). */
@@ -291,10 +296,18 @@ export async function loadNotificationData(
       .map((x) => ({ date: x.occurrence_date, kind: x.kind, coverMemberId: x.cover_member_id })),
   }));
   const roles = new Map(members.map((m) => [m.id, m.role]));
-  const occurrences = expandEvents(series, { from: today, to: tomorrow, timeZone }, (id) => {
+  const caredFor = (id: string) => {
     const role = roles.get(id);
     return role !== undefined && isCaredFor(role);
-  });
+  };
+  // An away adult's handoffs are the cover's (packages/domain/src/presence.ts), so the reminder
+  // goes to whoever is home.
+  const away = await loadAwayPeriods(db, householdId, today);
+  const occurrences = routeAwayOccurrences(
+    expandEvents(series, { from: today, to: tomorrow, timeZone }, caredFor),
+    away,
+    caredFor,
+  );
 
   const taskRows = await db
     .selectFrom('app.work_item')
@@ -510,6 +523,42 @@ export async function loadNotificationData(
     };
   });
 
+  // Hand-overs of away periods that haven't ended: how many moved and are still with the cover,
+  // and when someone other than the cover last handed something over.
+  const handoverRows = away.length
+    ? await db
+        .selectFrom('app.away_handover')
+        .select(['away_period_id', 'to_member_id', 'outcome', 'created_by_member_id', 'created_at'])
+        .where('household_id', '=', householdId)
+        .where(
+          'away_period_id',
+          'in',
+          away.map((p) => p.id),
+        )
+        .where('outcome', '=', 'moved')
+        .execute()
+    : [];
+  const handovers = away.flatMap((p): NotifierHandover[] => {
+    if (p.coverMemberId === null) return [];
+    const cover = p.coverMemberId;
+    const rows = handoverRows.filter((r) => r.away_period_id === p.id && r.to_member_id === cover);
+    const byOthers = rows
+      .filter((r) => r.created_by_member_id !== null && r.created_by_member_id !== cover)
+      .map((r) => iso(r.created_at))
+      .sort();
+    return [
+      {
+        awayPeriodId: p.id,
+        awayMemberId: p.memberId,
+        coverMemberId: cover,
+        startsOn: p.startsOn,
+        endsOn: p.endsOn,
+        moved: rows.length,
+        handedByOthersAt: byOthers.at(-1) ?? null,
+      },
+    ];
+  });
+
   const logRows = await db
     .selectFrom('app.notification_log')
     .select(['member_id', 'kind', 'dedupe_key', 'sent_at'])
@@ -539,6 +588,7 @@ export async function loadNotificationData(
     partnerContext,
     logs,
     coverRequests,
+    handovers,
   };
 }
 

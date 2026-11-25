@@ -317,6 +317,68 @@ describe.skipIf(!url)('send_notifications', () => {
     expect(batch.filter((m) => m[1] === 'cover_request')).toEqual([]);
   });
 
+  it('while the owner is away: the adult covering gets the handoff reminder, and hears once', async () => {
+    // Wednesday: the owner is away that day; the adult covers. The owner handed a task over.
+    const wednesdayDrop = await seedEvent(db, h, {
+      title: 'Daycare drop-off',
+      startsAt: '2026-11-18T16:15:00Z',
+      endsAt: '2026-11-18T16:35:00Z',
+      memberIds: [h.owner.id, h.child.id],
+      careMemberId: h.child.id,
+      careAction: 'drop_off',
+      carePlace: 'Little Oaks',
+    });
+    const { id: periodId } = await db
+      .insertInto('app.away_period')
+      .values({
+        household_id: h.id,
+        member_id: h.owner.id,
+        starts_on: '2026-11-18',
+        ends_on: '2026-11-18',
+        cover_member_id: h.adult.id,
+        created_by_member_id: h.owner.id,
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    clock = new Date('2026-11-18T15:50:00Z'); // 07:50 in Los Angeles.
+    await db
+      .insertInto('app.away_handover')
+      .values({
+        household_id: h.id,
+        away_period_id: periodId,
+        work_item_id: itemId,
+        from_member_id: h.owner.id,
+        to_member_id: h.adult.id,
+        outcome: 'moved',
+        created_by_member_id: h.owner.id,
+        created_at: new Date('2026-11-18T15:40:00Z'),
+      })
+      .execute();
+    const before = sender.sent.length;
+    await task()({}, helpers);
+    const sent = sender.sent.slice(before).flat();
+    const about = (kind: string) => sent.filter((m) => m.data.kind === kind).map((m) => m.to);
+    expect(about('handoff_reminder')).toEqual([ADULT_PHONE]);
+    expect(about('away_handover')).toEqual([ADULT_PHONE]);
+    expect(sent.find((m) => m.data.kind === 'away_handover')).toMatchObject({
+      title: 'While someone’s away',
+      body: 'Some things moved to you.',
+    });
+
+    // Once per away period.
+    clock = new Date('2026-11-18T15:55:00Z');
+    const again = sender.sent.length;
+    await task()({}, helpers);
+    expect(
+      sender.sent
+        .slice(again)
+        .flat()
+        .filter((m) => m.data.kind === 'away_handover'),
+    ).toEqual([]);
+    await db.deleteFrom('app.away_period').where('id', '=', periodId).execute();
+    await db.deleteFrom('app.event').where('id', '=', wednesdayDrop).execute();
+  });
+
   it('logs counts only: no text, titles or tokens', () => {
     const logged = JSON.stringify([...info.mock.calls, ...error.mock.calls]);
     for (const secret of [

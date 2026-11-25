@@ -9,6 +9,7 @@ export {
 } from './context';
 export type * from './schema';
 export { loadExceptions, materializeHousehold, materializeRoutine } from './scheduler';
+export { loadAwayPeriods, placePayback } from './presence';
 export { workerLastSeen } from './health';
 export {
   claimNotifications,

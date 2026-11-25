@@ -10,9 +10,11 @@ import {
   occurrenceDue,
   occurrencesFrom,
   plannedOwner,
+  routeOn,
   type OccurrenceException,
 } from '@familyos/domain';
 import type { Kysely, Transaction } from 'kysely';
+import { loadAwayPeriods, placePayback } from './presence';
 import type { Database } from './schema';
 
 type Db = Kysely<Database> | Transaction<Database>;
@@ -57,6 +59,11 @@ interface Planned {
  * rules that is every occurrence due up to today that doesn't exist yet, plus the next upcoming
  * one, so both adults always see what's coming. For after-completion rules it is the next one,
  * once the previous one is closed. Skipped occurrences are never created.
+ *
+ * While a turn's owner is away (docs/plan/whos-in-town.md), a household-visible routine's turn
+ * is created for the adult covering for them, recorded as a hand-over of that away period, and
+ * paid back with a later turn of the cover's once the away period has an end. A private routine's
+ * turn stays with its owner: moving it would show it to someone who can't see it.
  *
  * Idempotent: each occurrence has a unique (rule, index), so running twice creates nothing
  * extra. No model call anywhere (PRD WF-02). Every query names the household explicitly, so it
@@ -157,10 +164,18 @@ export async function materializeRoutine(
 
   const assignable = await assignableMembers(db, householdId);
   const assignment = { rotation: routine.rotation, ownerMemberId: routine.owner_member_id };
+  const away =
+    routine.visibility === 'household' && planned.length > 0
+      ? await loadAwayPeriods(db, householdId, planned[0]?.date ?? today)
+      : [];
   let created = 0;
   for (const occurrence of planned) {
     if (isSkipped(occurrence.index, exceptions)) continue;
-    const owner = plannedOwner(assignment, occurrence.index, exceptions);
+    const turnOwner = plannedOwner(assignment, occurrence.index, exceptions);
+    const route =
+      turnOwner && assignable.has(turnOwner) ? routeOn(away, turnOwner, occurrence.date) : null;
+    const covered = route?.kind === 'covered' && assignable.has(route.coverMemberId) ? route : null;
+    const owner = covered ? covered.coverMemberId : turnOwner;
     const due = occurrenceDue(occurrence.date, routine.local_time, routine.timezone);
     const inserted = await db
       .insertInto('app.work_item')
@@ -200,10 +215,46 @@ export async function materializeRoutine(
         entity_type: 'work_item',
         entity_id: inserted.id,
         action: 'routine.occurrence_created',
-        payload: { routineId, index: occurrence.index },
+        payload: {
+          routineId,
+          index: occurrence.index,
+          ...(covered && { awayPeriodId: covered.periodId, coveringFor: turnOwner }),
+        },
         request_id: requestId,
       })
       .execute();
+    if (covered && turnOwner) {
+      const period = away.find((p) => p.id === covered.periodId);
+      const paybackIndex = period
+        ? await placePayback(db, {
+            householdId,
+            ruleId: routine.rule_id,
+            takenIndex: occurrence.index,
+            period,
+            periods: away,
+            actorMemberId: null,
+            updateRow: null,
+          })
+        : null;
+      if (paybackIndex !== null) {
+        // First, so it wins over any older override of that turn later in this run.
+        exceptions.unshift({ index: paybackIndex, kind: 'owner', ownerMemberId: turnOwner });
+      }
+      await db
+        .insertInto('app.away_handover')
+        .values({
+          household_id: householdId,
+          away_period_id: covered.periodId,
+          work_item_id: inserted.id,
+          from_member_id: turnOwner,
+          to_member_id: covered.coverMemberId,
+          outcome: 'moved',
+          recurrence_rule_id: routine.rule_id,
+          payback_index: paybackIndex,
+          created_by_member_id: null,
+        })
+        .execute();
+    }
   }
 
   const last = planned.at(-1);

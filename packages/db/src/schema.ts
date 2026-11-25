@@ -38,7 +38,9 @@ export type AuditEntityType =
   | 'meal'
   | 'grocery_item'
   | 'weekly_plan'
-  | 'budget';
+  | 'budget'
+  | 'away_period'
+  | 'visitor';
 
 export interface SchemaInfoTable {
   key: string;
@@ -313,7 +315,8 @@ export type NotificationLogKind =
   | 'partner_changes'
   | 'weekly_reset_reminder'
   | 'cover_request'
-  | 'cover_response';
+  | 'cover_response'
+  | 'away_handover';
 export type NotificationLogStatus = 'pending' | 'sent' | 'failed' | 'skipped';
 
 export interface NotificationLogTable {
@@ -466,6 +469,52 @@ export interface BudgetSnapshotTable {
   imported_by_member_id: string;
 }
 
+/** A member away from starts_on through ends_on (null: open-ended), and who covers. */
+export interface AwayPeriodTable {
+  id: Generated<string>;
+  household_id: string;
+  member_id: string;
+  starts_on: LocalDate;
+  ends_on: LocalDate | null;
+  cover_member_id: string | null;
+  created_by_member_id: string;
+  created_at: Generated<Date>;
+  updated_at: Timestamp;
+  version: Generated<number>;
+}
+
+/** Family or friends staying. Not an account. */
+export interface VisitorTable {
+  id: Generated<string>;
+  household_id: string;
+  name: string;
+  arrives_on: LocalDate;
+  leaves_on: LocalDate;
+  notes: string | null;
+  created_by_member_id: string;
+  created_at: Generated<Date>;
+  updated_at: Timestamp;
+  version: Generated<number>;
+}
+
+export type AwayHandoverOutcome = 'moved' | 'kept' | 'returned';
+
+/** What an away period did with one of the away member's items. */
+export interface AwayHandoverTable {
+  id: Generated<string>;
+  household_id: string;
+  away_period_id: string;
+  work_item_id: string;
+  from_member_id: string;
+  to_member_id: string;
+  outcome: AwayHandoverOutcome;
+  recurrence_rule_id: string | null;
+  payback_index: number | null;
+  created_by_member_id: string | null;
+  created_at: Generated<Date>;
+  updated_at: Timestamp;
+}
+
 export interface ServiceHeartbeatTable {
   service: 'worker';
   seen_at: Timestamp;
@@ -500,4 +549,7 @@ export interface Database {
   'app.weekly_plan': WeeklyPlanTable;
   'app.budget_snapshot': BudgetSnapshotTable;
   'app.service_heartbeat': ServiceHeartbeatTable;
+  'app.away_period': AwayPeriodTable;
+  'app.visitor': VisitorTable;
+  'app.away_handover': AwayHandoverTable;
 }
