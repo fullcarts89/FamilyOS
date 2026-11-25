@@ -1,6 +1,6 @@
 # iPhone app and widget
 
-**Status:** the app and the widget are configured and the config plugin generates the Xcode project cleanly (`expo prebuild`, checked on Linux). The widget's Swift has **not been compiled yet**: that happens in the first `eas build` (step 4). Nothing has been sent to Apple or Expo.
+**Status (2026-11-24):** steps 1–6 are done. The first EAS build (1.0.0, build 2) succeeded with no code changes: the widget's Swift compiled on the first try (it had also been type-checked and built locally with Xcode beforehand). EAS holds the distribution certificate, a provisioning profile for the app and one for the widget, the team's existing APNs key (`47HR75YVAJ`, shared with the team's other app) and an App Store Connect API key for submits. Two things got in the way and were fixed outside the code: the Account Holder had to accept Apple's updated Developer Program License Agreement before the bundle IDs could be registered, and `eas submit` couldn't create the App Store Connect record (the account's first app needs a company name), so it was created by hand as **FamilyOS House** ("FamilyOS" is taken), and its ID is in `eas.json` (`ascAppId` 6839034035). Build 2 was uploaded to App Store Connect for TestFlight; adding internal testers (step 7) and checking the widget on a phone are next.
 
 The iPhone app is the same Expo app as the web app. It adds one widget, **Today**, for the Home Screen and the Lock Screen. It shows what's yours today and the next handoff, and lets you tick things off without opening the app. It doesn't score, count streaks or nudge.
 
@@ -76,7 +76,7 @@ When it asks, sign in with your Apple ID (two-factor code on your phone) and let
 
 The build runs on Expo's Macs. This is the first time the widget's Swift is compiled; if it fails, send Claude the "Run fastlane" or "Xcode build" log from the build page.
 
-**5. App Store Connect record (You, once).** Easiest: let the next step create it (EAS asks for the app name and language). Or by hand: appstoreconnect.apple.com → Apps → + → New App → iOS, name **FamilyOS** (if taken, any name, e.g. "FamilyOS Household"; it's never public), primary language, bundle ID `app.familyos.household`, SKU `familyos`, Full Access.
+**5. App Store Connect record (You, once). Done:** the app is **FamilyOS House** (App Store Connect ID `6839034035`, set as `ascAppId` in `eas.json`, so submits skip this step). `eas submit` can't create it on this account: the first app on a team needs a company name, which only the website asks for. By hand: appstoreconnect.apple.com → Apps → + → New App → iOS, a name that isn't taken (it's never public), primary language, bundle ID `app.familyos.household`, SKU `familyos`, Full Access, and company name **Zenroost, LLC** when asked. Don't press "Add for Review": that's for the public App Store, not TestFlight.
 
 **6. Submit to TestFlight (You).**
 ```bash
