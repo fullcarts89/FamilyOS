@@ -1,12 +1,13 @@
 import * as Linking from 'expo-linking';
 import { router } from 'expo-router';
 import { Link2, Mail, MessageSquare, Phone, Plus, Search, X } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Button, IconButton, type PressState } from '../../design/Button';
 import { Skeleton, SkeletonRows } from '../../design/motion';
 import { ErrorNotice } from '../../design/Notice';
 import { Sheet } from '../../design/Sheet';
+import { useSheetAutoFocus } from '../../design/sheet-entered';
 import { Text } from '../../design/Text';
 import { color, font, radius } from '../../design/tokens';
 import { api, errorMessage, type Contact, type WorkItem } from '../../lib/api';
@@ -246,15 +247,7 @@ function ContactPicker({
         <View style={styles.picker}>
           <View style={styles.search}>
             <Search size={16} color={color.muted} strokeWidth={2.2} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search by name, role or number"
-              placeholderTextColor={color.faint}
-              accessibilityLabel="Search contacts"
-              autoFocus
-              style={styles.searchInput}
-            />
+            <SearchInput value={query} onChangeText={setQuery} />
           </View>
           {error ? <ErrorNotice message={error} /> : null}
           {contacts === null ? (
@@ -313,6 +306,30 @@ function ContactPicker({
         </View>
       )}
     </Sheet>
+  );
+}
+
+/** The picker's search, focused once the sheet is on screen (design/sheet-entered.ts). */
+function SearchInput({
+  value,
+  onChangeText,
+}: {
+  value: string;
+  onChangeText: (text: string) => void;
+}) {
+  const ref = useRef<ComponentRef<typeof TextInput>>(null);
+  const { autoFocus } = useSheetAutoFocus(ref, true);
+  return (
+    <TextInput
+      ref={ref}
+      value={value}
+      onChangeText={onChangeText}
+      placeholder="Search by name, role or number"
+      placeholderTextColor={color.faint}
+      accessibilityLabel="Search contacts"
+      autoFocus={autoFocus}
+      style={styles.searchInput}
+    />
   );
 }
 

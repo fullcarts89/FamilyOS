@@ -1,21 +1,41 @@
-import { forwardRef, useState, type ComponentRef } from 'react';
+import { forwardRef, useCallback, useRef, useState, type ComponentRef } from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import { useSheetAutoFocus } from './sheet-entered';
 import { Text } from './Text';
 import { color, font, radius } from './tokens';
 
-/** A labelled text field. The label is always visible (never only a placeholder). */
+type Input = ComponentRef<typeof TextInput>;
+
+/**
+ * A labelled text field. The label is always visible (never only a placeholder). In a sheet,
+ * `autoFocus` waits until the sheet is on screen, so the keyboard never hides it on iPhone.
+ */
 export const Field = forwardRef<
-  ComponentRef<typeof TextInput>,
+  Input,
   TextInputProps & { label: string; hint?: string; error?: string | null }
->(function Field({ label, hint, error, style, onFocus, onBlur, multiline, ...input }, ref) {
+>(function Field(
+  { label, hint, error, style, onFocus, onBlur, multiline, autoFocus, ...input },
+  ref,
+) {
   const [focused, setFocused] = useState(false);
+  const inner = useRef<Input | null>(null);
+  const setRef = useCallback(
+    (node: Input | null) => {
+      inner.current = node;
+      if (typeof ref === 'function') ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref],
+  );
+  const focus = useSheetAutoFocus(inner, autoFocus);
   return (
     <View style={styles.field}>
       <Text variant="label" tone="ink" style={styles.label}>
         {label}
       </Text>
       <TextInput
-        ref={ref}
+        ref={setRef}
+        autoFocus={focus.autoFocus}
         accessibilityLabel={label}
         placeholderTextColor={color.faint}
         multiline={multiline}
