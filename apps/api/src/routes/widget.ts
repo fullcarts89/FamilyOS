@@ -3,7 +3,6 @@ import {
   addDays,
   buildRhythm,
   can,
-  expandEvents,
   localDateOf,
   startOfLocalDay,
   widgetItems,
@@ -13,7 +12,7 @@ import {
 import { Hono } from 'hono';
 import { authorize } from '../http/authorize';
 import type { AppEnv, Deps } from '../http/env';
-import { caredForIn, loadSeries, memberRoles } from './events';
+import { loadSeries, memberRoles, routedOccurrences } from './events';
 import { ITEM_COLUMNS, decorateItems } from './work-items';
 
 const OPEN_EXCLUDED = ['new', 'cancelled', 'verified_complete', 'done_unverified'] as const;
@@ -75,10 +74,12 @@ export function widgetRoutes(deps: Deps) {
       timeZone: timezone,
     });
     const roles = await memberRoles(trx, me.householdId);
-    const occurrences = expandEvents(
+    const occurrences = await routedOccurrences(
+      trx,
+      me.householdId,
       series,
       { from: today, to: today, timeZone: timezone },
-      caredForIn(roles),
+      roles,
     );
     const rhythm = buildRhythm<RhythmTask>({
       date: today,

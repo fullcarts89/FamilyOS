@@ -217,6 +217,57 @@ export function exportRoutes() {
       .where('household_id', '=', householdId)
       .orderBy('created_at')
       .execute();
+    const awayPeriods = await trx
+      .selectFrom('app.away_period')
+      .select([
+        'id',
+        'member_id as memberId',
+        'starts_on as startsOn',
+        'ends_on as endsOn',
+        'cover_member_id as coverMemberId',
+        'created_by_member_id as createdByMemberId',
+        'version',
+        'created_at as createdAt',
+        'updated_at as updatedAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    // Visible exactly when their item is (row-level security).
+    const awayHandovers = await trx
+      .selectFrom('app.away_handover')
+      .select([
+        'id',
+        'away_period_id as awayPeriodId',
+        'work_item_id as workItemId',
+        'from_member_id as fromMemberId',
+        'to_member_id as toMemberId',
+        'outcome',
+        'recurrence_rule_id as recurrenceRuleId',
+        'payback_index as paybackIndex',
+        'created_by_member_id as createdByMemberId',
+        'created_at as createdAt',
+        'updated_at as updatedAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
+    const visitors = await trx
+      .selectFrom('app.visitor')
+      .select([
+        'id',
+        'name',
+        'arrives_on as arrivesOn',
+        'leaves_on as leavesOn',
+        'notes',
+        'created_by_member_id as createdByMemberId',
+        'version',
+        'created_at as createdAt',
+        'updated_at as updatedAt',
+      ])
+      .where('household_id', '=', householdId)
+      .orderBy('created_at')
+      .execute();
     const contacts = await trx
       .selectFrom('app.contact')
       .select([
@@ -365,6 +416,9 @@ export function exportRoutes() {
       eventMembers,
       eventExceptions,
       coverRequests,
+      awayPeriods,
+      awayHandovers,
+      visitors,
       contacts,
       decisions,
       decisionOptions,
