@@ -57,4 +57,5 @@ plus a realistic household, every pre-existing row unchanged after the new migra
 ## After
 
 - The iPhone app and widget: `docs/operations/iphone.md` (founder steps with Expo and Apple).
-- Monarch budgets: export the budget CSV from Monarch, then Budgets → Import.
+- Monarch budgets: synced from Monarch four times a day by a scheduled Claude task, set up in
+  `docs/operations/monarch-sync.md`; a budget CSV still imports with Budgets → Import a file instead.

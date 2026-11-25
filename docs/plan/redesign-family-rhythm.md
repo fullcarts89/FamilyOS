@@ -31,6 +31,8 @@ borrowed as described below). Open `design/prototype/dist/index.html` or run `np
 - **For this family only.** Optimize for the household's real use, not scale or customers.
 - **Monarch:** CSV upload (Monarch's terms forbid automated access by other apps; see the session
   notes). Optional later: a scheduled Claude task, a client Monarch supports, posting a summary.
+  **Done 2026-11-25:** that scheduled task syncs the budget both ways through Monarch's official
+  connector; see `docs/operations/monarch-sync.md`.
 
 ## Emotional design and interaction quality (2026-11-15, third brief)
 
