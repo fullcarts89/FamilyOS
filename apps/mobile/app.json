@@ -2,14 +2,16 @@
   "expo": {
     "name": "FamilyOS",
     "slug": "familyos",
+    "owner": "thoroxnard",
     "scheme": "familyos",
-    "version": "0.0.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "platforms": ["ios", "android", "web"],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "app.familyos.household",
+      "appleTeamId": "G3FXWBPJY2",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -41,6 +43,11 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4f13afac-e536-4da6-948e-8dbc6ed7ea00"
+      }
     }
   }
 }

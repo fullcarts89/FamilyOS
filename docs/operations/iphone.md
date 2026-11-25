@@ -1,6 +1,6 @@
 # iPhone app and widget
 
-**Status:** the app and the widget are configured and the config plugin generates the Xcode project cleanly (`expo prebuild`, checked on Linux). The widget's Swift has **not been compiled yet**: that happens in the first `eas build` (step 4). Nothing has been sent to Apple or Expo.
+**Status (2026-11-24):** steps 1–7 are done, and build 3 (1.0.0) is on TestFlight. The widget's Swift compiled on the first try (it was also type-checked and built locally with Xcode first). EAS holds the distribution certificate, a provisioning profile for the app and one for the widget, the team's existing APNs key (`47HR75YVAJ`, shared with the team's other app) and an App Store Connect API key, so `eas build --auto-submit` now runs without prompts. What got in the way: (1) the Account Holder had to accept Apple's updated Developer Program License Agreement before the bundle IDs could be registered; (2) `eas submit` couldn't create the App Store Connect record (a team's first app needs a company name), so it was created by hand as **FamilyOS House** ("FamilyOS" is taken) and its ID is in `eas.json` (`ascAppId` 6839034035); (3) build 2 crashed at launch, before any app code ran: `Symbol not found: _OBJC_CLASS_$_RCTStatusBarAppearance` (from `ExpoModulesCore`, expected in `React.framework`). Expo's modules ship precompiled, and `expo-modules-core` had resolved to a release built for React Native 0.88.1 while the app pinned 0.88.0. Build 3 uses the versions `expo install --check` expects for SDK 58 (React Native 0.88.1, Expo 58.0.26); its Release build was checked to launch in the Simulator. Before each SDK bump, run `npx expo install --check` in `apps/mobile`. Still to do: open build 3 on a phone, and the widget checks below.
 
 The iPhone app is the same Expo app as the web app. It adds one widget, **Today**, for the Home Screen and the Lock Screen. It shows what's yours today and the next handoff, and lets you tick things off without opening the app. It doesn't score, count streaks or nudge.
 
@@ -78,7 +78,7 @@ When it asks, sign in with your Apple ID (two-factor code on your phone) and let
 
 The build runs on Expo's Macs. This is the first time the widget's Swift is compiled; if it fails, send Claude the "Run fastlane" or "Xcode build" log from the build page.
 
-**5. App Store Connect record (You, once).** Easiest: let the next step create it (EAS asks for the app name and language). Or by hand: appstoreconnect.apple.com → Apps → + → New App → iOS, name **FamilyOS** (if taken, any name, e.g. "FamilyOS Household"; it's never public), primary language, bundle ID `app.familyos.household`, SKU `familyos`, Full Access.
+**5. App Store Connect record (You, once). Done:** the app is **FamilyOS House** (App Store Connect ID `6839034035`, set as `ascAppId` in `eas.json`, so submits skip this step). `eas submit` can't create it on this account: the first app on a team needs a company name, which only the website asks for. By hand: appstoreconnect.apple.com → Apps → + → New App → iOS, a name that isn't taken (it's never public), primary language, bundle ID `app.familyos.household`, SKU `familyos`, Full Access, and company name **Zenroost, LLC** when asked. Don't press "Add for Review": that's for the public App Store, not TestFlight.
 
 **6. Submit to TestFlight (You).**
 ```bash
@@ -196,13 +196,15 @@ Not implemented yet; the widget already calls it and falls back to the app's sna
 - **Never twice:** each notification has a key in `notification_log`, written before sending. Delivery is at most once: a failed send is recorded, not retried. One due more than two hours ago (the worker was down) is dropped. Push receipts aren't checked yet; a `DeviceNotRegistered` ticket deletes the token.
 - **Least privilege:** the worker sends as `familyos_notifier`, one household per transaction, with only tokens, preferences, the log, care events (no titles, notes or other events), task fields, tonight's dinner, settled decisions and votes, whether the week is planned, and audit IDs.
 
-**Worker configuration:** `EXPO_ACCESS_TOKEN`, required in production (turn on push security in the Expo project). Without it the production worker sends no notifications and logs an error each run. It is a secret (worker environment only, never `EXPO_PUBLIC_*`).
+**Worker configuration:** `EXPO_ACCESS_TOKEN`, required in production. Without it the production worker sends no notifications and logs an error each run. It is a secret: it lives only on the Railway service that runs the worker (the `FamilyOS` service in project `mindful-joy`), never in EAS or an `EXPO_PUBLIC_*` variable. Set 2026-11-24 (an Expo personal access token named `familyos-worker`).
+
+**Push security** (on since 2026-11-24): expo.dev → account `thoroxnard` → Account settings → Access tokens → Additional settings → **Enhanced security for push notifications**. It is account-wide, not per project: Expo now refuses any push for any app on this account that doesn't carry an access token. Kinship sends no pushes today; when it starts, its sender must pass a token too (`Authorization: Bearer <token>`, or `accessToken` in `expo-server-sdk`), or its notifications will fail with `UNAUTHORIZED`.
 
 ## Risks and known gaps
 
 - **Untested Swift.** It follows Apple's documented APIs (WidgetKit `TimelineProvider`, `AppIntent`, `Button(intent:)`, `containerBackground`, `invalidatableContent`) and passes a syntax parse, but it's first type-checked in the EAS build. Expect possibly one round of small fixes.
 - **`@bacons/apple-targets` 5.0.0** declares SDK 55's prebuild config; `pnpm-workspace.yaml` overrides it to SDK 58's (same API, checked). It is a community plugin by an Expo team member, the usual choice for widgets in Expo projects.
 - **Extension build number:** the plugin sets the widget's build number from `ios.buildNumber` (1 when unset), while EAS increments the app's remotely. If App Store Connect warns that they differ (ITMS-90473, a warning, not a rejection), Claude can make the two match.
-- **App version** is `0.0.0` in `app.json`. If App Store Connect refuses it, set `version` to `1.0.0`.
+- **App version** is `1.0.0` in `app.json`, and the widget takes the same version from it. Raise it there when you want testers to see a new version number; the build number increases on its own.
 - **Sign-in once more on iPhone:** the iOS session moved to a new shared keychain item. No iPhone build existed before, so nobody is affected.
 - **Data freshness:** until `GET …/widget` exists, the widget only learns about changes made elsewhere (your partner, the web) when the app runs on your phone.
