@@ -15,6 +15,7 @@
  * and a history for the week the Reset looks back on (things that mattered, a project finished,
  * a decision made together, a pickup covered).
  */
+import { createHash, randomBytes } from 'node:crypto';
 import { createDb, materializeHousehold, type Database } from '@familyos/db';
 import {
   addDays,
@@ -855,32 +856,60 @@ async function seedPlanning(
       .execute();
   }
 
-  // This month's Monarch budget, as if imported from a CSV.
+  // This month's Monarch budget, as the Monarch sync posts it: spending by category (two with no
+  // plan, one with a refund), income apart, and a card payment that isn't spending. Synthetic
+  // numbers. The sync key is random and thrown away: "Replace the key" makes one to use.
   const month = `${today.slice(0, 7)}-01`;
-  const budget: [string, string, number, number][] = [
-    ['Food & Dining', 'Groceries', 1100, 842.17],
-    ['Food & Dining', 'Restaurants', 250, 186.4],
-    ['Childcare', 'Daycare', 1850, 1850],
-    ['Home', 'Home Improvement', 600, 412.0],
-    ['Home', 'Utilities', 320, 241.55],
-    ['Transportation', 'Gas', 180, 96.5],
-    ['Pets', 'Pet Care', 120, 64.99],
-    ['Shopping', 'Kids Clothing', 100, 128.3],
+  const budget: [string, string, 'expense' | 'income' | 'transfer', number, number][] = [
+    ['Food & Dining', 'Groceries', 'expense', 1100, 842.17],
+    ['Food & Dining', 'Restaurants', 'expense', 250, 186.4],
+    ['Food & Dining', 'Coffee Shops', 'expense', 40, 52.75],
+    ['Childcare', 'Daycare', 'expense', 1850, 1850],
+    ['Home', 'Rent', 'expense', 3200, 3200],
+    ['Home', 'Home Improvement', 'expense', 600, 412.0],
+    ['Home', 'Cleaners', 'expense', 0, 160],
+    ['Home', 'Utilities', 'expense', 320, 241.55],
+    ['Transportation', 'Gas', 'expense', 180, 96.5],
+    ['Transportation', 'Auto Maintenance', 'expense', 0, 385],
+    ['Pets', 'Pet Care', 'expense', 120, 64.99],
+    ['Shopping', 'Kids Clothing', 'expense', 100, 128.3],
+    ['Entertainment', 'Streaming & Movies', 'expense', 60, -12],
+    ['Income', 'Paychecks', 'income', 9800, 7350],
+    ['Transfers', 'Credit Card Payment', 'transfer', 0, -2140],
   ];
+  const syncedAt = new Date(p.now.getTime() - 2 * 60 * 60 * 1000);
   await trx
     .insertInto('app.budget_snapshot')
     .values(
-      budget.map(([group, category, budgeted, actual]) => ({
+      budget.map(([group, category, type, budgeted, actual], i) => ({
         household_id: hid,
         month,
         category,
         category_group: group,
+        category_type: type,
+        monarch_category_id: String(900100 + i),
+        source: 'monarch' as const,
         budgeted,
         actual,
-        imported_at: p.now,
+        imported_at: syncedAt,
         imported_by_member_id: maya,
       })),
     )
+    .execute();
+  const throwaway = `fos_sync_${randomBytes(32).toString('base64url')}`;
+  await trx
+    .insertInto('app.monarch_sync')
+    .values({
+      household_id: hid,
+      key_hash: createHash('sha256').update(throwaway).digest(),
+      key_hint: throwaway.slice(-4),
+      created_by_member_id: maya,
+    })
+    .execute();
+  await trx
+    .updateTable('app.monarch_sync')
+    .set({ last_synced_at: syncedAt, last_used_at: syncedAt })
+    .where('household_id', '=', hid)
     .execute();
 
   // Saturday's swim lesson in the Reset's week has nobody down for it yet.

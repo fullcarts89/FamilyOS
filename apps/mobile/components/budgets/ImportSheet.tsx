@@ -53,9 +53,9 @@ function pickCsv(): Promise<{ name: string; text: string } | null> {
 }
 
 /**
- * "Import from Monarch": how to export the budget from Monarch, then the file. Monarch's terms
- * don't allow other apps to connect, so this is a manual upload of the budget export (category
- * totals only; a transactions export is refused and nothing from it is kept).
+ * "Import from Monarch": how to export the budget from Monarch, then the file. The fallback to
+ * the Monarch sync: a manual upload of the budget export (category totals only; a transactions
+ * export is refused and nothing from it is kept).
  */
 export function ImportSheet({
   visible,
@@ -127,8 +127,8 @@ export function ImportSheet({
       <View style={styles.body}>
         <Text variant="chapter">Bring in this month’s budget</Text>
         <Text variant="body" tone="muted">
-          Monarch doesn’t let other apps connect to it, so FamilyOS reads the budget you export.
-          Only the category totals are kept (budgeted and spent), never transactions or accounts.
+          Without the Monarch sync (or as well as it), FamilyOS can read the budget you export. Only
+          the category totals are kept (budgeted and spent), never transactions or accounts.
         </Text>
         <View style={styles.steps}>
           {[
