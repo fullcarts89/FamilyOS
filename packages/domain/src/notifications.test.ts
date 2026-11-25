@@ -12,6 +12,7 @@ import {
   type NotificationSettings,
   type NotifierAuditRow,
   type NotifierCoverRequest,
+  type NotifierHandover,
   type PartnerContext,
 } from './notifications';
 import type { RhythmMember, RhythmTask } from './rhythm';
@@ -865,5 +866,66 @@ describe('cover requests', () => {
       body: 'Your request to cover a handoff has an answer.',
     });
     expect(plan('theo', [accepted, declined])).toEqual([]);
+  });
+});
+
+describe('while someone is away', () => {
+  const handover = (changes: Partial<NotifierHandover> = {}): NotifierHandover => ({
+    awayPeriodId: 'away-1',
+    awayMemberId: 'maya',
+    coverMemberId: 'theo',
+    startsOn: '2026-11-16',
+    endsOn: '2026-11-19',
+    moved: 3,
+    handedByOthersAt: pst('09:00'),
+    ...changes,
+  });
+  const plan = (memberId: string, handovers: NotifierHandover[], extra = {}) =>
+    planNotifications(
+      input({ memberId, now: pst('09:05'), handovers, dinner: null, tasks: [], ...extra }),
+    ).filter((p) => p.kind === 'away_handover');
+
+  it('tells the adult covering, once per away period, generically unless they show details', () => {
+    expect(plan('theo', [handover()], { settings: DEFAULT_NOTIFICATION_SETTINGS })).toEqual([
+      {
+        kind: 'away_handover',
+        dedupeKey: 'away_handover:away-1',
+        send: true,
+        urgent: false,
+        message: { title: 'While someone’s away', body: 'Some things moved to you.' },
+      },
+    ]);
+    expect(plan('theo', [handover()])[0]?.message).toEqual({
+      title: 'Maya is away, back Fri, Nov 20',
+      body: '3 things moved to you.',
+    });
+    expect(plan('theo', [handover({ endsOn: null, moved: 1 })])[0]?.message).toEqual({
+      title: 'Maya is away',
+      body: '1 thing moved to you.',
+    });
+    const log = [
+      { kind: 'away_handover' as const, dedupeKey: 'away_handover:away-1', sentAt: pst('09:01') },
+    ];
+    expect(plan('theo', [handover({ moved: 5 })], { log })).toEqual([]);
+  });
+
+  it('says nothing when they handed things over themselves, nothing moved, or it’s over', () => {
+    expect(plan('maya', [handover()])).toEqual([]);
+    expect(plan('theo', [handover({ handedByOthersAt: null })])).toEqual([]);
+    expect(plan('theo', [handover({ moved: 0 })])).toEqual([]);
+    expect(plan('theo', [handover({ endsOn: '2026-11-15' })])).toEqual([]);
+    expect(plan('theo', [handover({ handedByOthersAt: pst('08:00', '2026-11-15') })])).toEqual([]);
+    expect(plan('theo', [handover()], { settings: settings({ handoffReminders: false }) })).toEqual(
+      [],
+    );
+    // A caregiver can't cover.
+    expect(plan('sam', [handover({ coverMemberId: 'sam' })])).toEqual([]);
+  });
+
+  it('waits out quiet hours', () => {
+    const quiet = settings({ quietHours: { start: '22:00', end: '06:00' } });
+    const late = handover({ handedByOthersAt: pst('22:30', '2026-11-15') });
+    expect(plan('theo', [late], { settings: quiet, now: pst('05:30') })).toEqual([]);
+    expect(plan('theo', [late], { settings: quiet, now: pst('06:00') })).toHaveLength(1);
   });
 });

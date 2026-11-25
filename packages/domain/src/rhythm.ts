@@ -1,6 +1,7 @@
 import { Temporal } from 'temporal-polyfill';
 import { startOfLocalDay, type CareAction, type EventOccurrence } from './events';
 import { isAssignableRole, isCaredFor, type MemberRole } from './permissions';
+import { awayOn, type AwayPeriod } from './presence';
 import { timeBlock, type TimeBlock } from './time-block';
 import { dueThrough, localDueDate } from './today';
 import type { WorkItemStatus } from './work-item';
@@ -62,6 +63,11 @@ export interface RhythmInput<T extends RhythmTask, O extends EventOccurrence = E
   /** Tasks due on `date`, plus open routine occurrences that may be overdue. */
   tasks: readonly T[];
   decisions?: readonly RhythmDecision[];
+  /**
+   * Away periods around the day. Routing a care handoff to the cover is done before (see
+   * routeAwayOccurrences); here they mark lanes away and nudge about a child's or pet's handoffs.
+   */
+  away?: readonly AwayPeriod[];
 }
 
 export type Location = { kind: 'home' } | { kind: 'away'; place: string | null };
@@ -101,6 +107,8 @@ export interface RhythmLane<T, O extends EventOccurrence = EventOccurrence> {
   segments: LocationSegment[];
   /** Adults: tasks they own. Children and pets: tasks about them. */
   tasks: { timed: RhythmTimedTask<T>[]; dueToday: T[] };
+  /** Their away period that covers the day, if they're away. */
+  away: Pick<AwayPeriod, 'id' | 'startsOn' | 'endsOn' | 'coverMemberId'> | null;
 }
 
 export type HeadsUp =
@@ -121,6 +129,18 @@ export type HeadsUp =
       occurrenceKey: string;
       eventId: string;
       careMemberId: string;
+      time: string;
+      text: string;
+    }
+  | {
+      /** A child or pet is away, and a handoff of theirs is still on that day. */
+      id: string;
+      type: 'care_while_away';
+      occurrenceKey: string;
+      eventId: string;
+      careMemberId: string;
+      /** The occurrence's local date. */
+      date: string;
       time: string;
       text: string;
     }
@@ -199,8 +219,9 @@ const ROLE_ORDER: Readonly<Record<MemberRole, number>> = {
 const TYPE_ORDER: Readonly<Record<HeadsUpType, number>> = {
   handoff_conflict: 0,
   care_unassigned: 1,
-  overdue_routine: 2,
-  decision_due: 3,
+  care_while_away: 2,
+  overdue_routine: 3,
+  decision_due: 4,
 };
 
 const instant = (iso: string) => Temporal.Instant.from(iso);
@@ -339,8 +360,10 @@ export function buildRhythm<T extends RhythmTask, O extends EventOccurrence = Ev
     cmp(a.dueAt ?? '', b.dueAt ?? '') || a.id.localeCompare(b.id);
   const byTitle = (a: T, b: T) => a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
 
+  const away = input.away ?? [];
   const lanes: RhythmLane<T, O>[] = members.map((m) => {
     const caredFor = isCaredFor(m.role);
+    const period = awayOn(away, m.id, date);
     const mine = (t: T) => (caredFor ? t.subjectMemberId === m.id : t.ownerMemberId === m.id);
     return {
       memberId: m.id,
@@ -354,6 +377,14 @@ export function buildRhythm<T extends RhythmTask, O extends EventOccurrence = Ev
         timed: timedToday.filter(mine).sort(byDueAt),
         dueToday: allDayToday.filter(mine).sort(byTitle),
       },
+      away: period
+        ? {
+            id: period.id,
+            startsOn: period.startsOn,
+            endsOn: period.endsOn,
+            coverMemberId: period.coverMemberId,
+          }
+        : null,
     };
   });
 
@@ -400,9 +431,26 @@ export function buildRhythm<T extends RhythmTask, O extends EventOccurrence = Ev
     }
   }
 
-  // (d) A care event nobody is down for.
+  // (e) A child or pet is away, and a handoff of theirs is still on: skip it, or keep it.
+  const careAway = (o: EventOccurrence) =>
+    o.careMemberId !== null && awayOn(away, o.careMemberId, o.date) !== null;
+  for (const o of careHandoffs) {
+    if (!careAway(o)) continue;
+    headsUps.push({
+      id: `care_while_away:${o.key}`,
+      type: 'care_while_away',
+      occurrenceKey: o.key,
+      eventId: o.eventId,
+      careMemberId: o.careMemberId,
+      date: o.date,
+      time: o.startsAt,
+      text: `${nameOf(o.careMemberId)} is away, but the ${CARE_WORDS[o.careAction]} at ${formatClock(o.startsAt, timeZone)} is still on.`,
+    });
+  }
+
+  // (d) A care event nobody is down for (not one for a child or pet who's away: that's above).
   for (const o of occurrences) {
-    if (o.careMemberId === null || adultsOf(o).length > 0) continue;
+    if (o.careMemberId === null || adultsOf(o).length > 0 || careAway(o)) continue;
     const when = o.allDay ? 'today' : `at ${formatClock(o.startsAt, timeZone)}`;
     headsUps.push({
       id: `care_unassigned:${o.key}`,
@@ -454,7 +502,7 @@ export function buildRhythm<T extends RhythmTask, O extends EventOccurrence = Ev
   }
 
   const sortKey = (h: HeadsUp) =>
-    h.type === 'handoff_conflict' || h.type === 'care_unassigned'
+    h.type === 'handoff_conflict' || h.type === 'care_unassigned' || h.type === 'care_while_away'
       ? instant(h.time).epochMilliseconds
       : Temporal.PlainDate.from(h.dueOn).toZonedDateTime({ timeZone: 'UTC' }).epochMilliseconds;
   headsUps.sort(

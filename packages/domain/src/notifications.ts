@@ -20,6 +20,8 @@ import type { WorkItemStatus } from './work-item';
  * - Weekly Reset reminder at a chosen weekly time, only while that week isn't planned.
  * - cover requests: the adult asked to cover a handoff hears about it, and the adult who asked
  *   hears the answer (behind the handoff reminders switch, waiting out quiet hours).
+ * - while someone's away: the adult covering hears once per away period, when someone else
+ *   handed things of the away member's to them (behind the handoff reminders switch too).
  *
  * Quiet hours (22:00–06:00 unless the member changes them) are always respected. A check-in,
  * Weekly Reset reminder or partner batch that falls in them waits for their end. A handoff
@@ -38,6 +40,7 @@ export const NOTIFICATION_KINDS = [
   'weekly_reset_reminder',
   'cover_request',
   'cover_response',
+  'away_handover',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
@@ -84,6 +87,8 @@ export const PARTNER_BATCH_MINUTES = 60;
 export const PARTNER_LOOKBACK_HOURS = 24;
 /** A cover request or answer older than this (the worker was down) isn't announced. */
 export const COVER_NOTICE_HOURS = 24;
+/** A hand-over older than this isn't announced: the adult covering has seen it by then. */
+export const HANDOVER_NOTICE_HOURS = 24;
 
 const MINUTE_MS = 60_000;
 
@@ -316,6 +321,19 @@ export interface NotifierCoverRequest {
   startsAt: string | null;
 }
 
+/** What an away period has handed to its cover, as the notifier reads it. */
+export interface NotifierHandover {
+  awayPeriodId: string;
+  awayMemberId: string;
+  coverMemberId: string;
+  startsOn: string;
+  endsOn: string | null;
+  /** Items moved to the cover and still with them. */
+  moved: number;
+  /** When someone other than the cover last handed something over; null if nobody has. */
+  handedByOthersAt: string | null;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Planning what's due for one member
 // ---------------------------------------------------------------------------------------------
@@ -351,6 +369,8 @@ export interface NotificationPlanInput {
   lastSeenAt?: string | null;
   /** The household's recent cover requests and answers. */
   coverRequests?: readonly NotifierCoverRequest[];
+  /** Hand-overs of away periods that haven't ended. */
+  handovers?: readonly NotifierHandover[];
 }
 
 export interface PlannedNotification {
@@ -613,6 +633,32 @@ export function planNotifications(input: NotificationPlanInput): PlannedNotifica
               },
         });
       }
+    }
+  }
+
+  // While someone's away: the cover hears once per away period, when someone else handed them
+  // things. Behind the handoff reminders switch; it waits out quiet hours.
+  if (settings.handoffReminders && isAdult && !inQuietHours(now, timeZone, quiet)) {
+    for (const h of input.handovers ?? []) {
+      if (h.coverMemberId !== memberId || h.moved === 0 || h.handedByOthersAt === null) continue;
+      if (h.endsOn !== null && h.endsOn < today) continue;
+      const handedAt = Temporal.Instant.from(h.handedByOthersAt);
+      if (before(handedAt, plusMinutes(now, -HANDOVER_NOTICE_HOURS * 60))) continue;
+      const dedupeKey = `away_handover:${h.awayPeriodId}`;
+      if (logged.has(dedupeKey)) continue;
+      const back = h.endsOn === null ? '' : `, back ${formatDay(addDays(h.endsOn, 1))}`;
+      planned.push({
+        kind: 'away_handover',
+        dedupeKey,
+        send: true,
+        urgent: false,
+        message: generic
+          ? { title: 'While someone’s away', body: 'Some things moved to you.' }
+          : {
+              title: `${nameOf(h.awayMemberId)} is away${back}`,
+              body: `${plural(h.moved, 'thing', 'things')} moved to you.`,
+            },
+      });
     }
   }
 
