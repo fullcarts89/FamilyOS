@@ -194,7 +194,9 @@ Not implemented yet; the widget already calls it and falls back to the app's sna
 - **Never twice:** each notification has a key in `notification_log`, written before sending. Delivery is at most once: a failed send is recorded, not retried. One due more than two hours ago (the worker was down) is dropped. Push receipts aren't checked yet; a `DeviceNotRegistered` ticket deletes the token.
 - **Least privilege:** the worker sends as `familyos_notifier`, one household per transaction, with only tokens, preferences, the log, care events (no titles, notes or other events), task fields, tonight's dinner, settled decisions and votes, whether the week is planned, and audit IDs.
 
-**Worker configuration:** `EXPO_ACCESS_TOKEN`, required in production (turn on push security in the Expo project). Without it the production worker sends no notifications and logs an error each run. It is a secret (worker environment only, never `EXPO_PUBLIC_*`).
+**Worker configuration:** `EXPO_ACCESS_TOKEN`, required in production. Without it the production worker sends no notifications and logs an error each run. It is a secret: it lives only on the Railway service that runs the worker (the `FamilyOS` service in project `mindful-joy`), never in EAS or an `EXPO_PUBLIC_*` variable. Set 2026-11-24 (an Expo personal access token named `familyos-worker`).
+
+**Push security** (on since 2026-11-24): expo.dev → account `thoroxnard` → Account settings → Access tokens → Additional settings → **Enhanced security for push notifications**. It is account-wide, not per project: Expo now refuses any push for any app on this account that doesn't carry an access token. Kinship sends no pushes today; when it starts, its sender must pass a token too (`Authorization: Bearer <token>`, or `accessToken` in `expo-server-sdk`), or its notifications will fail with `UNAUTHORIZED`.
 
 ## Risks and known gaps
 
