@@ -1,6 +1,6 @@
 import type { HeadsUp } from '@familyos/domain';
 import { router, useFocusEffect } from 'expo-router';
-import { Car, Hourglass, Repeat2, Vote } from 'lucide-react-native';
+import { Car, Hourglass, Luggage, Repeat2, Vote } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Button, type PressState } from '../../design/Button';
@@ -32,7 +32,8 @@ export interface DatedHeadsUp {
 /**
  * Heads-ups as rows you can act on: a pickup that clashes with a meeting ("Ask Theo to cover"),
  * a drop-off nobody has, a routine still open after its day, and a request from the other adult
- * to cover something ("Maya asked you to cover June's pickup", Accept or Decline). Each is a rule
+ * to cover something ("Maya asked you to cover June's pickup", Accept or Decline), and a handoff
+ * still on while the child or pet it's for is away ("Skip it"). Each is a rule
  * over real data; the buttons do the thing, and the row changes once the server agrees. Asking
  * someone changes nothing until they accept: the row says "Asked Theo · waiting" meanwhile.
  */
@@ -398,6 +399,29 @@ function HeadsUpRow({
       const no = people.byId(declinedBy(o));
       if (no) status = `${no.name} can’t make it`;
     }
+    if (o) open = () => onOpen(o);
+  } else if (h.type === 'care_while_away') {
+    // A child or pet is away (Who's in town): their handoff is probably not needed.
+    const o = occurrence(h.occurrenceKey);
+    const child = people.byId(h.careMemberId);
+    icon = <Luggage size={17} color={child?.color ?? color.ink} strokeWidth={2.2} />;
+    const what = o?.careAction ? CARE_VERB[o.careAction] : 'handoff';
+    text = `${when}: ${child?.name ?? 'They'}’s away, but the ${what} at ${timeOf(h.time, timeZone)} is still on.`;
+    const me = people.me;
+    actions =
+      o && me && !me.caredFor && me.role !== 'caregiver' ? (
+        <Button
+          size="md"
+          variant="secondary"
+          title="Skip it"
+          busy={busy === 'skip'}
+          onPress={async () => {
+            setBusy('skip');
+            await occurrenceActions.skip(o);
+            setBusy(null);
+          }}
+        />
+      ) : null;
     if (o) open = () => onOpen(o);
   } else if (h.type === 'overdue_routine') {
     const item = workItem(h.workItemId);

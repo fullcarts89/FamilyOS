@@ -73,6 +73,7 @@ export function sendNotifications(
               log: data.logs.get(recipient.memberId) ?? [],
               lastSeenAt: recipient.lastSeenAt,
               coverRequests: data.coverRequests,
+              handovers: data.handovers,
             }).map((planned) => ({ recipient, planned })),
           );
           const logged = await claimNotifications(

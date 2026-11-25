@@ -13,13 +13,15 @@ import {
   localDateOf,
   occurrenceOf,
   rangeDays,
+  routeAwayOccurrences,
   startOfLocalDay,
+  type ExpandRange,
   type CalendarRule,
   type EventOccurrence,
   type EventSeries,
   type MemberRole,
 } from '@familyos/domain';
-import type { Database } from '@familyos/db';
+import { loadAwayPeriods, type Database } from '@familyos/db';
 import { Hono } from 'hono';
 import type { Transaction } from 'kysely';
 import { z } from 'zod';
@@ -257,8 +259,25 @@ export const caredForIn = (roles: Map<string, MemberRole>) => (id: string) => {
   return role !== undefined && isCaredFor(role);
 };
 
+/**
+ * Occurrences in the range with covers, skips and away periods applied: an away adult's care
+ * handoffs are their cover's (packages/domain/src/presence.ts). Every reader of who is down for
+ * a handoff (Today, the week, the Weekly Reset, the widget) goes through this.
+ */
+export async function routedOccurrences(
+  trx: Transaction<Database>,
+  householdId: string,
+  series: readonly EventSeries[],
+  range: ExpandRange,
+  roles: Map<string, MemberRole>,
+) {
+  const away = await loadAwayPeriods(trx, householdId, range.from);
+  const caredFor = caredForIn(roles);
+  return routeAwayOccurrences(expandEvents(series, range, caredFor), away, caredFor);
+}
+
 /** An occurrence as the API returns it: the domain occurrence plus the series' details. */
-export function occurrenceView(occurrence: EventOccurrence, series: StoredSeries) {
+export function occurrenceView<O extends EventOccurrence>(occurrence: O, series: StoredSeries) {
   return {
     ...occurrence,
     location: series.location,
@@ -440,22 +459,31 @@ export function eventRoutes(deps: Deps) {
     });
     const roles = await memberRoles(trx, householdId);
     const byId = new Map(series.map((s) => [s.id, s]));
-    const occurrences = expandEvents(
-      series,
-      { from: from.data, to: to.data, timeZone },
-      caredForIn(roles),
+    const occurrences = (
+      await routedOccurrences(
+        trx,
+        householdId,
+        series,
+        { from: from.data, to: to.data, timeZone },
+        roles,
+      )
     ).flatMap((o) => {
       const s = byId.get(o.eventId);
       return s ? [occurrenceView(o, s)] : [];
     });
     // Today and the Week load this: what the caller has been asked, and is waiting on.
     const coverRequests = await myCoverRequests(trx, c.get('member'), localDateOf(now(), timeZone));
+    // Who's away in the range (Who's in town), for the heads-ups the app works out per day.
+    const away = (await loadAwayPeriods(trx, householdId, from.data)).filter(
+      (p) => p.startsOn <= to.data,
+    );
     return c.json({
       from: from.data,
       to: to.data,
       timezone: timeZone,
       occurrences,
       coverRequests,
+      away,
     });
   });
 

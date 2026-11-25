@@ -60,6 +60,10 @@ export const ACTIONS = [
   'budget.import',
   /** The Weekly Reset session and committing its plan. */
   'reset.run',
+  /** Who's in town: members' away periods and visitors. */
+  'presence.read',
+  /** Add, change and remove away periods and visitors, and hand an away member's work over. */
+  'presence.manage',
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -89,10 +93,20 @@ const GRANTS: Readonly<Record<MemberRole, readonly Action[]>> = {
     'budget.read',
     'budget.import',
     'reset.run',
+    'presence.read',
+    'presence.manage',
   ],
-  // A sitter sees the household's schedule so they know who is where, what's for dinner and
-  // whom to call. Never the adults' own calendars, decisions, budgets or weekly plan.
-  caregiver: ['household.read', 'work_item.read', 'event.read', 'meal.read', 'contact.read'],
+  // A sitter sees the household's schedule so they know who is where, what's for dinner, whom
+  // to call and who's away or visiting. Never the adults' own calendars, decisions, budgets or
+  // weekly plan.
+  caregiver: [
+    'household.read',
+    'work_item.read',
+    'event.read',
+    'meal.read',
+    'contact.read',
+    'presence.read',
+  ],
   // Children and pets have no account, so they never make requests.
   child: [],
   pet: [],

@@ -1,11 +1,13 @@
-import { addDays, buildRhythm, expandEvents, localDateOf, startOfLocalDay } from '@familyos/domain';
+import { addDays, buildRhythm, localDateOf, startOfLocalDay } from '@familyos/domain';
+import { loadAwayPeriods } from '@familyos/db';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { authorize } from '../http/authorize';
 import type { AppEnv, Deps } from '../http/env';
 import { ApiError } from '../http/errors';
-import { caredForIn, loadSeries, memberRoles, occurrenceView } from './events';
+import { loadSeries, memberRoles, occurrenceView, routedOccurrences } from './events';
 import { mealsBetween } from './meals';
+import { pendingHandovers, presenceFor } from './presence';
 import { ITEM_COLUMNS } from './work-items';
 
 const LocalDate = z.iso.date();
@@ -49,10 +51,14 @@ export function rhythmRoutes(deps: Deps) {
     const series = await loadSeries(trx, householdId, { from: date, to: date, timeZone: timezone });
     const byId = new Map(series.map((s) => [s.id, s]));
     const roles = await memberRoles(trx, householdId);
-    const occurrences = expandEvents(
-      series,
-      { from: date, to: date, timeZone: timezone },
-      caredForIn(roles),
+    const occurrences = (
+      await routedOccurrences(
+        trx,
+        householdId,
+        series,
+        { from: date, to: date, timeZone: timezone },
+        roles,
+      )
     ).flatMap((o) => {
       const s = byId.get(o.eventId);
       return s ? [occurrenceView(o, s)] : [];
@@ -111,7 +117,35 @@ export function rhythmRoutes(deps: Deps) {
       occurrences,
       tasks,
       decisions: decisions.map((d) => ({ id: d.id, title: d.question, dueOn: d.due_on ?? date })),
+      away: await loadAwayPeriods(trx, householdId, date),
     });
+    // Who's in town that day (and visitors arriving within a week), what away periods suggest
+    // handing over (adults can confirm), and which of the day's tasks someone covers.
+    const presence = await presenceFor(trx, householdId, date, date);
+    const handovers = (await pendingHandovers(trx, householdId, today, timezone))
+      .filter((p) => p.suggestions.length > 0)
+      .map((p) => ({
+        awayPeriodId: p.period.id,
+        memberId: p.period.memberId,
+        coverMemberId: p.period.coverMemberId,
+        count: p.suggestions.length,
+      }));
+    const taskIds = tasks.map((t) => t.id);
+    const covering = taskIds.length
+      ? await trx
+          .selectFrom('app.away_handover as h')
+          .innerJoin('app.work_item as w', (join) =>
+            join
+              .onRef('w.id', '=', 'h.work_item_id')
+              .onRef('w.household_id', '=', 'h.household_id')
+              .onRef('w.owner_member_id', '=', 'h.to_member_id'),
+          )
+          .select(['h.work_item_id as workItemId', 'h.from_member_id as forMemberId'])
+          .where('h.household_id', '=', householdId)
+          .where('h.outcome', '=', 'moved')
+          .where('h.work_item_id', 'in', taskIds)
+          .execute()
+      : [];
     // What's for dinner, and who's cooking.
     const meals = await mealsBetween(trx, householdId, date, date);
     return c.json({
@@ -120,6 +154,8 @@ export function rhythmRoutes(deps: Deps) {
       members,
       meals,
       dinner: meals.find((m) => m.slot === 'dinner') ?? null,
+      presence: { ...presence, handovers },
+      covering,
     });
   });
 

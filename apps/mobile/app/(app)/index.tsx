@@ -16,6 +16,7 @@ import {
   type LateCounts,
 } from '../../components/rhythm/today-model';
 import { WhileAway } from '../../components/rhythm/WhileAway';
+import { InTownLine } from '../../components/in-town/InTownLine';
 import { SinceLastLooked } from '../../components/rhythm/SinceLastLooked';
 import { WeekStrip } from '../../components/rhythm/WeekStrip';
 import { WeekPlanStrip } from '../../components/rhythm/WeekPlanStrip';
@@ -182,6 +183,7 @@ export default function Today() {
           Array.from({ length: 6 }, (_, i) => addDays(rhythm.today, i + 1)),
           rhythm.today,
           timeZone,
+          week.away ?? [],
         )
       : [];
     const seen = new Set(todays.map((h) => h.headsUp.id));
@@ -189,8 +191,11 @@ export default function Today() {
     const t = now.getTime();
     return [...todays, ...coming.filter((h) => !seen.has(h.headsUp.id))].filter(
       ({ headsUp: h }) =>
-        !(h.type === 'handoff_conflict' || h.type === 'care_unassigned') ||
-        new Date(h.time).getTime() > t,
+        !(
+          h.type === 'handoff_conflict' ||
+          h.type === 'care_unassigned' ||
+          h.type === 'care_while_away'
+        ) || new Date(h.time).getTime() > t,
     );
   }, [rhythm, week, timeZone, now]);
 
@@ -203,6 +208,7 @@ export default function Today() {
             Array.from({ length: 7 }, (_, i) => addDays(rhythm.today, i)),
             rhythm.today,
             timeZone,
+            week.away ?? [],
           )
         : [],
     [rhythm, week, timeZone],
@@ -315,6 +321,14 @@ export default function Today() {
             activity={activity}
             people={people}
             needYou={needYou}
+          />
+        ) : null}
+        {rhythm ? (
+          <InTownLine
+            presence={rhythm.presence}
+            people={people}
+            today={today}
+            canHandOver={household?.role === 'owner' || household?.role === 'adult'}
           />
         ) : null}
       </View>

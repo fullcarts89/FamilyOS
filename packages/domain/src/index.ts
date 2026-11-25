@@ -20,3 +20,4 @@ export * from './reset';
 export * from './budget-csv';
 export * from './widget';
 export * from './notifications';
+export * from './presence';

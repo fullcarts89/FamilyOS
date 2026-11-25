@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react-native';
+import { Check, Luggage } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Avatar, Either } from '../../design/Avatar';
@@ -10,13 +10,14 @@ import { useTip } from '../../design/Tooltip';
 import { color, font, radius, tint } from '../../design/tokens';
 import type { Meal, Occurrence, ResetResponse, WorkItem } from '../../lib/api';
 import { weekdayName } from '../../lib/dates';
+import { coverLine, weekLines } from '../../lib/in-town';
 import { useHousehold } from '../../lib/household';
 import { usePeople, type Person } from '../../lib/people';
 import { timeOf } from '../../lib/rhythm';
 import { dueDate, isOpen } from '../../lib/tasks';
 import { pendingRequest, waitingWords, type WithRequest } from './coordination';
 
-export type RowKind = 'adults' | 'care' | 'together' | 'dinners' | 'chores';
+export type RowKind = 'adults' | 'care' | 'together' | 'visitors' | 'dinners' | 'chores';
 
 interface BoardRow {
   key: string;
@@ -31,7 +32,8 @@ interface BoardRow {
  * The shared week board at the centre of the Weekly Reset: days across, lanes down (each adult,
  * each child's and pet's care, what you do together, dinners and chores). It is drawn from the
  * same data the chapters change, so it updates as you resolve things: a pickup covered, a dinner
- * planned, a loose end kept. Hatching marks what still needs someone or clashes.
+ * planned, a loose end kept. Hatching marks what still needs someone or clashes. Who's away and
+ * who's visiting (Who's in town) sit on the days they apply to, so the plan accounts for them.
  */
 export function WeekBoard({
   data,
@@ -95,6 +97,60 @@ export function WeekBoard({
             }))
         : [],
     );
+
+  // Who's in town: a member's days away, and visitors' days here.
+  const presence = data.presence;
+  const awayOn = (memberId: string, date: string) =>
+    presence?.away.find(
+      (p) =>
+        p.memberId === memberId && p.startsOn <= date && (p.endsOn === null || p.endsOn >= date),
+    ) ?? null;
+  const awayChip = (memberId: string, date: string) => {
+    const period = awayOn(memberId, date);
+    if (!period) return [];
+    const who = people.byId(memberId);
+    const full = `${who?.isMe ? 'You’re' : `${who?.name ?? 'Someone'}’s`} away${who && !who.caredFor ? ` · ${coverLine(period, people)}` : ''}`;
+    return [
+      <Pressable
+        key={`away:${period.id}:${date}`}
+        style={styles.away}
+        accessibilityLabel={full}
+        {...tipProps(full)}
+        onPress={(e) => showTip(full, e)}
+      >
+        <Luggage size={13} color={color.muted} strokeWidth={2.2} />
+        <Text variant="small" tone="muted">
+          Away
+        </Text>
+      </Pressable>,
+    ];
+  };
+  const visitorsOn = (date: string) =>
+    (presence?.visiting ?? [])
+      .filter((v) => v.arrivesOn <= date && v.leavesOn >= date)
+      .map((v) => {
+        const what = v.arrivesOn === date ? 'arrives' : v.leavesOn === date ? 'leaves' : 'here';
+        const full = `${v.name} · ${what}${v.notes ? ` · ${v.notes}` : ''}`;
+        return (
+          <Pressable
+            key={`visitor:${v.id}:${date}`}
+            style={styles.visitor}
+            accessibilityLabel={full}
+            {...tipProps(full)}
+            onPress={(e) => showTip(full, e)}
+          >
+            <Text variant="small" numberOfLines={2} style={styles.eventTitle}>
+              {v.name}
+            </Text>
+            {what !== 'here' ? (
+              <Text variant="small" tone="muted" numberOfLines={1}>
+                {what === 'arrives' ? 'Arrives' : 'Leaves'}
+              </Text>
+            ) : null}
+          </Pressable>
+        );
+      });
+  const around = weekLines(presence, people, data.week.start);
 
   const eventChip = (o: Occurrence, c: string, flagged: boolean) => (
     <FadeIn key={`${o.key}:${o.memberIds.join(',')}`}>
@@ -283,6 +339,7 @@ export function WeekBoard({
       label: p.isMe ? 'You' : p.name,
       person: p,
       cell: (d: string) => [
+        ...awayChip(p.id, d),
         ...occ(d)
           .filter((o) => o.memberIds.includes(p.id) && !o.careAction && !together(o))
           .sort(byStart)
@@ -297,6 +354,7 @@ export function WeekBoard({
       sub: p.role === 'pet' ? (p.species ?? 'Pet') : 'Care and handoffs',
       person: p,
       cell: (d: string) => [
+        ...awayChip(p.id, d),
         ...occ(d)
           .filter(
             (o) =>
@@ -332,6 +390,18 @@ export function WeekBoard({
           },
         ]
       : []),
+    ...((presence?.visiting.length ?? 0) > 0
+      ? [
+          {
+            key: 'visitors',
+            kind: 'visitors' as const,
+            label: 'Visiting',
+            sub: 'Staying with you',
+            person: null,
+            cell: visitorsOn,
+          },
+        ]
+      : []),
     { key: 'dinners', kind: 'dinners', label: 'Dinners', person: null, cell: dinner },
     ...(data.routines.some((r) => r.subjectMemberId === null)
       ? [
@@ -363,6 +433,7 @@ export function WeekBoard({
       <View style={styles.dayList} accessibilityLabel="The week board">
         {tipLayer}
         {committed ? <PlanStamp /> : null}
+        <Around lines={around} />
         {days.map((d) => {
           const filled = shown
             .map((r) => ({ row: r, items: r.cell(d) }))
@@ -405,6 +476,7 @@ export function WeekBoard({
     <View style={styles.board} accessibilityLabel="The week board">
       {tipLayer}
       {committed ? <PlanStamp /> : null}
+      <Around lines={around} />
       <View style={styles.boardRow}>
         <View style={[styles.rowHead, narrow && styles.rowHeadNarrow]} />
         {days.map((d) => {
@@ -454,6 +526,19 @@ export function WeekBoard({
           ))}
         </View>
       ))}
+    </View>
+  );
+}
+
+/** "Who's around": the week's away periods and visits, in a line each. */
+function Around({ lines }: { lines: string[] }) {
+  if (lines.length === 0) return null;
+  return (
+    <View style={styles.around} accessibilityLabel={`Who’s around: ${lines.join('. ')}`}>
+      <Luggage size={15} color={color.muted} strokeWidth={2.2} />
+      <Text variant="small" tone="muted" style={styles.flex}>
+        {lines.join(' · ')}
+      </Text>
     </View>
   );
 }
@@ -523,6 +608,34 @@ const styles = StyleSheet.create({
     cursor: 'pointer',
   },
   eventTitle: { fontFamily: font.uiBold, color: color.ink },
+  away: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: color.line2,
+    cursor: 'pointer',
+  },
+  visitor: {
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: color.line2,
+    backgroundColor: color.surface,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    cursor: 'pointer',
+  },
+  around: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+  },
   flagged: { borderColor: color.ink, borderStyle: 'solid' },
   hover: { transform: [{ translateY: -1 }] },
   handoff: {

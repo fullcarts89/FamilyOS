@@ -185,9 +185,10 @@ Not implemented yet; the widget already calls it and falls back to the app's sna
 | Kind | When | Text (with details) |
 | --- | --- | --- |
 | Morning check-in | the member's morning time; skipped when nothing concerns them (dinner alone doesn't, unless they cook) | "Today: drop-off 8:15 AM (you), 2 things due, dinner: salmon (Theo)" |
-| Handoff reminder | 30 minutes before a care handoff they cover (covers and skips applied) | "June's drop-off at 8:15 AM" / "In 30 minutes, at Little Oaks." |
+| Handoff reminder | 30 minutes before a care handoff they cover (covers, skips and away periods applied: an away adult's handoffs remind the adult covering) | "June's drop-off at 8:15 AM" / "In 30 minutes, at Little Oaks." |
 | Partner changes | at most hourly: took something off your plate, completed something of yours, covered your handoff, settled a decision you voted on | "From Theo" / "Took “Car registration” off your plate." |
 | Weekly Reset reminder | the chosen weekday and time, only while that week's plan isn't committed (adults) | "The week of Mon, Nov 23 doesn't have a plan yet. Ready when you are." |
+| While someone's away | once per away period, to the adult covering, when someone else handed them things (behind the handoff reminders switch; see `docs/plan/whos-in-town.md`) | "Theo is away, back Fri, Nov 27" / "3 things moved to you." |
 
 - **Quiet hours** (22:00–06:00 household time by default; each member can change or turn them off) are always respected. The check-in, the Weekly Reset reminder and partner changes wait until quiet hours end (the check-in only the same day). A handoff reminder that falls in them comes when they end if the handoff is still at least 5 minutes away, and is dropped otherwise (quiet hours ending 06:00 give a 06:20 drop-off a reminder at 06:00; a 06:03 one gets none).
 - **Partner changes** start, the first time, from when the member last opened the app (at most a day back).

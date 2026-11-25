@@ -37,7 +37,15 @@ describe('role permissions', () => {
       'event.read',
       'meal.read',
       'contact.read',
+      'presence.read',
     ]);
+  });
+
+  it('lets adults manage who’s in town and caregivers only see it', () => {
+    expect(can('owner', 'presence.manage')).toBe(true);
+    expect(can('adult', 'presence.manage')).toBe(true);
+    expect(can('caregiver', 'presence.read')).toBe(true);
+    expect(can('caregiver', 'presence.manage')).toBe(false);
   });
 
   it('keeps decisions, budgets and the weekly plan with the adults', () => {

@@ -180,6 +180,47 @@ export const HouseholdExportSchema = z.object({
       respondedAt: Timestamp.nullable(),
     }),
   ),
+  awayPeriods: z.array(
+    z.object({
+      id: z.uuid(),
+      memberId: z.uuid(),
+      startsOn: z.string(),
+      endsOn: z.string().nullable(),
+      coverMemberId: z.uuid().nullable(),
+      createdByMemberId: z.uuid(),
+      version: z.number(),
+      createdAt: Timestamp,
+      updatedAt: Timestamp,
+    }),
+  ),
+  awayHandovers: z.array(
+    z.object({
+      id: z.uuid(),
+      awayPeriodId: z.uuid(),
+      workItemId: z.uuid(),
+      fromMemberId: z.uuid(),
+      toMemberId: z.uuid(),
+      outcome: z.enum(['moved', 'kept', 'returned']),
+      recurrenceRuleId: z.uuid().nullable(),
+      paybackIndex: z.number().nullable(),
+      createdByMemberId: z.uuid().nullable(),
+      createdAt: Timestamp,
+      updatedAt: Timestamp,
+    }),
+  ),
+  visitors: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      arrivesOn: z.string(),
+      leavesOn: z.string(),
+      notes: z.string().nullable(),
+      createdByMemberId: z.uuid(),
+      version: z.number(),
+      createdAt: Timestamp,
+      updatedAt: Timestamp,
+    }),
+  ),
   contacts: z.array(
     z.object({
       id: z.uuid(),

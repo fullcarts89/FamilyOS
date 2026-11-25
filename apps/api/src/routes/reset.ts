@@ -4,7 +4,7 @@ import {
   buildWeekRhythm,
   defaultResetWeek,
   dueThrough,
-  expandEvents,
+  routeOn,
   isAssignableRole,
   isCalendarRule,
   isWeekStart,
@@ -14,7 +14,7 @@ import {
   upcomingOccurrences,
   type WorkItemStatus,
 } from '@familyos/domain';
-import { loadExceptions, type Database } from '@familyos/db';
+import { loadAwayPeriods, loadExceptions, type Database } from '@familyos/db';
 import { Hono } from 'hono';
 import type { Transaction } from 'kysely';
 import { z } from 'zod';
@@ -24,8 +24,9 @@ import type { AppEnv, CurrentMember, Deps } from '../http/env';
 import { ApiError, conflict } from '../http/errors';
 import { parseBody } from '../http/validation';
 import { loadDecisions } from './decisions';
-import { caredForIn, loadSeries, memberRoles, occurrenceView } from './events';
+import { loadSeries, memberRoles, occurrenceView, routedOccurrences } from './events';
 import { groceryList, mealsBetween } from './meals';
+import { presenceFor } from './presence';
 import { ITEM_COLUMNS, decorateItems } from './work-items';
 
 const LocalDate = z.iso.date();
@@ -234,10 +235,14 @@ async function assembleReset(
     to: lookTo,
     timeZone: timezone,
   });
-  const careBefore = expandEvents(
-    pastSeries,
-    { from: lookFrom, to: lookTo, timeZone: timezone },
-    caredForIn(roles),
+  const careBefore = (
+    await routedOccurrences(
+      trx,
+      householdId,
+      pastSeries,
+      { from: lookFrom, to: lookTo, timeZone: timezone },
+      roles,
+    )
   ).filter((o) => o.careMemberId !== null && !o.skipped);
   // Someone with an account (owner, adult or caregiver): an allow-list, so a role this code
   // doesn't know never counts as having it covered.
@@ -334,15 +339,29 @@ async function assembleReset(
     timeZone: timezone,
   });
   const byId = new Map(series.map((s) => [s.id, s]));
-  const occurrences = expandEvents(
-    series,
-    { from: week, to: weekEnd, timeZone: timezone },
-    caredForIn(roles),
+  const occurrences = (
+    await routedOccurrences(
+      trx,
+      householdId,
+      series,
+      { from: week, to: weekEnd, timeZone: timezone },
+      roles,
+    )
   ).flatMap((o) => {
     const s = byId.get(o.eventId);
     return s ? [occurrenceView(o, s)] : [];
   });
-  const weekRhythm = buildWeekRhythm({ weekStart: week, timeZone: timezone, members, occurrences });
+  // Who's away and visiting that week (and visitors arriving the week after), so the plan
+  // accounts for them.
+  const away = await loadAwayPeriods(trx, householdId, week);
+  const presence = await presenceFor(trx, householdId, week, weekEnd);
+  const weekRhythm = buildWeekRhythm({
+    weekStart: week,
+    timeZone: timezone,
+    members,
+    occurrences,
+    away,
+  });
 
   const openDecisions = await loadDecisions(trx, member, { status: 'open' });
   const meals = await mealsBetween(trx, householdId, week, weekEnd);
@@ -360,6 +379,7 @@ async function assembleReset(
       'w.version',
       'w.owner_member_id',
       'w.subject_member_id',
+      'w.visibility',
       'r.id as ruleId',
       'r.rule',
       'r.start_on',
@@ -394,10 +414,18 @@ async function assembleReset(
         .filter((p) => p.date <= weekEnd)
         .map((p) => {
           const row = rows.find((x) => x.occurrence_index === p.index);
+          // A turn not created yet goes to the cover when its owner is away that day (the
+          // scheduler does the same when it creates it); a private routine's never moves.
+          const route =
+            !row && p.ownerMemberId !== null && r.visibility === 'household'
+              ? routeOn(away, p.ownerMemberId, p.date)
+              : null;
+          const routed = route?.kind === 'covered' ? route.coverMemberId : null;
           return {
             index: p.index,
             date: p.date,
-            ownerMemberId: row ? row.owner_member_id : p.ownerMemberId,
+            ownerMemberId: row ? row.owner_member_id : (routed ?? p.ownerMemberId),
+            coveringFor: routed ? p.ownerMemberId : null,
             skipped: p.skipped,
             itemId: row?.id ?? null,
             status: row?.status ?? null,
@@ -409,6 +437,7 @@ async function assembleReset(
         index: row.occurrence_index ?? 0,
         date: row.occurrence_on ?? '',
         ownerMemberId: row.owner_member_id,
+        coveringFor: null,
         skipped: false,
         itemId: row.id,
         status: row.status,
@@ -446,6 +475,7 @@ async function assembleReset(
     unfinished,
     dueThisWeek,
     events: weekRhythm,
+    presence,
     decisions: openDecisions,
     meals,
     groceries,

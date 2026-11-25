@@ -8,6 +8,7 @@ import {
   type RhythmMember,
   type RhythmTask,
 } from './rhythm';
+import type { AwayPeriod } from './presence';
 import { localDueDate } from './today';
 import { isDone, type WorkItemStatus } from './work-item';
 
@@ -46,8 +47,10 @@ export interface WeekRhythmInput<O extends EventOccurrence> {
   weekStart: string;
   timeZone: string;
   members: readonly RhythmMember[];
-  /** Occurrences overlapping the week (skipped ones are ignored). */
+  /** Occurrences overlapping the week (skipped ones are ignored), away routing applied. */
   occurrences: readonly O[];
+  /** Away periods around the week. */
+  away?: readonly AwayPeriod[];
 }
 
 export interface WeekDay<O extends EventOccurrence> {
@@ -64,6 +67,8 @@ export interface WeekRhythm<O extends EventOccurrence> {
   needsOwner: Extract<HeadsUp, { type: 'care_unassigned' }>[];
   /** An adult's handoff overlapping another of their events, across the week (each once). */
   conflicts: Extract<HeadsUp, { type: 'handoff_conflict' }>[];
+  /** A child's or pet's handoff still on while they're away, across the week (each once). */
+  whileAway: Extract<HeadsUp, { type: 'care_while_away' }>[];
 }
 
 const instant = (iso: string) => Temporal.Instant.from(iso);
@@ -90,6 +95,7 @@ export function buildWeekRhythm<O extends EventOccurrence>(
 ): WeekRhythm<O> {
   const needsOwner = new Map<string, Extract<HeadsUp, { type: 'care_unassigned' }>>();
   const conflicts = new Map<string, Extract<HeadsUp, { type: 'handoff_conflict' }>>();
+  const whileAway = new Map<string, Extract<HeadsUp, { type: 'care_while_away' }>>();
   const days = weekDates(input.weekStart).map((date) => {
     const occurrences = input.occurrences.filter(
       (o) => !o.skipped && overlapsDay(o, date, input.timeZone),
@@ -101,10 +107,12 @@ export function buildWeekRhythm<O extends EventOccurrence>(
       members: input.members,
       occurrences,
       tasks: [],
+      away: input.away ?? [],
     });
     for (const h of view.headsUps) {
       if (h.type === 'care_unassigned') needsOwner.set(h.id, h);
       if (h.type === 'handoff_conflict') conflicts.set(h.id, h);
+      if (h.type === 'care_while_away') whileAway.set(h.id, h);
     }
     // Handoffs belong to the day they happen on.
     const handoffs = view.handoffs.filter(
@@ -119,6 +127,7 @@ export function buildWeekRhythm<O extends EventOccurrence>(
     days,
     needsOwner: [...needsOwner.values()].sort(byTime),
     conflicts: [...conflicts.values()].sort(byTime),
+    whileAway: [...whileAway.values()].sort(byTime),
   };
 }
 
