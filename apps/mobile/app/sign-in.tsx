@@ -1,11 +1,10 @@
 import { router } from 'expo-router';
 import { useRef, useState, type ComponentRef } from 'react';
-import type { TextInput } from 'react-native';
+import { View, type TextInput } from 'react-native';
 import { AuthLayout } from '../components/AuthLayout';
 import { Button } from '../design/Button';
 import { Field } from '../design/Field';
 import { ErrorNotice, Notice } from '../design/Notice';
-import { Text } from '../design/Text';
 import { useSession } from '../lib/session';
 import { signInWithPassword } from '../lib/supabase';
 
@@ -75,10 +74,15 @@ export default function SignIn() {
         onSubmitEditing={submit}
       />
       {error ? <ErrorNotice message={error} /> : null}
-      <Button title="Sign in" size="lg" full onPress={submit} busy={busy} disabled={!ready} />
-      <Text variant="meta" tone="muted">
-        Forgot your password? Ask your household owner to reset it.
-      </Text>
+      <View style={{ gap: 6 }}>
+        <Button title="Sign in" size="lg" full onPress={submit} busy={busy} disabled={!ready} />
+        <Button
+          title="Forgot password?"
+          variant="quiet"
+          full
+          onPress={() => router.push('/forgot-password')}
+        />
+      </View>
     </AuthLayout>
   );
 }

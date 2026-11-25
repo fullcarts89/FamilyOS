@@ -10,7 +10,7 @@ test.describe('Sign in', () => {
 
     // A wrong password says so without revealing whether the account exists.
     await page.getByLabel('Email').fill(MAYA.email);
-    await page.getByLabel('Password').fill('not-the-password');
+    await page.getByLabel('Password', { exact: true }).fill('not-the-password');
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page.getByText('That email and password don’t match.')).toBeVisible();
     // Supabase answers a wrong password with 400, which the browser logs.

@@ -30,6 +30,14 @@ describe('loadConfig', () => {
     ).toBe('https://familyos.fullcarts.org/invite');
   });
 
+  it('reads the Apple Team ID when set, and refuses anything that is not one', () => {
+    expect(loadConfig(base).APPLE_TEAM_ID).toBeUndefined();
+    expect(loadConfig({ ...base, APPLE_TEAM_ID: 'ABCDE12345' }).APPLE_TEAM_ID).toBe('ABCDE12345');
+    expect(() => loadConfig({ ...base, APPLE_TEAM_ID: 'ABCDE12345.app.familyos' })).toThrow(
+      /^Invalid API configuration: APPLE_TEAM_ID$/,
+    );
+  });
+
   it('names missing fields without echoing any value', () => {
     expect(() => loadConfig({ ...base, DATABASE_URL: 'not a url secret-value' })).toThrow(
       /^Invalid API configuration: DATABASE_URL$/,

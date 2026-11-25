@@ -12,6 +12,7 @@ import {
   DATABASE_URL,
   E2E_EMAIL_DOMAIN,
   E2E_EMAIL_PREFIX,
+  MAILPIT_URL,
   ROOT,
   SUPABASE_URL,
   TIME_ZONE,
@@ -26,6 +27,7 @@ export function assertLocalStack(): void {
   for (const [name, value] of [
     ['DATABASE_URL', DATABASE_URL],
     ['SUPABASE_URL', SUPABASE_URL],
+    ['MAILPIT_URL', MAILPIT_URL],
   ] as const) {
     if (!LOCAL_HOSTS.has(new URL(value).hostname)) {
       throw new Error(`${name} is not on this machine; E2E only runs against a local stack.`);
@@ -170,6 +172,32 @@ export async function createHousehold(opts: {
       throw error;
     }
   });
+}
+
+/**
+ * The path of the password reset link in the newest email to this address, as Mailpit caught it
+ * (the link's host is the stack's Site URL, so only its path and query are used). Waits for it.
+ */
+export async function resetLinkFor(email: string, timeoutMs = 15_000): Promise<string> {
+  const query = encodeURIComponent(`to:"${email}" subject:"Reset your FamilyOS password"`);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const found = (await (await fetch(`${MAILPIT_URL}/api/v1/search?query=${query}`)).json()) as {
+      messages: { ID: string }[];
+    };
+    const id = found.messages[0]?.ID;
+    if (id) {
+      const message = (await (await fetch(`${MAILPIT_URL}/api/v1/message/${id}`)).json()) as {
+        HTML: string;
+      };
+      const href = /href="([^"]+)"/.exec(message.HTML)?.[1]?.replaceAll('&amp;', '&');
+      if (!href) throw new Error(`the reset email to ${email} has no link`);
+      const url = new URL(href);
+      return `${url.pathname}${url.search}`;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`no reset email reached ${email} within ${timeoutMs} ms`);
 }
 
 /**

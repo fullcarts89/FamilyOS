@@ -61,6 +61,32 @@ describe('web server', () => {
     }
   });
 
+  it('lets the iPhone app open reset links once the Team ID is set, and only those', async () => {
+    const path = '/.well-known/apple-app-site-association';
+    expect((await server().request(path)).status).toBe(404);
+    const withTeam = createServer(createTestApp().app, {
+      root,
+      supabaseUrl: 'https://abc.supabase.co/',
+      appleTeamId: 'ABCDE12345',
+    });
+    const res = await withTeam.request(path);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    expect(await res.json()).toEqual({
+      applinks: {
+        details: [
+          {
+            appIDs: ['ABCDE12345.app.familyos.household'],
+            components: [{ '/': '/reset-password' }],
+          },
+        ],
+      },
+    });
+    // The page itself is still the web app, for a browser or a phone without the app.
+    const page = await withTeam.request('/reset-password?token_hash=abc&type=recovery');
+    expect(await page.text()).toContain('<title>FamilyOS</title>');
+  });
+
   it('serves the API alone when there is no web export (local development)', async () => {
     const apiOnly = createServer(createTestApp().app);
     expect((await apiOnly.request('/api/health')).status).toBe(200);

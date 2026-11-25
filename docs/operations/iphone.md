@@ -61,6 +61,7 @@ The second command writes the EAS project ID into `app.json` (`extra.eas.project
 | `EXPO_PUBLIC_SUPABASE_URL` | `https://<ref>.supabase.co` | Plain text |
 | `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | the publishable key | Plain text |
 | `EXPO_PUBLIC_API_URL` | `https://<app address>/api` (a full URL; the app refuses a relative one) | Plain text |
+| `APP_LINK_HOST` | the app's bare host, such as `familyos.fullcarts.org`: the host in Supabase's Site URL. Password reset links to it open in the app (a universal link); without it they open in Safari. Changing it needs a new build. | Plain text |
 
 These are public by design: `EXPO_PUBLIC_*` values are compiled into the app. Never put the Supabase secret key or a database password here. The widget gets the same three values from the app at runtime, so it needs nothing of its own.
 
@@ -72,6 +73,7 @@ When it asks, sign in with your Apple ID (two-factor code on your phone) and let
 - Generate a distribution certificate.
 - Register the bundle IDs `app.familyos.household` and `app.familyos.household.widget`, with the App Groups capability for `group.app.familyos.household`.
 - Create provisioning profiles for both targets.
+- With `APP_LINK_HOST` set: turn on Associated Domains for `app.familyos.household`, for reset links (deploy runbook, decision 7). The server side is `APPLE_TEAM_ID` on Railway.
 - Set up Push Notifications (an APNs key). The app asks for permission and registers its token (below); the worker sends through Expo with this key.
 
 The build runs on Expo's Macs. This is the first time the widget's Swift is compiled; if it fails, send Claude the "Run fastlane" or "Xcode build" log from the build page.
