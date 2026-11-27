@@ -81,6 +81,7 @@ In CI, run the **E2E** workflow by hand with *Record* on; the GIFs are an artifa
 |---|---|
 | `sign-in.spec.ts` | redirect to sign-in, wrong password message, sign in as Maya, session survives reload |
 | `capture.spec.ts` | "Call the plumber tomorrow @theo #reno": preview, saved as Theo's, due tomorrow, a step of the renovation |
+| `task-dates.spec.ts` | "Pick a date": a day 40 days out picked from the capture sheet's calendar (replacing a typed "tomorrow") is the day it's due; a task moved to a picked day from its own screen, still chosen after a reload; earlier days not offered |
 | `tasks.spec.ts` | complete + undo restores status/owner/due; "I'll take it"; take it off Theo's plate; project halfway milestone |
 | `routines.spec.ts` | Biscuit's monthly flea meds done, next turn the 1st of the following month |
 | `rhythm.spec.ts` | Thursday's pickup clash resolved from Today: "Ask Theo to cover" leaves it Maya's ("Asked Theo · waiting") until Theo accepts in his own browser, then it's covered on the Week; a weekly event with a pickup handoff, this week and next |
@@ -92,7 +93,7 @@ In CI, run the **E2E** workflow by hand with *Record* on; the GIFs are an artifa
 | `sync.spec.ts` | two adults: Theo's change reaches Maya's open Today and Tasks within a minute (`page.clock`); an open Today reloads at local midnight; both tick the same task and the second sees “Already done by Theo”, no error |
 | `platform.spec.ts` | offline keeps the tab bar and the last data with an offline note, then recovers; a routed 500 says it's not your connection; a 3 s delay shows a skeleton within 300 ms; a corrupted session lands on sign-in; capture saves once (three Enters, a lost answer retried); a failed undo says so; Reduce Motion: no translate, scale or fade frame on toast, sheet or celebration; nothing under the + button or the bar at 390×844; every control on Today and Tasks takes a 44×44 tap; the keyboard journey; shortcuts off |
 | `welcome.spec.ts` | an invited adult sees one welcome screen after joining, once |
-| `a11y.spec.ts` | axe-core over every main screen and the capture sheet, desktop and phone; fails on critical or serious; all findings in `e2e/.cache/axe/<project>.json` |
+| `a11y.spec.ts` | axe-core over every main screen and the capture sheet (and its date calendar), desktop and phone; fails on critical or serious; all findings in `e2e/.cache/axe/<project>.json` |
 
 The journeys hold under any time of day: they never depend on what "now" is beyond what the seed
 makes relative to today. One exception is skipped with a reason: Thursday after 5:30pm, when

@@ -96,10 +96,20 @@ test.describe('Accessibility: axe over every main screen', () => {
     // A dialog: quick capture, open on Today.
     await maya.goto('/');
     await expect(greeting(maya)).toBeVisible();
-    await app.openCapture(maya);
+    const sheet = await app.openCapture(maya);
     await maya.waitForTimeout(400);
     const raw = await axe(maya);
     found.push({ screen: 'Capture sheet', raw, violations: await recheckLabelInName(maya, raw) });
+    // Its "Pick a date" calendar, open.
+    await sheet.getByRole('button', { name: 'Pick a date', exact: true }).click();
+    await expect(sheet.getByRole('group', { name: 'Pick a date' })).toBeVisible();
+    await maya.waitForTimeout(400);
+    const rawCalendar = await axe(maya);
+    found.push({
+      screen: 'Capture sheet, date calendar',
+      raw: rawCalendar,
+      violations: await recheckLabelInName(maya, rawCalendar),
+    });
 
     const project = test.info().project.name;
     const dir = resolve(CACHE_DIR, 'axe');

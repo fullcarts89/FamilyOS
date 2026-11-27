@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { describeDue, dueOptions, formatDue, monthStartOptions } from './due-options';
+import {
+  calendarWeeks,
+  describeDue,
+  dueOptions,
+  formatDue,
+  monthStartOptions,
+  monthTitle,
+  shiftMonth,
+} from './due-options';
 
 describe('due options', () => {
   it('offers today, tomorrow, the coming weekend and next Monday', () => {
@@ -49,6 +57,31 @@ describe('due options', () => {
       'Tue 10 Nov',
     );
     expect(describeDue({ dueOn: null, dueAt: null }, '2026-11-08', 'UTC')).toBeNull();
+  });
+
+  it('lays a month out in Monday-to-Sunday weeks for the date picker', () => {
+    // November 2026 starts on a Sunday and ends on a Monday: six weeks.
+    const november = calendarWeeks('2026-11');
+    expect(november).toHaveLength(6);
+    expect(november[0]).toEqual([null, null, null, null, null, null, '2026-11-01']);
+    expect(november[1]?.[0]).toBe('2026-11-02');
+    expect(november[5]).toEqual(['2026-11-30', null, null, null, null, null, null]);
+    // February 2027 starts on a Monday and has 28 days: exactly four weeks, no blanks.
+    const february = calendarWeeks('2027-02');
+    expect(february).toHaveLength(4);
+    expect(february.flat()).not.toContain(null);
+    expect(february[3]?.[6]).toBe('2027-02-28');
+    // A leap year's February has its 29th.
+    expect(calendarWeeks('2028-02').flat()).toContain('2028-02-29');
+    expect(calendarWeeks('2028-02').flat().filter(Boolean)).toHaveLength(29);
+  });
+
+  it('steps between months across year ends, and names them', () => {
+    expect(shiftMonth('2026-12', 1)).toBe('2027-01');
+    expect(shiftMonth('2027-01', -1)).toBe('2026-12');
+    expect(shiftMonth('2026-11', 14)).toBe('2028-01');
+    expect(monthTitle('2026-12')).toBe('December 2026');
+    expect(monthTitle('2027-01')).toBe('January 2027');
   });
 
   it('offers this month and the next two as monthly starts', () => {

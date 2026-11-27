@@ -16,6 +16,12 @@ import { TaskRow } from '../../../components/tasks/TaskRow';
 import { Avatar, Either } from '../../../design/Avatar';
 import { Button, type PressState } from '../../../design/Button';
 import { Chip } from '../../../design/Chip';
+import {
+  DateCalendar,
+  DateChip,
+  pickedDateLabel,
+  useDateDropdown,
+} from '../../../design/DatePicker';
 import { Hatch } from '../../../design/Hatch';
 import { useLayout } from '../../../design/layout';
 import {
@@ -123,6 +129,8 @@ export default function ItemScreen() {
   // What's typed in it, until it's set (null: showing the task's own time).
   const [timeDraft, setTimeDraft] = useState<string | null>(null);
   const [timeBad, setTimeBad] = useState(false);
+  // "Pick a date": the calendar under the day chips, for a day the quick ones don't reach.
+  const dates = useDateDropdown();
   const [error, setError] = useState<string | null>(null);
   // The other adult saved the title or notes while this person was editing: both versions kept.
   const [conflict, setConflict] = useState<{
@@ -327,16 +335,20 @@ export default function ItemScreen() {
     `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
   const wallTime = item.dueAt ? hhmm(localParts(item.dueAt, timeZone).minutes) : null;
   const dueDay = dueDate(item, timeZone);
+  const quickDays = today ? dueOptions(today) : [];
+  // On a day the quick chips don't offer: the date chip shows it.
+  const otherDay = dueDay && !quickDays.some((o) => o.date === dueDay) ? dueDay : null;
   const setFor = (at: Pick<WorkItem, 'dueAt' | 'durationMinutes'>) =>
     `Set for ${timeText(at, timeZone) ?? ''}`;
-  const moveToDay = (date: string, label: string) =>
+  /** `where` finishes the toast: "Moved to tomorrow", "Moved to Thu, Dec 17". */
+  const moveToDay = (date: string, where: string) =>
     run(
       () =>
         // A timed task keeps its time (and length) on the new day.
         wallTime
           ? actions.patch(item, { dueAt: localInstant(date, wallTime, timeZone).toString() })
           : actions.patch(item, { dueOn: date }),
-      `Moved to ${label.toLowerCase()}`,
+      `Moved to ${where}`,
     );
   const commitTime = () => {
     if (timeDraft === null) return;
@@ -725,14 +737,21 @@ export default function ItemScreen() {
             When
           </Text>
           <View style={styles.chips}>
-            {dueOptions(today).map((o) => (
+            {quickDays.map((o) => (
               <Chip
                 key={o.label}
                 label={o.label}
                 selected={dueDay === o.date}
-                onPress={() => dueDay !== o.date && void moveToDay(o.date, o.label)}
+                onPress={() => dueDay !== o.date && void moveToDay(o.date, o.label.toLowerCase())}
               />
             ))}
+            <DateChip
+              value={otherDay}
+              today={today}
+              open={dates.open}
+              onPress={dates.toggle}
+              chip={dates.chip}
+            />
             <Chip
               label="No date"
               selected={!item.dueOn && !item.dueAt}
@@ -742,7 +761,18 @@ export default function ItemScreen() {
               }
             />
           </View>
-          {due && !dueOptions(today).some((o) => o.date === dueDay) ? (
+          {dates.open ? (
+            <DateCalendar
+              value={dueDay}
+              today={today}
+              onPick={(date) => {
+                dates.close();
+                if (date !== dueDay) void moveToDay(date, pickedDateLabel(date, today));
+              }}
+            />
+          ) : null}
+          {/* The date chip names the day; this says how late it is, or its time. */}
+          {due && otherDay && (otherDay < today || item.dueAt) ? (
             <Text variant="meta" tone="muted">
               Now: {due}
             </Text>

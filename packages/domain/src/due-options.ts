@@ -85,6 +85,33 @@ const MONTH_NAMES = [
 ];
 
 /**
+ * A month laid out for the date picker: weeks from Monday to Sunday (as the Week screen runs),
+ * each day as YYYY-MM-DD, with null for the days before the 1st and after the last. `month` is
+ * YYYY-MM.
+ */
+export function calendarWeeks(month: string): (string | null)[][] {
+  const ym = Temporal.PlainYearMonth.from(month);
+  const cells: (string | null)[] = Array.from(
+    { length: ym.toPlainDate({ day: 1 }).dayOfWeek - 1 },
+    () => null,
+  );
+  for (let day = 1; day <= ym.daysInMonth; day++) cells.push(ym.toPlainDate({ day }).toString());
+  while (cells.length % 7) cells.push(null);
+  return Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+}
+
+/** The month `months` away from a YYYY-MM month (negative for earlier), as YYYY-MM. */
+export function shiftMonth(month: string, months: number): string {
+  return Temporal.PlainYearMonth.from(month).add({ months }).toString();
+}
+
+/** "December 2026" from "2026-12". */
+export function monthTitle(month: string): string {
+  const ym = Temporal.PlainYearMonth.from(month);
+  return `${MONTH_NAMES[ym.month - 1] ?? ''} ${ym.year}`;
+}
+
+/**
  * Start choices for monthly routines: the first of this month and the next two. A monthly series
  * counts its months from the start month, so "every 3 months on the 1st, from December" gives
  * 1 Dec, 1 Mar, 1 Jun.

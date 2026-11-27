@@ -18,6 +18,7 @@ import { localParts } from '../lib/rhythm';
 import { Avatar, Either } from './Avatar';
 import { Button, type PressState } from './Button';
 import { Chip, TagChip } from './Chip';
+import { DateCalendar, DateChip, pickedDateLabel, useDateDropdown } from './DatePicker';
 import { useLayout } from './layout';
 import { Sheet } from './Sheet';
 import { Text } from './Text';
@@ -58,6 +59,8 @@ export function CaptureSheet({
     initialOwner === undefined ? (people.me?.id ?? null) : initialOwner,
   );
   const [pickedDue, setPickedDue] = useState<string | null>(null);
+  // "Pick a date": a specific day from the calendar, when the quick days aren't it.
+  const dates = useDateDropdown();
   // "Add a time": the row is open; the time tapped, or another one typed; and how long.
   const [timeOpen, setTimeOpen] = useState(false);
   const [pickedTime, setPickedTime] = useState<string | null>(null);
@@ -106,9 +109,20 @@ export function CaptureSheet({
   // A name typed in the text ("@sam", "for us") wins over the tapped target.
   const owner = parsed.ownerId !== undefined ? parsed.ownerId : picked;
   const dueOn = parsed.dueOn ?? pickedDue;
+  const quickDays = today ? dueOptions(today) : [];
   const dayLabel =
     parsed.dueLabel ??
-    (pickedDue && today ? (dueOptions(today).find((o) => o.date === pickedDue)?.label ?? null) : null);
+    (pickedDue && today
+      ? (quickDays.find((o) => o.date === pickedDue)?.label ?? pickedDateLabel(pickedDue, today))
+      : null);
+  // A day picked from the calendar that isn't one of the quick days: the date chip shows it.
+  const otherDay =
+    !parsed.dueOn && pickedDue && !quickDays.some((o) => o.date === pickedDue) ? pickedDue : null;
+  // A day tapped (or picked) replaces one typed in the text, like a tapped time or list does.
+  const pickDay = (date: string | null) => {
+    if (parsed.dayWords) setRaw((r) => withoutWords(r, parsed.dayWords));
+    setPickedDue(date);
+  };
   // A time typed in the text wins over the picked one (tapping or typing a time below replaces
   // it). Projects have no time of day, so a picked one is set aside while "Project" is on.
   const otherTyped = otherTime.trim();
@@ -346,14 +360,24 @@ export function CaptureSheet({
 
       {today ? (
         <View style={styles.chips}>
-          {dueOptions(today).map((o) => (
-            <Chip
-              key={o.label}
-              label={o.label}
-              selected={dueOn === o.date && !parsed.dueOn}
-              onPress={() => setPickedDue(pickedDue === o.date ? null : o.date)}
-            />
-          ))}
+          {quickDays.map((o) => {
+            const on = dueOn === o.date && !parsed.dueOn;
+            return (
+              <Chip
+                key={o.label}
+                label={o.label}
+                selected={on}
+                onPress={() => pickDay(on ? null : o.date)}
+              />
+            );
+          })}
+          <DateChip
+            value={otherDay}
+            today={today}
+            open={dates.open}
+            onPress={dates.toggle}
+            chip={dates.chip}
+          />
           {!project ? (
             <Chip
               label={time ? clockRange(time, length) : 'Add a time'}
@@ -370,6 +394,17 @@ export function CaptureSheet({
             onPress={() => setProject((v) => !v)}
           />
         </View>
+      ) : null}
+
+      {dates.open && today ? (
+        <DateCalendar
+          value={dueOn}
+          today={today}
+          onPick={(date) => {
+            pickDay(date);
+            dates.close();
+          }}
+        />
       ) : null}
 
       {timeOpen && !project ? (

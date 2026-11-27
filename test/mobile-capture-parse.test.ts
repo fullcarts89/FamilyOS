@@ -146,3 +146,28 @@ describe('quick capture: a picked time replaces a typed one', () => {
     });
   });
 });
+
+describe('quick capture: a picked day replaces a typed one', () => {
+  const people: CapturePerson[] = [{ id: MAYA, name: 'Maya Rivera', isMe: true }];
+  const parse = (text: string) => parseCapture(text, TODAY, people, []);
+  const pickInstead = (text: string) => withoutWords(text, parse(text).dayWords);
+
+  it('keeps the words it read for the day', () => {
+    expect(parse('Call the plumber tomorrow').dayWords).toBe('tomorrow');
+    expect(parse('Plan the party next week @maya').dayWords).toBe('next week');
+    expect(parse('Call the plumber').dayWords).toBeNull();
+  });
+
+  it('takes out the typed day, and leaves the time, person and the rest as typed', () => {
+    expect(pickInstead('Call the plumber tomorrow')).toBe('Call the plumber');
+    expect(pickInstead('Walk Biscuit Friday at 7am for 45 min @maya')).toBe(
+      'Walk Biscuit at 7am for 45 min @maya',
+    );
+    expect(parse(pickInstead('Walk Biscuit tonight at 7pm'))).toMatchObject({
+      title: 'Walk Biscuit',
+      dueOn: null,
+      dayWords: null,
+      time: '19:00',
+    });
+  });
+});
