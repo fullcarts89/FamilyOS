@@ -24,6 +24,8 @@ export interface ParsedCapture {
   ownerId: string | null | undefined;
   dueOn: string | null;
   dueLabel: string | null;
+  /** The words the day was read from ("tomorrow"), so a day picked instead can replace them. */
+  dayWords: string | null;
   /** A time of day, "HH:MM" (24-hour), or null. */
   time: string | null;
   /** With a time: how long it takes, in minutes (5 to 720, in fives), or null. */
@@ -74,6 +76,7 @@ export function parseCapture(
   let ownerId: string | null | undefined;
   let dueOn: string | null = null;
   let dueLabel: string | null = null;
+  let dayWords: string | null = null;
   let time: string | null = null;
   let durationMinutes: number | null = null;
   let timeWords: string | null = null;
@@ -123,6 +126,7 @@ export function parseCapture(
         dueOn = addDays(today, diff);
         dueLabel = (d[0] ?? '').toUpperCase() + d.slice(1);
       }
+      dayWords = day[0].trim();
       text = text.replace(day[0], ' ');
     }
   }
@@ -176,6 +180,7 @@ export function parseCapture(
     ownerId,
     dueOn,
     dueLabel,
+    dayWords,
     time,
     durationMinutes,
     timeWords,
@@ -186,8 +191,8 @@ export function parseCapture(
 }
 
 /**
- * The capture text without words the parser read (`timeWords`, `lengthWords`): a time tapped in
- * the sheet replaces a typed one, the way tapping a list replaces a typed @name.
+ * The capture text without words the parser read (`dayWords`, `timeWords`, `lengthWords`): a day
+ * or time tapped in the sheet replaces a typed one, the way tapping a list replaces a typed @name.
  */
 export function withoutWords(raw: string, ...words: (string | null)[]): string {
   let text = ` ${raw} `;

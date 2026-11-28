@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react-native';
-import type { ReactNode } from 'react';
+import type { ComponentRef, ReactNode, Ref } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { HitArea, hitSlopFor, type PressState } from './Button';
 import { solidFill, textOn } from './contrast';
@@ -19,6 +19,9 @@ export function Chip({
   accent,
   accessibilityLabel,
   disabled,
+  trailing,
+  expanded,
+  ref,
 }: {
   label: string;
   selected?: boolean;
@@ -28,19 +31,31 @@ export function Chip({
   accent?: string;
   accessibilityLabel?: string;
   disabled?: boolean;
+  /** After the label (a dropdown's chevron). */
+  trailing?: ReactNode;
+  /**
+   * Set for a chip that opens something below it (a dropdown): it says open or closed instead of
+   * pressed, and its label says what's chosen.
+   */
+  expanded?: boolean;
+  ref?: Ref<ComponentRef<typeof View>>;
 }) {
   // A person's color behind white or ink text: deepened just enough to read.
   const on = accent ? solidFill(accent) : color.ink;
   const fg = selected ? textOn(on) : color.ink;
   return (
     <Pressable
+      ref={ref}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       // A toggle: pressed on the web (aria-selected isn't allowed on buttons), selected on iPhone.
       accessibilityState={
-        Platform.OS === 'web' ? { disabled: !!disabled } : { selected, disabled: !!disabled }
+        Platform.OS === 'web'
+          ? { disabled: !!disabled }
+          : { selected, disabled: !!disabled, expanded }
       }
-      aria-pressed={Platform.OS === 'web' ? selected : undefined}
+      aria-pressed={Platform.OS === 'web' && expanded === undefined ? selected : undefined}
+      aria-expanded={expanded}
       aria-disabled={!!disabled}
       onPress={onPress}
       disabled={disabled}
@@ -61,6 +76,7 @@ export function Chip({
       <Text variant="label" style={styles.text} color={fg}>
         {label}
       </Text>
+      {trailing}
     </Pressable>
   );
 }

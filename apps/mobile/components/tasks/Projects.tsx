@@ -82,7 +82,8 @@ export function Projects({
             size="sm"
             variant="secondary"
             icon={Plus}
-            onPress={() => open()}
+            // The capture sheet with "Project with steps" already on: what's typed is a project.
+            onPress={() => open(undefined, { project: true })}
           />
         }
       />

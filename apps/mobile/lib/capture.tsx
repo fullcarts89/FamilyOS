@@ -15,9 +15,14 @@ import { CaptureSheet } from '../design/CaptureSheet';
 import { requestWidgetRefresh } from '../native/WidgetSync';
 import { useHousehold } from './household';
 
+interface CaptureOptions {
+  /** Start with "Project with steps" on (Tasks' "New project"). */
+  project?: boolean;
+}
+
 interface CaptureState {
   /** Opens quick capture, optionally aimed at someone (null: either of you). */
-  open: (owner?: string | null) => void;
+  open: (owner?: string | null, options?: CaptureOptions) => void;
   /** Increments whenever something changes data, so visible screens reload. */
   version: number;
   /** Tell visible screens to reload. */
@@ -64,9 +69,11 @@ export function CaptureProvider({ children, enabled }: { children: ReactNode; en
   const memberId = household?.memberId ?? '';
   // Each opening is its own sheet (fresh text, a fresh capture id); it stays mounted through
   // its exit fade, then goes.
-  const [target, setTarget] = useState<{ id: number; owner: string | null | undefined } | null>(
-    null,
-  );
+  const [target, setTarget] = useState<{
+    id: number;
+    owner: string | null | undefined;
+    project: boolean;
+  } | null>(null);
   const [showing, setShowing] = useState(false);
   const opened = useRef(0);
   const [version, setVersion] = useState(0);
@@ -93,9 +100,9 @@ export function CaptureProvider({ children, enabled }: { children: ReactNode; en
     [memberId],
   );
 
-  const open = useCallback((owner?: string | null) => {
+  const open = useCallback((owner?: string | null, options?: CaptureOptions) => {
     opened.current += 1;
-    setTarget({ id: opened.current, owner });
+    setTarget({ id: opened.current, owner, project: options?.project ?? false });
     setShowing(true);
   }, []);
   const changed = useCallback(() => {
@@ -115,7 +122,7 @@ export function CaptureProvider({ children, enabled }: { children: ReactNode; en
         setShowing((already) => {
           if (!already) {
             opened.current += 1;
-            setTarget({ id: opened.current, owner: undefined });
+            setTarget({ id: opened.current, owner: undefined, project: false });
           }
           return true;
         });
@@ -146,6 +153,7 @@ export function CaptureProvider({ children, enabled }: { children: ReactNode; en
           key={target.id}
           visible={showing}
           initialOwner={target.owner}
+          initialProject={target.project}
           onClose={() => setShowing(false)}
           onExited={() => setTarget((t) => (t?.id === target.id ? null : t))}
           onCreated={changed}
