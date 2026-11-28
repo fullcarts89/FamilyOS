@@ -105,6 +105,39 @@ test.describe('Tasks: complete, take, hand over', () => {
     await expect(maya.getByRole('button', { name: `Hand to Theo: ${title}` })).toBeVisible();
   });
 
+  test('“New project” on Tasks makes a project, not a task', async ({ app, maya, mayaApi }) => {
+    const title = 'Put up art';
+    await app.nav(maya, 'Tasks');
+    if (app.phone) await maya.getByRole('tab', { name: 'Projects' }).click();
+    await maya.getByRole('button', { name: 'New project', exact: true }).click();
+    const sheet = maya.getByRole('dialog', { name: 'Capture something for the household' });
+    await expect(sheet).toBeVisible();
+    // The sheet opens as a project, so what's typed is one (it can still be turned off).
+    await expect(sheet.getByRole('button', { name: 'Project with steps' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await sheet.getByRole('textbox', { name: 'What needs doing?' }).fill(title);
+    await sheet.getByRole('radio', { name: 'Shared', exact: true }).click();
+    await sheet.getByRole('button', { name: 'Add to Shared' }).click();
+    await expect(toast(maya, `Added to Shared: ${title}`)).toBeVisible();
+    await expect(sheet).toBeHidden();
+
+    // What the server stored: a shared project with no target date.
+    await expect
+      .poll(async () => {
+        const item = await mayaApi.item(title);
+        return [item.type, item.ownerMemberId, item.dueOn, item.dueAt];
+      })
+      .toEqual(['project', null, null, null]);
+
+    // On the Projects list, after a reload.
+    await maya.reload();
+    if (app.phone) await maya.getByRole('tab', { name: 'Projects' }).click();
+    await expect(maya.getByText(title, { exact: true })).toBeVisible();
+    await expect(maya.getByText('0 of 0 steps · no target date')).toBeVisible();
+  });
+
   test('completing a project step reaches the halfway milestone', async ({
     app,
     maya,

@@ -33,6 +33,7 @@ import { color, em, font, radius } from './tokens';
  */
 export function CaptureSheet({
   initialOwner,
+  initialProject = false,
   onClose,
   onCreated,
   visible = true,
@@ -41,6 +42,8 @@ export function CaptureSheet({
 }: {
   /** undefined: me; null: either of you; else a member id. */
   initialOwner: string | null | undefined;
+  /** Start with "Project with steps" on (opened from "New project"). */
+  initialProject?: boolean;
   onClose: () => void;
   onCreated: () => void;
   visible?: boolean;
@@ -66,7 +69,7 @@ export function CaptureSheet({
   const [pickedTime, setPickedTime] = useState<string | null>(null);
   const [otherTime, setOtherTime] = useState('');
   const [pickedLength, setPickedLength] = useState<number | null>(null);
-  const [project, setProject] = useState(false);
+  const [project, setProject] = useState(initialProject);
   const [today, setToday] = useState<string | null>(null);
   const [projects, setProjects] = useState<WorkItem[]>([]);
   const [busy, setBusy] = useState(false);
